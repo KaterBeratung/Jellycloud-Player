@@ -14,7 +14,7 @@
  * Sie ist FEST eingebaut: nicht in den Einstellungen zu sehen oder zu aendern, nicht in der Konfigurationsdatei und nicht ueber die Oberflaeche.
  * (Tests setzen die Quelle ueber updater.getSource.)
  */
-const DEFAULT_UPDATE_SOURCE = 'https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download/';
+const DEFAULT_UPDATE_SOURCE = 'https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download/';
 
 const DEFAULT_SETTINGS = {
   language: 'auto', // 'auto' | 'de' | 'en'

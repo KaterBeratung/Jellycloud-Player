@@ -6,7 +6,7 @@
    die Media Bar sind fuer 10.9 bis 11 gedacht und dort nicht geprueft.
 
    Einbau: Jellyfin-Dashboard > Allgemein (oder Branding) > "Benutzerdefinierter CSS-Code": nur diese eine Zeile einfuegen
-     @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css");
+     @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/Jellycloud-Player@main/jellyfin-css/jellycloud.css");
    (oder den ganzen Inhalt dieser Datei). Anleitung, Anpassung (Akzentfarbe) und Media Bar: siehe README.md in diesem Ordner.
 
    Aufbau: 1 Farben und Masse (hier anpassen)  2 Grundlage  3 Kopfzeile  4 Seitenmenue und Tabs  5 Reihen und Karten

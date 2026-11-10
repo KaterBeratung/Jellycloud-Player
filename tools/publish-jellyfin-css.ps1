@@ -1,16 +1,16 @@
 # Aktualisiert das Jellyfin-CSS (jellyfin-css\jellycloud.css und README.md) im oeffentlichen GitHub-Repo, damit der Link in Jellyfin die neue Fassung liefert.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\publish-jellyfin-css.ps1            (hochladen, wenn sich etwas geaendert hat)
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\publish-jellyfin-css.ps1 -DryRun    (nur anzeigen, was sich aendern wuerde)
-#   ... -Repo NAME/REPO   anderes Repo (Standard: KaterBeratung/jellycloud-releases, Ordner jellyfin-css/ auf dem Zweig main)
+#   ... -Repo NAME/REPO   anderes Repo (Standard: KaterBeratung/Jellycloud-Player, Ordner jellyfin-css/ auf dem Zweig main)
 #
 # Link fuer Jellyfin (Dashboard > Allgemein > Benutzerdefinierter CSS-Code):
-#   @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css");
+#   @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/Jellycloud-Player@main/jellyfin-css/jellycloud.css");
 # Warum jsDelivr und nicht raw.githubusercontent.com: GitHub liefert Dateien dort als text/plain mit nosniff, Browser lehnen so ein Stylesheet fuer @import ab.
 # jsDelivr haelt den Zweig bis zu 12 Stunden im Zwischenspeicher: das Skript stoesst deshalb danach die Aktualisierung an und prueft den Abruf.
 # Das Hochladen ist oeffentlich: nur nach Freigabe des Nutzers. Voraussetzung: gh ist angemeldet (gh auth login), im PATH oder unter %LOCALAPPDATA%\gh-cli\bin.
 # Hinweis: nur ASCII im Skript, Windows PowerShell 5.1 liest Skripte ohne BOM als ANSI.
 param(
-  [string]$Repo = 'KaterBeratung/jellycloud-releases',
+  [string]$Repo = 'KaterBeratung/Jellycloud-Player',
   [switch]$DryRun
 )
 

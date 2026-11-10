@@ -585,27 +585,27 @@ test('Zeitplan: prüft nur, wenn es eingeschaltet ist', async () => {
 });
 
 test('GitHub: Seiten des Repos werden zu den Release-Dateien (neuestes Release oder genau eines), Kurzform github:NAME/REPO', () => {
-  const latest = 'https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download/';
+  const latest = 'https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download/';
   for (const input of [
-    'https://github.com/KaterBeratung/jellycloud-releases',
-    'https://github.com/KaterBeratung/jellycloud-releases/',
-    'https://github.com/KaterBeratung/jellycloud-releases.git',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases/',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases/latest',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download/latest.json',
-    'https://github.com/KaterBeratung/jellycloud-releases/releases?q=x#y',
-    'github:KaterBeratung/jellycloud-releases',
-    'GitHub:KaterBeratung/jellycloud-releases.git'
+    'https://github.com/KaterBeratung/Jellycloud-Player',
+    'https://github.com/KaterBeratung/Jellycloud-Player/',
+    'https://github.com/KaterBeratung/Jellycloud-Player.git',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases/',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases/latest',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download/latest.json',
+    'https://github.com/KaterBeratung/Jellycloud-Player/releases?q=x#y',
+    'github:KaterBeratung/Jellycloud-Player',
+    'GitHub:KaterBeratung/Jellycloud-Player.git'
   ]) {
     assert.equal(normalizeSource(input).base, latest, input);
   }
-  assert.equal(normalizeSource('https://github.com/KaterBeratung/jellycloud-releases/releases/tag/v0.0.30').base, 'https://github.com/KaterBeratung/jellycloud-releases/releases/download/v0.0.30/', 'ein bestimmtes Release');
-  assert.equal(normalizeSource('https://github.com/KaterBeratung/jellycloud-releases/releases/download/v0.0.30/').base, 'https://github.com/KaterBeratung/jellycloud-releases/releases/download/v0.0.30/', 'schon die Download-Adresse: unveraendert');
+  assert.equal(normalizeSource('https://github.com/KaterBeratung/Jellycloud-Player/releases/tag/v0.0.30').base, 'https://github.com/KaterBeratung/Jellycloud-Player/releases/download/v0.0.30/', 'ein bestimmtes Release');
+  assert.equal(normalizeSource('https://github.com/KaterBeratung/Jellycloud-Player/releases/download/v0.0.30/').base, 'https://github.com/KaterBeratung/Jellycloud-Player/releases/download/v0.0.30/', 'schon die Download-Adresse: unveraendert');
   assert.equal(normalizeSource('https://github.com/orgs/foo/').base, 'https://github.com/orgs/foo/', 'keine Repo-Seite: unveraendert');
-  assert.equal(normalizeSource('https://github.com/KaterBeratung/jellycloud-releases/blob/main/x/').base, 'https://github.com/KaterBeratung/jellycloud-releases/blob/main/x/', 'andere Seiten bleiben');
-  assert.equal(normalizeSource('https://example.com/KaterBeratung/jellycloud-releases').base, 'https://example.com/KaterBeratung/jellycloud-releases/', 'nur bei github.com');
+  assert.equal(normalizeSource('https://github.com/KaterBeratung/Jellycloud-Player/blob/main/x/').base, 'https://github.com/KaterBeratung/Jellycloud-Player/blob/main/x/', 'andere Seiten bleiben');
+  assert.equal(normalizeSource('https://example.com/KaterBeratung/Jellycloud-Player').base, 'https://example.com/KaterBeratung/Jellycloud-Player/', 'nur bei github.com');
   assert.equal(cleanSource('github:a/b'), 'https://github.com/a/b/releases/latest/download/', 'das Feld zeigt danach die richtige Adresse');
   assert.throws(() => normalizeSource('github:nurname'), UpdateError);
 });

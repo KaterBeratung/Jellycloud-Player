@@ -18,12 +18,12 @@ Ein dunkles, weiches Theme für den Jellyfin-Web-Client im Stil von **ElegantFin
 2. Diese eine Zeile einfügen und speichern:
 
    ```css
-   @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css");
+   @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/Jellycloud-Player@main/jellyfin-css/jellycloud.css");
    ```
 
 3. Die Jellyfin-Seite neu laden, am besten mit **Strg + F5** (der Browser hält die Seite sonst manchmal in der alten Fassung).
 
-Die Datei liegt in einem öffentlichen GitHub-Repo und wird über den CDN-Dienst jsDelivr ausgeliefert (GitHub selbst liefert Stylesheets mit einem Typ, den Browser für `@import` ablehnen). Die Seitenaufrufe deiner Nutzer gehen dabei an `cdn.jsdelivr.net`. Änderungen an der Datei kommen nach spätestens 12 Stunden beim CDN an (wer es sofort braucht, ruft einmal `https://purge.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css` im Browser auf), und **dein Browser behält die Datei bis zu 7 Tage**: Nach einem Update einmal **Strg + F5** auf der Jellyfin-Seite drücken, dann holt er die neue Fassung.
+Die Datei liegt in einem öffentlichen GitHub-Repo und wird über den CDN-Dienst jsDelivr ausgeliefert (GitHub selbst liefert Stylesheets mit einem Typ, den Browser für `@import` ablehnen). Die Seitenaufrufe deiner Nutzer gehen dabei an `cdn.jsdelivr.net`. Änderungen an der Datei kommen nach spätestens 12 Stunden beim CDN an (wer es sofort braucht, ruft einmal `https://purge.jsdelivr.net/gh/KaterBeratung/Jellycloud-Player@main/jellyfin-css/jellycloud.css` im Browser auf), und **dein Browser behält die Datei bis zu 7 Tage**: Nach einem Update einmal **Strg + F5** auf der Jellyfin-Seite drücken, dann holt er die neue Fassung.
 
 Ohne Fremdadresse geht es auch: den gesamten Inhalt von [`jellycloud.css`](jellycloud.css) statt der Zeile einfügen. (Die Datei ist reines ASCII, es gibt keine Zeichensatz-Probleme.) Eigene Änderungen, zum Beispiel die Akzentfarbe, kommen dann in dasselbe Feld unter die `@import`-Zeile oder in die kopierte Datei.
 

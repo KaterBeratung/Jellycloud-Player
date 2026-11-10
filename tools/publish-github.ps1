@@ -1,7 +1,7 @@
 # Veroeffentlicht den Installer der aktuellen Version als GitHub-Release (oeffentliches Repo), damit die App ihn als Update findet.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\publish-github.ps1            (veroeffentlichen)
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\publish-github.ps1 -DryRun    (nur anzeigen, nichts hochladen)
-#   ... -Repo NAME/REPO   anderes Repo (Standard: KaterBeratung/jellycloud-releases, siehe DEFAULT_UPDATE_SOURCE in src\main\config.js)
+#   ... -Repo NAME/REPO   anderes Repo (Standard: KaterBeratung/Jellycloud-Player, siehe DEFAULT_UPDATE_SOURCE in src\main\config.js)
 #
 # Voraussetzungen: tools\publish-update.ps1 lief fuer diese Version (dist\latest.json passt zum Installer) und die GitHub CLI ist angemeldet
 # (gh auth login). gh wird im PATH oder unter %LOCALAPPDATA%\gh-cli\bin gesucht.
@@ -12,7 +12,7 @@
 # Version liefert (https://github.com/<Repo>/releases/latest/download/Jellycloud-Player-Setup.exe). Die App selbst nutzt weiter den Namen mit Versionsnummer (latest.json).
 #   ... -StableOnly   nur diese Kopie zu einem schon veroeffentlichten Release dieser Version nachladen
 param(
-  [string]$Repo = 'KaterBeratung/jellycloud-releases',
+  [string]$Repo = 'KaterBeratung/Jellycloud-Player',
   [switch]$DryRun,
   [switch]$StableOnly
 )

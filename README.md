@@ -348,7 +348,7 @@ lässt das Fenster beim automatischen Start in der Taskleiste. Der Eintrag wird 
 ## Updates
 
 Die App aktualisiert sich selbst (`src/main/updater.js`, ohne Fremdpakete). Die **Update-Quelle ist fest eingebaut**: die Release-Dateien eines öffentlichen GitHub-Repos,
-`https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download/` (`DEFAULT_UPDATE_SOURCE` in `src/main/config.js`). Diese Adresse liefert ohne Anmeldung immer die Dateien des neuesten Releases
+`https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download/` (`DEFAULT_UPDATE_SOURCE` in `src/main/config.js`). Diese Adresse liefert ohne Anmeldung immer die Dateien des neuesten Releases
 (GitHub leitet sie auf eine signierte Adresse eines anderen Servers weiter, das folgt der Updater).
 
 **Die Quelle ist weder zu sehen noch zu ändern**: In den Einstellungen gibt es dafür weder ein Feld noch einen Schalter (unter *Allgemein > Updates* nur *Automatisch nach Updates suchen*), sie steht nicht in der Konfigurationsdatei,
@@ -367,7 +367,7 @@ Anlass war `…/releases/latest.json` auf GitHub, das eine 157 KB große HTML-Se
 | `latest.json` | `{ "version", "file", "size", "sha512", "date", "notes" }` (`notes` erscheint unter *Neu in dieser Version*) |
 | `Jellycloud-Player-Setup-<Version>.exe` | der Installer |
 
-**Direkter Download-Link, immer die neueste Version:** `https://github.com/KaterBeratung/jellycloud-releases/releases/latest/download/Jellycloud-Player-Setup.exe`. Dafür hat jedes Release neben dem Installer mit Versionsnummer eine **Kopie mit festem Namen** (`Jellycloud-Player-Setup.exe`, dieselbe Datei):
+**Direkter Download-Link, immer die neueste Version:** `https://github.com/KaterBeratung/Jellycloud-Player/releases/latest/download/Jellycloud-Player-Setup.exe`. Dafür hat jedes Release neben dem Installer mit Versionsnummer eine **Kopie mit festem Namen** (`Jellycloud-Player-Setup.exe`, dieselbe Datei):
 GitHub löst `latest/download/<Name>` nur für einen festen Namen auf, mit Versionsnummer im Namen änderte sich der Link bei jedem Update. Die App selbst nutzt weiter den Namen mit Versionsnummer aus `latest.json`.
 
 **Veröffentlichen auf GitHub**: Nach dem Bau und `tools\publish-update.ps1` lädt `tools\publish-github.ps1` den Installer, die Kopie mit festem Namen und `latest.json` als Release `v<Version>` in das Repo hoch (`-DryRun` zeigt nur an, `-Repo NAME/REPO`
@@ -413,8 +413,8 @@ Szenario: `tools/shots/trailer-release.js`.
 ## Jellyfin-CSS
 
 Im Ordner `jellyfin-css/` liegt ein **benutzerdefiniertes CSS für den Jellyfin-Web-Client** (Dashboard > Allgemein) im Stil von ElegantFin (Blau-Grau, Indigo; eigener Code, ElegantFin steht unter GPL-2.0), mit Gestaltung der Media Bar: `jellycloud.css`, eine Anleitung (`README.md`, Einbau, Akzentfarbe,
-Media Bar) und `preview.html` als Vorschau ohne Jellyfin. Die Datei liegt öffentlich im Repo `KaterBeratung/jellycloud-releases` (Ordner `jellyfin-css/`); in Jellyfin genügt eine Zeile
-(`@import url("https://cdn.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css");`, über jsDelivr, weil GitHub-Raw Stylesheets als `text/plain` ausliefert und Browser sie für `@import` ablehnen).
+Media Bar) und `preview.html` als Vorschau ohne Jellyfin. Die Datei liegt öffentlich im Repo `KaterBeratung/Jellycloud-Player` (Ordner `jellyfin-css/`); in Jellyfin genügt eine Zeile
+(`@import url("https://cdn.jsdelivr.net/gh/KaterBeratung/Jellycloud-Player@main/jellyfin-css/jellycloud.css");`, über jsDelivr, weil GitHub-Raw Stylesheets als `text/plain` ausliefert und Browser sie für `@import` ablehnen).
 Aktualisieren: `tools\publish-jellyfin-css.ps1` (öffentlich, nur nach Freigabe). Es gehört nicht zur App (wird nicht mitgebaut). Geprüft im Browser an einem lokalen **Jellyfin 12.4** und mit der **Media Bar von MakD (Version 6)** in allen drei Layouts (Einzelheiten und was nicht geprüft ist: `jellyfin-css/README.md`, Szenario `tools/shots/jellyfin-css.js`; mit `JF_URL` und `JF_TOKEN_FILE` läuft es auch gegen einen echten Server).
 
 ## Versionen
