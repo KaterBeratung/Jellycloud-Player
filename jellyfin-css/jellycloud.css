@@ -1,0 +1,914 @@
+/* ==========================================================================
+   Jellycloud fuer Jellyfin: ein dunkles, weiches Theme im Stil von ElegantFin (Jellyseerr-nahe Blau-Grau-Toene, Indigo als Akzent,
+   grosse Rundungen, durchscheinende Kopfzeile, Karten mit Rand und Glanz beim Ueberfahren, helle Abspiel-Kapsel)
+   plus passende Gestaltung der "Media Bar". Eigener Code, nur das Aussehen ist angelehnt (ElegantFin steht unter GPL-2.0).
+   Geprueft an Jellyfin 12.4 (Standard-Oberflaeche, Kopfleiste aus MUI) im Browser; die Regeln fuer die alte Kopfleiste (.skinHeader) und
+   die Media Bar sind fuer 10.9 bis 11 gedacht und dort nicht geprueft.
+
+   Einbau: Jellyfin-Dashboard > Allgemein (oder Branding) > "Benutzerdefinierter CSS-Code": nur diese eine Zeile einfuegen
+     @import url("https://cdn.jsdelivr.net/gh/KaterBeratung/jellycloud-releases@main/jellyfin-css/jellycloud.css");
+   (oder den ganzen Inhalt dieser Datei). Anleitung, Anpassung (Akzentfarbe) und Media Bar: siehe README.md in diesem Ordner.
+
+   Aufbau: 1 Farben und Masse (hier anpassen)  2 Grundlage  3 Kopfzeile  4 Seitenmenue und Tabs  5 Reihen und Karten
+           6 Knoepfe und Eingabefelder  7 Dialoge und Menues  8 Detailseite  9 Anmeldung  10 Media Bar  11 Kleine Bildschirme
+   Hinweis: Auf Karten gibt es bewusst keinen Weichzeichner (backdrop-filter): bei Hunderten Karten kostet er viel Arbeitsspeicher und Grafikleistung.
+   ========================================================================== */
+
+
+/* ---------- 1  Farben und Masse ---------- */
+:root {
+  /* Akzentfarbe (Standard: Indigo). --jc-accent-rgb = Tonung fuer durchscheinende Flaechen, --jc-accent-ink = Schrift auf Akzentflaechen.
+     Weitere Farben und die silberne Palette der Jellycloud-App stehen in der README. */
+  --jc-accent: hsl(243 75% 62%);
+  --jc-accent-rgb: 93 85 231;
+  --jc-accent-ink: #ffffff;
+  --jc-accent-hover: rgb(117 111 226);
+
+  /* Rundungen und Rahmen (in em: wachsen mit der Schriftgroesse) */
+  --jc-radius: 1em;
+  --jc-radius-lg: 1.25em;
+  --jc-radius-sm: 0.5em;
+  --jc-border: 0.12em;
+
+  /* Flaechen: Blau-Grau wie bei Jellyseerr */
+  --jc-bg: #111827;
+  --jc-bg2: #1d2635;
+  --jc-surface: rgb(30 40 54 / 0.9);
+  --jc-surface-soft: rgb(30 40 54 / 0.6);
+  --jc-input: hsl(217 19% 27%);
+  --jc-line: hsl(214 13% 22%);
+  --jc-line2: hsl(214 13% 32%);
+  --jc-hover: rgb(255 255 255 / 0.1);
+  --jc-active: rgb(255 255 255 / 0.14);
+  --jc-text: #d1d5db;
+  --jc-muted: #9ca3af;
+  --jc-faint: #6b7280;
+  --jc-strong: #ffffff;
+
+  --jc-ease: cubic-bezier(0.22, 0.9, 0.24, 1);
+  --jc-pad: clamp(16px, 3.6vw, 56px);
+  --jc-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
+  --jc-font-display: 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
+
+  color-scheme: dark;
+}
+
+
+/* Jellyfin 12: die Farben der MUI-Oberflaeche (Dashboard, Menues, Schalter, Tabs, Knoepfe) kommen aus diesen Variablen.
+   Hier auf unsere Palette gesetzt: Das ersetzt das Jellyfin-Blau auch dort, wo kein Klassenname zu greifen ist. In aelteren Versionen ohne Wirkung. */
+html[data-theme] {
+  --jf-palette-primary-main: var(--jc-accent);
+  --jf-palette-primary-mainChannel: var(--jc-accent-rgb);
+  --jf-palette-primary-light: var(--jc-accent-hover);
+  --jf-palette-primary-dark: color-mix(in srgb, var(--jc-accent) 75%, #000);
+  --jf-palette-primary-contrastText: var(--jc-accent-ink);
+  --jf-palette-secondary-main: var(--jc-accent);
+  --jf-palette-secondary-mainChannel: var(--jc-accent-rgb);
+  --jf-palette-secondary-light: var(--jc-accent-hover);
+  --jf-palette-secondary-dark: color-mix(in srgb, var(--jc-accent) 75%, #000);
+  --jf-palette-secondary-contrastText: var(--jc-accent-ink);
+  --jf-palette-background-default: var(--jc-bg);
+  --jf-palette-background-defaultChannel: 17 24 39;
+  --jf-palette-background-paper: var(--jc-bg2);
+  --jf-palette-background-paperChannel: 29 38 53;
+  --jf-palette-text-primary: #f3f4f6;
+  --jf-palette-text-secondary: var(--jc-muted);
+  --jf-palette-divider: var(--jc-line);
+  --jf-palette-action-hover: rgb(255 255 255 / 0.08);
+  --jf-palette-action-selected: rgb(var(--jc-accent-rgb) / 0.3);
+  --jf-palette-AppBar-darkBg: var(--jc-bg2);
+  --jf-palette-AppBar-transparentBg: transparent;
+  --jf-palette-Avatar-defaultBg: var(--jc-accent);
+}
+
+
+/* ---------- 2  Grundlage ---------- */
+html,
+body {
+  background: var(--jc-bg) !important;
+  color: var(--jc-text);
+  font-family: var(--jc-font);
+  -webkit-font-smoothing: antialiased;
+}
+.backgroundContainer,
+.backgroundContainer.withBackdrop {
+  background: linear-gradient(180deg, var(--jc-bg), var(--jc-bg2)) !important;
+}
+::selection {
+  background: rgb(var(--jc-accent-rgb) / 0.4);
+}
+* {
+  scrollbar-color: var(--jc-line2) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--jc-line2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+:focus-visible {
+  outline-color: var(--jc-accent-hover);
+}
+body a {
+  color: inherit;
+}
+
+
+/* ---------- 3  Kopfzeile ---------- */
+/* Jellyfin 12: Kopfleiste aus MUI. Durchscheinend: nach unten laeuft sie weich aus (Weichzeichner mit Verlaufsmaske) */
+body .MuiAppBar-root,
+body .MuiAppBar-root.MuiAppBar-colorTransparent {
+  isolation: isolate;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--jc-strong);
+}
+body .MuiAppBar-root::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -1.6em 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(17 24 39 / 0.9), rgb(17 24 39 / 0.55) 55%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  -webkit-mask-image: linear-gradient(#000 55%, transparent);
+  mask-image: linear-gradient(#000 55%, transparent);
+}
+/* Eintraege der Leiste (Favoriten, Bibliotheken): runde Kapseln, beim Ueberfahren hell */
+body .MuiAppBar-root .MuiButton-root {
+  border-radius: 999px;
+  color: var(--jc-text);
+  font-weight: 600;
+  text-transform: none;
+  transition: background 140ms, color 140ms;
+}
+body .MuiAppBar-root .MuiButton-root:hover {
+  background: rgb(255 255 255 / 0.92);
+  color: #111827;
+}
+body .MuiAppBar-root .MuiButton-root:hover .MuiSvgIcon-root {
+  color: inherit;
+}
+body .MuiAppBar-root .MuiButton-root[aria-current='page'],
+body .MuiAppBar-root .MuiButton-root.Mui-selected,
+body .MuiAppBar-root .MuiButton-textPrimary {
+  background: rgb(var(--jc-accent-rgb) / 0.28);
+  color: var(--jc-strong);
+}
+body .MuiAppBar-root .MuiIconButton-root {
+  color: var(--jc-text);
+  transition: background 140ms, color 140ms;
+}
+body .MuiAppBar-root .MuiIconButton-root:hover {
+  background: var(--jc-active);
+  color: var(--jc-strong);
+}
+body .MuiAppBar-root .MuiAvatar-root,
+body .MuiAvatar-colorDefault {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--jc-accent) 88%, #fff), var(--jc-accent));
+  color: var(--jc-accent-ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 4px 12px -4px rgb(var(--jc-accent-rgb) / 0.7);
+}
+
+/* Jellyfin 10.9 bis 11: die alte Leiste */
+.skinHeader,
+.skinHeader.semiTransparent,
+.skinHeader-withBackground {
+  background: linear-gradient(180deg, rgb(17 24 39 / 0.9), rgb(17 24 39 / 0.55)) !important;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 0;
+  box-shadow: none;
+  color: var(--jc-strong);
+}
+.headerButton,
+.headerButton.paper-icon-button-light {
+  border-radius: 50%;
+  color: var(--jc-text);
+  transition: background 140ms, color 140ms;
+}
+.headerButton:hover,
+.headerButton:focus-visible {
+  background: var(--jc-active) !important;
+  color: var(--jc-strong);
+}
+.pageTitle,
+.pageTitleWithLogo {
+  color: var(--jc-strong);
+  font-family: var(--jc-font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+
+/* ---------- 4  Seitenmenue und Tabs ---------- */
+.mainDrawer,
+body .MuiDrawer-paper {
+  background: var(--jc-surface) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-right: var(--jc-border) solid var(--jc-line) !important;
+  color: var(--jc-text);
+}
+.navMenuOption,
+body .MuiDrawer-paper .MuiListItemButton-root {
+  margin: 2px 10px;
+  width: auto;
+  border-radius: var(--jc-radius-sm);
+  color: var(--jc-text);
+  font-weight: 600;
+  transition: background 140ms, color 140ms;
+}
+.navMenuOption:hover,
+body .MuiDrawer-paper .MuiListItemButton-root:hover {
+  background: var(--jc-hover);
+  color: var(--jc-strong);
+}
+.navMenuOption-selected,
+.navMenuOption-selected:hover,
+body .MuiDrawer-paper .MuiListItemButton-root.Mui-selected {
+  background: var(--jc-accent) !important;
+  color: var(--jc-accent-ink) !important;
+}
+.navMenuOption-selected .navMenuOptionIcon {
+  color: var(--jc-accent-ink);
+}
+.navMenuDivider,
+.sidebarLinkDivider {
+  border-color: var(--jc-line);
+}
+
+/* Tabs in Bibliotheken und Dashboard */
+.emby-tabs-slider {
+  gap: 4px;
+}
+.emby-tab-button {
+  margin: 0;
+  padding: 0.45em 1.1em;
+  border: 0 !important;
+  border-radius: 999px;
+  background: none;
+  color: var(--jc-muted);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: color 140ms, background 140ms;
+}
+.emby-tab-button:hover {
+  background: rgb(255 255 255 / 0.92);
+  color: #111827;
+}
+.emby-tab-button-active,
+.emby-tab-button-active:hover {
+  background: var(--jc-accent) !important;
+  color: var(--jc-accent-ink) !important;
+}
+
+
+/* ---------- 5  Reihen und Karten ---------- */
+.sectionTitle,
+h2.sectionTitle {
+  font: 700 1.45em/1.2 var(--jc-font-display);
+  letter-spacing: -0.02em;
+  color: var(--jc-strong);
+}
+.sectionTitleTextButton,
+.sectionTitleButton {
+  color: var(--jc-muted);
+  font-weight: 600;
+}
+.sectionTitleTextButton:hover {
+  color: var(--jc-strong);
+}
+.emby-scrollbuttons-button,
+.emby-scrollbuttons button,
+.emby-scrollbuttons .paper-icon-button-light {
+  border-radius: 50%;
+  border: var(--jc-border) solid var(--jc-line2);
+  background: var(--jc-surface);
+  color: var(--jc-strong);
+  transition: background 140ms, transform 140ms var(--jc-ease);
+}
+.emby-scrollbuttons-button:hover,
+.emby-scrollbuttons button:hover {
+  background: var(--jc-accent);
+  transform: scale(1.06);
+}
+
+/* Karten: Rundung und Rand wie bei ElegantFin, beim Ueberfahren heller Rand, leichtes Vergroessern und ein Glanzstreifen */
+.cardScalable,
+.cardContent,
+.cardImageContainer,
+.cardOverlayContainer {
+  border-radius: var(--jc-radius);
+}
+.cardScalable {
+  overflow: hidden;
+  background: var(--jc-bg2);
+  box-shadow: 0 0 0 var(--jc-border) var(--jc-line), 0 1px 6px rgb(0 0 0 / 0.3);
+  transition: transform 125ms var(--jc-ease), box-shadow 125ms var(--jc-ease);
+}
+.cardImageContainer {
+  background-color: var(--jc-bg2);
+  transition: transform 125ms var(--jc-ease);
+}
+.cardScalable::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.16) 50%, transparent 65%);
+  transform: translateX(-130%);
+  transition: transform 650ms var(--jc-ease);
+}
+.card:hover .cardScalable,
+.card:focus-within .cardScalable {
+  transform: scale(1.02);
+  box-shadow: 0 0 0 var(--jc-border) rgb(255 255 255 / 0.85), 0 10px 26px -8px rgb(0 0 0 / 0.6);
+}
+.card:hover .cardScalable::after {
+  transform: translateX(130%);
+}
+.card:hover .cardImageContainer {
+  transform: scale(1.025);
+}
+.cardText {
+  color: var(--jc-text);
+}
+.cardText-first,
+.cardText-first > a,
+.cardText-first bdi {
+  color: var(--jc-strong);
+  font-weight: 600;
+}
+.cardText-secondary,
+.cardText.cardText-secondary {
+  color: var(--jc-muted);
+}
+
+/* Ueberlagerung beim Ueberfahren: Verlauf von unten, Abspielknopf als helle runde Flaeche */
+.cardOverlayContainer {
+  background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 55%);
+}
+.cardOverlayFab-primary,
+.cardOverlayContainer .cardOverlayFab-primary {
+  width: 3.4em;
+  height: 3.4em;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.94) !important;
+  color: #111827 !important;
+  box-shadow: 0 10px 28px -8px rgb(0 0 0 / 0.7);
+  transition: transform 160ms var(--jc-ease), background 140ms;
+}
+.cardOverlayFab-primary:hover {
+  transform: scale(1.1);
+  background: #fff !important;
+}
+.cardOverlayButton,
+.cardOverlayButton.paper-icon-button-light {
+  color: #fff;
+}
+.cardOverlayButton:hover {
+  background: var(--jc-active);
+}
+
+/* Fortschritt, Haken und Anzahl in der Akzentfarbe */
+.itemProgressBar {
+  height: 0.3em;
+  background: rgb(255 255 255 / 0.28);
+}
+.itemProgressBarForeground {
+  background: var(--jc-accent) !important;
+}
+.countIndicator,
+.playedIndicator,
+.indicator.playedIndicator {
+  min-width: 1.7em;
+  height: 1.7em;
+  border-radius: 999px;
+  background: var(--jc-accent) !important;
+  color: var(--jc-accent-ink) !important;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+}
+
+
+/* ---------- 6  Knoepfe und Eingabefelder ---------- */
+.emby-button.raised,
+.raised:not(.button-submit):not(.button-cancel) {
+  border-radius: var(--jc-radius-sm);
+  border: var(--jc-border) solid var(--jc-line2);
+  background: var(--jc-bg2);
+  color: var(--jc-strong);
+  font-weight: 600;
+  text-transform: none;
+  box-shadow: none;
+  transition: background 140ms, border-color 140ms, transform 140ms var(--jc-ease);
+}
+.emby-button.raised:hover {
+  background: var(--jc-input);
+  border-color: rgb(255 255 255 / 0.4);
+}
+.emby-button.raised:active {
+  transform: scale(0.98);
+}
+/* Bestaetigen: Akzentflaeche */
+.button-submit,
+.emby-button.button-submit,
+.raised.button-submit {
+  background: var(--jc-accent) !important;
+  color: var(--jc-accent-ink) !important;
+  border: var(--jc-border) solid rgb(255 255 255 / 0.25) !important;
+}
+.button-submit:hover,
+.emby-button.button-submit:hover {
+  background: var(--jc-accent-hover) !important;
+}
+/* Detailseite: Abspielen als helle Kapsel, die uebrigen als runde Symbole, beim Ueberfahren hell */
+.mainDetailButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+}
+.detailButton {
+  border-radius: 999px;
+  color: var(--jc-strong);
+  transition: background 140ms, color 140ms, transform 140ms var(--jc-ease);
+}
+.detailButton:not(.btnPlay):hover,
+.detailButton:not(.btnPlay):focus-visible {
+  background: rgb(255 255 255 / 0.92);
+  color: #111827;
+}
+.btnPlay.detailButton,
+.btnResume.detailButton {
+  min-width: 8em;
+  height: 3em;
+  padding: 0 1.4em;
+  background: #fff !important;
+  color: #111827 !important;
+  font-weight: 700;
+  box-shadow: 0 10px 26px -10px rgb(0 0 0 / 0.7);
+}
+.btnPlay.detailButton:hover,
+.btnResume.detailButton:hover {
+  transform: translateY(-1px);
+  background: rgb(255 255 255 / 0.9) !important;
+}
+.paper-icon-button-light {
+  border-radius: 50%;
+  transition: background 140ms, color 140ms;
+}
+.paper-icon-button-light:hover,
+.paper-icon-button-light:focus-visible {
+  background: var(--jc-hover);
+}
+
+/* Eingabefelder */
+.emby-input,
+.emby-textarea,
+.emby-select,
+.emby-select-withcolor {
+  border-radius: var(--jc-radius-sm);
+  border: var(--jc-border) solid var(--jc-line2);
+  background: var(--jc-input);
+  color: var(--jc-strong);
+}
+.emby-input:focus,
+.emby-textarea:focus,
+.emby-select:focus {
+  border-color: var(--jc-accent-hover) !important;
+  box-shadow: 0 0 0 0.12em var(--jc-accent-hover);
+  outline: none;
+}
+.emby-input::placeholder {
+  color: var(--jc-faint);
+}
+.emby-select option {
+  background: var(--jc-bg2);
+  color: var(--jc-strong);
+}
+.inputLabel,
+.selectLabel,
+.textareaLabel,
+.fieldDescription {
+  color: var(--jc-muted);
+}
+.inputLabelFocused,
+.selectLabelFocused,
+.textareaLabelFocused {
+  color: var(--jc-accent-hover) !important;
+}
+.emby-checkbox:checked + span + .checkboxOutline,
+.emby-checkbox:checked + .checkboxOutline {
+  background-color: var(--jc-accent);
+  border-color: var(--jc-accent);
+}
+.emby-checkbox:checked + span + .checkboxOutline .checkboxIcon,
+.emby-checkbox:checked + .checkboxOutline .checkboxIcon {
+  color: var(--jc-accent-ink);
+}
+.emby-slider-background-lower,
+.sliderBubble {
+  background-color: var(--jc-accent);
+}
+
+
+/* ---------- 7  Dialoge und Menues ---------- */
+.dialogBackdrop,
+.dialogBackdropOpened {
+  background: rgb(0 0 0 / 0.66);
+}
+.dialog,
+.formDialog,
+.actionSheet,
+body .MuiPopover-paper,
+body .MuiMenu-paper,
+body .MuiDialog-paper {
+  background: var(--jc-surface) !important;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  border: var(--jc-border) solid var(--jc-line2);
+  border-radius: var(--jc-radius) !important;
+  color: var(--jc-text);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 0.7) !important;
+}
+.dialog .actionSheetContent,
+.actionSheet .actionSheetContent {
+  background: none !important;
+}
+.actionSheetMenuItem,
+body .MuiMenu-list .MuiMenuItem-root {
+  margin: 2px 6px;
+  border-radius: var(--jc-radius-sm);
+  color: var(--jc-text);
+  font-weight: 600;
+  transition: background 140ms;
+}
+.actionSheetMenuItem:hover,
+.actionSheetMenuItem:focus-visible,
+body .MuiMenu-list .MuiMenuItem-root:hover {
+  background: var(--jc-hover);
+  color: var(--jc-strong);
+}
+.actionSheetItemText,
+.actionSheetTitle {
+  color: inherit;
+}
+.actionSheetItemAsideText {
+  color: var(--jc-muted);
+}
+.toast,
+.toastContainer .toast {
+  background: var(--jc-surface);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: var(--jc-border) solid var(--jc-line2);
+  border-radius: var(--jc-radius);
+  color: var(--jc-strong);
+}
+
+
+/* ---------- 8  Detailseite ---------- */
+/* Hintergrundbild weich gezeichnet, nach unten in die Seitenfarbe auslaufend */
+.backdropImage.displayingBackdropImage,
+.backdropImage {
+  filter: blur(14px) saturate(1.1);
+  transform: scale(1.06);
+}
+.backdropContainer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(0deg, var(--jc-bg2) 2%, rgb(29 38 53 / 0.75) 30%, rgb(17 24 39 / 0.35) 70%, rgb(17 24 39 / 0.5));
+}
+.detailPageWrapperContainer,
+.detailPagePrimaryContainer {
+  background: transparent !important;
+}
+.detailRibbon {
+  background: transparent !important;
+  border: 0;
+}
+.detailImageContainer .cardScalable,
+.detailImageContainer .cardImageContainer {
+  border-radius: var(--jc-radius);
+}
+.detailImageContainer .cardScalable {
+  box-shadow: 0 0 0 var(--jc-border) var(--jc-line2), 0 30px 60px -24px rgb(0 0 0 / 0.85);
+}
+.detailImageContainer .card:hover .cardScalable {
+  transform: none;
+}
+.itemName,
+.detailPageContent .itemName {
+  font-family: var(--jc-font-display);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--jc-strong);
+}
+.parentName,
+.itemMiscInfo,
+.mediaInfoItem,
+.layout-desktop .nameContainer .parentName {
+  color: var(--jc-muted);
+}
+.mediaInfoItem {
+  font-weight: 600;
+}
+.mediaInfoOfficialRating {
+  border: var(--jc-border) solid var(--jc-line2);
+  border-radius: 0.3em;
+  color: var(--jc-text);
+  font-weight: 700;
+  background: none;
+}
+.starRating,
+.starRatingContainer .starIcon {
+  color: #fbbf24;
+}
+.overview,
+.itemOverview {
+  color: var(--jc-text);
+  line-height: 1.6;
+}
+.detailSectionHeader {
+  color: var(--jc-strong);
+  font-family: var(--jc-font-display);
+  letter-spacing: -0.015em;
+}
+.listItem {
+  border-radius: var(--jc-radius-sm);
+}
+.listItem:hover {
+  background: var(--jc-hover);
+}
+
+
+/* ---------- 9  Anmeldung ---------- */
+#loginPage,
+.loginPage {
+  background: linear-gradient(180deg, var(--jc-bg), var(--jc-bg2)) !important;
+}
+#loginPage h1,
+#loginPage h2,
+.loginPage h1,
+.loginPage h2 {
+  color: var(--jc-strong);
+  font-family: var(--jc-font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+#loginPage .emby-button,
+.loginPage .emby-button {
+  border-radius: var(--jc-radius-sm);
+  font-weight: 600;
+  text-transform: none;
+}
+
+
+/* ==========================================================================
+   10  Media Bar (Plugin "Jellyfin Media Bar" von MakD und die Abkoemmlinge, z. B. IAmParadox27, CodeDevMLH)
+   Selektoren nach slideshowpure.css (v6): #slides-container, .slide, .backdrop, .logo, .plot, .play-button ...
+   Nicht an einer laufenden Media Bar geprueft. Ladereihenfolge: der benutzerdefinierte CSS-Code kommt nach dem Plugin.
+   ========================================================================== */
+html:root {
+  --slideshow-gutter: var(--jc-pad);
+  --slideshow-font: var(--jc-font);
+  --slideshow-dots-reserve: max(3.4vh, 2.4rem); /* etwas mehr Luft zwischen den Seitenpunkten und der ersten Reihe */
+  /* Das Banner niedriger machen (88 % der Fensterhoehe, hoechstens 860 px)? Die zwei Zeilen unten einschalten:
+     --slideshow-height: min(88vh, 860px);
+     --slideshow-content-top: calc(min(88vh, 860px) - 40px); */
+}
+
+/* Abdunklung: von unten in die Seitenfarbe, links dunkler, oben ein Schleier */
+#slides-container .gradient-overlay {
+  background:
+    linear-gradient(0deg, var(--jc-bg) 1%, color-mix(in srgb, var(--jc-bg) 82%, transparent) 16%, color-mix(in srgb, var(--jc-bg) 30%, transparent) 36%, transparent 58%),
+    linear-gradient(90deg, rgb(0 0 0 / 0.62) 0%, rgb(0 0 0 / 0.3) 38%, transparent 68%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.45) 0%, transparent 22%);
+}
+#slides-container .backdrop-overlay {
+  background: rgb(0 0 0 / 0.1);
+}
+#slides-container .slide-content {
+  font-family: var(--jc-font);
+  text-shadow: 0 2px 14px rgb(0 0 0 / 0.5);
+}
+#slides-container .logo {
+  filter: drop-shadow(0 6px 24px rgb(0 0 0 / 0.55));
+}
+#slides-container .plot {
+  font-size: 1.05em;
+  line-height: 1.5;
+  color: rgb(255 255 255 / 0.86);
+  max-width: 56ch;
+}
+#slides-container .info-container,
+#slides-container .misc-info,
+#slides-container .genre {
+  font-weight: 600;
+  color: rgb(255 255 255 / 0.86);
+}
+#slides-container .genre {
+  color: rgb(255 255 255 / 0.72);
+}
+#slides-container .age-rating,
+#slides-container .spec-cert {
+  background: none;
+  color: rgb(255 255 255 / 0.85);
+  border: 1px solid rgb(255 255 255 / 0.4);
+  border-radius: 0.3em;
+  font-weight: 700;
+}
+#slides-container .plate-eyebrow,
+#slides-container .featured-content {
+  font-family: var(--jc-font);
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(255 255 255 / 0.72);
+}
+
+/* Knoepfe: Abspielen = helle Kapsel (wie auf der Detailseite), Details und Favorit = runde Glas-Knoepfe ohne Weichzeichner */
+#slides-container .play-button {
+  height: 3em;
+  min-width: 8em;
+  padding: 0 1.4em;
+  border-radius: 999px;
+  border: 0;
+  background: #fff;
+  color: #111827;
+  font-weight: 700;
+  text-shadow: none;
+  box-shadow: 0 10px 26px -10px rgb(0 0 0 / 0.7);
+  transition: transform 140ms var(--jc-ease), background 140ms;
+}
+#slides-container .play-button:hover {
+  background: rgb(255 255 255 / 0.9);
+  transform: translateY(-1px);
+}
+#slides-container .detail-button,
+#slides-container .favorite-button {
+  width: 3em;
+  height: 3em;
+  border-radius: 50%;
+  border: var(--jc-border) solid rgb(255 255 255 / 0.3);
+  background: rgb(17 24 39 / 0.55);
+  color: #fff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: background 140ms, color 140ms, transform 140ms var(--jc-ease);
+}
+#slides-container .detail-button:hover,
+#slides-container .favorite-button:hover {
+  background: rgb(255 255 255 / 0.92);
+  color: #111827;
+  transform: translateY(-1px);
+}
+#slides-container .favorite-button.favorited {
+  color: #f87171;
+}
+#slides-container :is(.play-button, .detail-button, .favorite-button, .arrow):focus-visible {
+  outline: 2px solid var(--jc-accent-hover);
+  outline-offset: 3px;
+}
+
+/* Seitenpunkte: Kapsel, der aktive Punkt wird zur laengeren Pille in der Akzentfarbe */
+#slides-container .dots-container {
+  gap: 8px;
+  padding: 0.45em 0.75em;
+  border-radius: 999px;
+  background: rgb(17 24 39 / 0.45);
+  border: var(--jc-border) solid rgb(255 255 255 / 0.18);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  align-items: center;
+}
+#slides-container.layout-marquee .dots-container {
+  margin-top: -0.7em; /* ein Stueck hoeher (kein transform: das Plugin zentriert die Punkte auf schmalen Bildschirmen damit) */
+}
+#slides-container.layout-plate .dots-container {
+  margin-top: 0.3em; /* die Kapsel ist hoeher als die einfachen Punkte: etwas Abstand zu den Knoepfen darueber */
+}
+#slides-container .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.4);
+  transform: none;
+  transition: width 280ms var(--jc-ease), background 140ms;
+}
+#slides-container .dot.active {
+  width: 28px;
+  height: 8px;
+  background: #fff;
+  transform: none;
+}
+#slides-container .arrow {
+  width: 3em;
+  height: 3em;
+  border-radius: 50%;
+  border: var(--jc-border) solid rgb(255 255 255 / 0.25);
+  background: rgb(17 24 39 / 0.55);
+  color: #fff;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+#slides-container .arrow:hover {
+  background: var(--jc-accent);
+}
+#slides-container .volume-toggle,
+#slides-container .pause-button,
+.ss-settings-toggle {
+  color: #fff;
+}
+.ss-settings {
+  font-family: var(--jc-font);
+  border-radius: var(--jc-radius);
+  border: var(--jc-border) solid var(--jc-line2);
+  background: var(--jc-surface);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 0.7);
+}
+.ss-choice-btn.is-active {
+  background: var(--jc-accent);
+  color: var(--jc-accent-ink);
+  border-color: transparent;
+}
+.ss-switch:checked,
+.ss-switch.is-on {
+  background: var(--jc-accent);
+}
+.ss-range {
+  accent-color: var(--jc-accent);
+}
+
+
+/* ---------- 11  Kleine Bildschirme und weniger Bewegung ---------- */
+@media (max-width: 767px) {
+  :root {
+    --jc-radius: 0.8em;
+  }
+  .sectionTitle,
+  h2.sectionTitle {
+    font-size: 1.25em;
+  }
+  .dialog,
+  .formDialog {
+    border-radius: 0 !important;
+  }
+  #slides-container .plot {
+    font-size: 1em;
+  }
+  #slides-container .play-button {
+    height: 2.7em;
+    padding: 0 1.1em;
+  }
+  #slides-container .detail-button,
+  #slides-container .favorite-button {
+    width: 2.7em;
+    height: 2.7em;
+  }
+}
+@media (hover: none) {
+  .card:hover .cardScalable,
+  .card:hover .cardImageContainer {
+    transform: none;
+  }
+  .card:hover .cardScalable::after {
+    transform: translateX(-130%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cardScalable,
+  .cardImageContainer,
+  .cardScalable::after,
+  .detailButton,
+  .emby-tab-button,
+  .navMenuOption,
+  #slides-container .dot,
+  #slides-container .play-button,
+  #slides-container .detail-button,
+  #slides-container .favorite-button {
+    transition: none !important;
+  }
+  .card:hover .cardScalable,
+  .card:hover .cardImageContainer {
+    transform: none;
+  }
+  .card:hover .cardScalable::after {
+    transform: translateX(-130%);
+  }
+}

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de" class="layout-desktop">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jellycloud fuer Jellyfin: Vorschau</title>
+<!--
+  Vorschau ohne Jellyfin: bildet den Aufbau des Jellyfin-Web-Clients (Kopfzeile, Startseite, Karten, Detailknoepfe, Dialog) und der Media Bar nach
+  und laedt jellycloud.css. Es ist NICHT die echte Jellyfin-Seite: Klassennamen stammen aus dem Web-Client und dem Plugin, Abweichungen in deiner
+  Version zeigen sich erst im echten Jellyfin. Einfach im Browser oeffnen (Doppelklick).
+-->
+<link rel="stylesheet" href="jellycloud.css" />
+<style>
+  /* --- Platzhalter fuer das Basis-CSS von Jellyfin (nur damit die Vorschau ohne Jellyfin sinnvoll aussieht) --- */
+  html, body { margin: 0; min-height: 100%; font-size: 15px; }
+  * { box-sizing: border-box; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+  .skinHeader { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; flex-direction: column; }
+  .headerTop { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; gap: 12px; }
+  .headerLeft, .headerRight { display: flex; align-items: center; gap: 6px; min-width: 220px; }
+  .headerRight { justify-content: flex-end; }
+  .headerButton { display: inline-grid; place-items: center; font-size: 17px; }
+  .pageTitle { margin: 0 0 0 6px; font-size: 18px; }
+  .headerTabs { display: flex; justify-content: center; }
+  .emby-tabs-slider { white-space: nowrap; }
+  .emby-tab-button { font-size: 15px; }
+  .page { padding-top: 0; position: relative; }
+  .homeSectionsContainer { position: relative; z-index: 6; padding-bottom: 40px; margin-top: calc(var(--slideshow-content-top, 65vh) - 70px); }
+  .verticalSection { margin-bottom: 18px; }
+  .sectionTitleContainer { display: flex; align-items: baseline; gap: 12px; padding: 0 var(--jc-pad); margin: 0 0 6px; }
+  .sectionTitle { margin: 0; }
+  .emby-scroller { overflow-x: auto; padding: 18px var(--jc-pad) 34px; scrollbar-width: none; }
+  .itemsContainer { display: flex; gap: 20px; width: max-content; }
+  .card { width: 176px; flex: none; }
+  .card.overflowBackdropCard { width: 342px; }
+  .cardBox { position: relative; }
+  .cardScalable { position: relative; }
+  .cardPadder { display: block; padding-bottom: 150%; }
+  .overflowBackdropCard .cardPadder { padding-bottom: 56.25%; }
+  .cardContent { position: absolute; inset: 0; }
+  .cardImageContainer { position: absolute; inset: 0; overflow: hidden; }
+  .cardImage { width: 100%; height: 100%; background-size: cover; background-position: center; }
+  .cardOverlayContainer { position: absolute; inset: 0; z-index: 2; opacity: 0; transition: opacity 280ms; display: grid; place-items: center; }
+  .card:hover .cardOverlayContainer { opacity: 1; }
+  .cardOverlayFab-primary { display: grid; place-items: center; font-size: 22px; }
+  .cardIndicators { position: absolute; top: 8px; right: 8px; z-index: 3; }
+  .indicator { display: grid; place-items: center; padding: 0 7px; font-size: 12px; }
+  .itemProgressBar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; overflow: hidden; }
+  .itemProgressBarForeground { height: 100%; }
+  .cardFooter { padding: 11px 3px 0; }
+  .cardText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+  .backdropContainer { position: fixed; inset: 0; z-index: -1; }
+  .backdropImage { position: absolute; inset: 0; background-size: cover; background-position: center top; opacity: 0.5; }
+  .demo { padding: 0 var(--jc-pad) 60px; display: grid; gap: 34px; position: relative; z-index: 6; }
+  .demo h3 { margin: 0 0 14px; }
+  .demo-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .detail { display: flex; gap: 32px; align-items: flex-end; flex-wrap: wrap; }
+  .detail .detailImageContainer { width: 176px; position: relative; }
+  .detail .cardImageContainer { position: relative; aspect-ratio: 2 / 3; }
+  .detail .cardImageContainer .cardImage { position: absolute; inset: 0; }
+  .detail h1 { margin: 0 0 8px; font-size: 44px; }
+  .mediaInfoItem { display: inline-block; margin-right: 12px; }
+  .mediaInfoOfficialRating { padding: 0 6px; }
+  .overview { max-width: 60ch; margin: 12px 0 18px; }
+  .emby-button { padding: 0 18px; height: 40px; display: inline-flex; align-items: center; gap: 8px; }
+  .paper-icon-button-light { width: 40px; height: 40px; display: inline-grid; place-items: center; }
+  .emby-input, .emby-select { height: 44px; padding: 0 14px; font: inherit; }
+  .dialog { position: relative; width: 320px; padding: 8px; }
+  .actionSheetMenuItem { display: flex; align-items: center; gap: 10px; padding: 10px 14px; width: calc(100% - 12px); text-align: left; }
+  .actionSheetTitle { margin: 6px 14px 4px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* --- Platzhalter fuer das Basis-CSS der Media Bar (nachgebaut aus slideshowpure.css, kein Original) --- */
+  :root { --slideshow-height: 100vh; --slideshow-content-top: 65vh; }
+  #slides-container { position: absolute; top: 0; left: 0; width: 100%; height: var(--slideshow-height); overflow: hidden; }
+  .slide { position: absolute; inset: 0; opacity: 0; z-index: 0; }
+  .slide.active { opacity: 1; z-index: 1; }
+  .backdrop-container { position: absolute; inset: 0; }
+  .backdrop { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; display: block; background-size: cover; background-position: center 20%; }
+  .backdrop-overlay, .gradient-overlay { position: absolute; inset: 0; z-index: 4; }
+  .slide-content { position: absolute; left: var(--slideshow-gutter, 4vw); bottom: calc(100% - var(--slideshow-content-top) + 80px); width: min(46%, 46rem); z-index: 5; color: #fff; display: flex; flex-direction: column; gap: 0.9rem; }
+  .logo-container { display: flex; align-items: flex-end; height: 22vh; }
+  .logo { font-size: 4rem; font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+  .info-container, .misc-info, .genre { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .age-rating { padding: 0 6px; font-size: 12px; }
+  .community-rating-star { color: #f2b01e; }
+  .plot { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .button-container { display: flex; gap: 15px; margin-top: 0.4rem; }
+  .play-button, .detail-button, .favorite-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .dots-container { position: absolute; right: 3%; bottom: calc(100% - var(--slideshow-content-top) + 20px); z-index: 5; display: flex; }
+  .dot { display: inline-block; }
+  #slides-container .arrow { position: absolute; top: 40%; z-index: 7; display: grid; place-items: center; opacity: 0; transition: opacity 280ms; }
+  #slides-container:hover .arrow { opacity: 1; }
+  .left-arrow { left: 20px; } .right-arrow { right: 20px; }
+  .volume-toggle { position: absolute; top: 5rem; right: 3.5rem; z-index: 10; opacity: 0.6; }
+</style>
+</head>
+<body>
+
+<div class="backgroundContainer withBackdrop"></div>
+<div class="backdropContainer"><div class="backdropImage" id="pageBackdrop"></div></div>
+
+<div class="skinHeader semiTransparent">
+  <div class="headerTop">
+    <div class="headerLeft">
+      <button class="headerButton paper-icon-button-light" title="Menue">&#9776;</button>
+      <h3 class="pageTitle pageTitleWithLogo">Jellyfin</h3>
+    </div>
+    <div class="headerTabs sectionTabs">
+      <div class="emby-tabs-slider">
+        <button class="emby-tab-button emby-tab-button-active">Startseite</button>
+        <button class="emby-tab-button">Favoriten</button>
+      </div>
+    </div>
+    <div class="headerRight">
+      <button class="headerButton paper-icon-button-light" title="Suche">&#9906;</button>
+      <button class="headerButton paper-icon-button-light" title="Benutzer">&#9786;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Media Bar: das Plugin haengt sie direkt an <body> (nicht in die Seite) -->
+  <div id="slides-container" class="layout-marquee" style="display:block">
+    <div class="slide active" data-item-id="a">
+      <div class="backdrop-container">
+        <div class="backdrop high-quality" id="bar-backdrop"></div>
+        <div class="backdrop-overlay"></div>
+      </div>
+      <div class="gradient-overlay"></div>
+      <div class="slide-content">
+        <div class="logo-container"><div class="logo high-quality">STARFALL</div></div>
+        <div class="info-container">
+          <div class="misc-info">
+            <span class="star-rating-container"><span class="community-rating-star">&#9733;</span> 8,4</span>
+            <span class="date">2024</span>
+            <span class="age-rating mediaInfoOfficialRating">FSK 12</span>
+            <span class="runTime">2 Std. 8 Min.</span>
+          </div>
+        </div>
+        <div class="genre">Science-Fiction &middot; Drama &middot; Abenteuer</div>
+        <div class="plot-container"><div class="plot">Eine Crew an der Grenze des bekannten Raums findet ein Signal, das niemand hier sein duerfte, und muss entscheiden, wem sie noch trauen kann.</div></div>
+        <div class="button-container">
+          <button class="detailButton btnPlay play-button"><span class="play-text">&#9654; Abspielen</span></button>
+          <button class="detailButton detail-button" title="Details">i</button>
+          <button class="favorite-button" title="Favorit">&#9825;</button>
+        </div>
+      </div>
+    </div>
+    <div class="dots-container"><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <button class="arrow left-arrow">&#8249;</button>
+    <button class="arrow right-arrow">&#8250;</button>
+    <button class="volume-toggle">&#9835;</button>
+  </div>
+
+<div class="page homePage">
+  <div class="homeSectionsContainer">
+    <div class="verticalSection section0">
+      <div class="sectionTitleContainer sectionTitleContainer-cards"><h2 class="sectionTitle sectionTitle-cards">Weiterschauen</h2></div>
+      <div class="emby-scroller"><div class="itemsContainer scrollSlider" id="row1"></div></div>
+    </div>
+    <div class="verticalSection section1">
+      <div class="sectionTitleContainer sectionTitleContainer-cards"><h2 class="sectionTitle sectionTitle-cards">Neu hinzugefuegt: Filme</h2><a class="sectionTitleTextButton" href="#">Alle anzeigen &rsaquo;</a></div>
+      <div class="emby-scroller"><div class="itemsContainer scrollSlider" id="row2"></div></div>
+    </div>
+  </div>
+
+  <div class="demo">
+    <section>
+      <h3 class="sectionTitle">Detailseite (Ausschnitt)</h3>
+      <div class="detail">
+        <div class="detailImageContainer"><div class="cardImageContainer"><div class="cardImage" id="detailPoster"></div></div></div>
+        <div class="detailPageContent">
+          <h1 class="itemName">Starfall Station</h1>
+          <div class="itemMiscInfo"><span class="mediaInfoItem">2024</span><span class="mediaInfoItem mediaInfoOfficialRating">FSK 12</span><span class="mediaInfoItem starRatingContainer"><span class="starIcon starRating">&#9733;</span> 8,4</span><span class="mediaInfoItem">2 Std. 8 Min.</span></div>
+          <p class="overview">Eine Crew an der Grenze des bekannten Raums findet ein Signal, das niemand hier sein duerfte.</p>
+          <div class="demo-row mainDetailButtons">
+            <button class="button-flat btnPlay detailButton emby-button">&#9654;</button>
+            <button class="button-flat btnPlayTrailer detailButton emby-button">&#127916;</button>
+            <button class="paper-icon-button-light detailButton btnToggleFavorite" title="Favorit">&#9825;</button>
+            <button class="paper-icon-button-light detailButton" title="Gesehen">&#10003;</button>
+            <button class="paper-icon-button-light" title="Mehr">&#8943;</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h3 class="sectionTitle">Formular und Dialog</h3>
+      <div class="demo-row" style="align-items: flex-start">
+        <div style="display:grid;gap:12px;width:300px">
+          <input class="emby-input" placeholder="Benutzername" value="demo" />
+          <input class="emby-input" type="password" placeholder="Passwort" />
+          <select class="emby-select"><option>Deutsch</option><option>English</option></select>
+          <div class="demo-row"><button class="emby-button raised button-submit">Anmelden</button><button class="emby-button raised">Abbrechen</button></div>
+        </div>
+        <div class="dialog actionSheet">
+          <div class="actionSheetContent">
+            <h2 class="actionSheetTitle">Mehr</h2>
+            <button class="actionSheetMenuItem"><span class="actionSheetItemText">Als gesehen markieren</span></button>
+            <button class="actionSheetMenuItem"><span class="actionSheetItemText">Zur Wiedergabeliste</span></button>
+            <button class="actionSheetMenuItem"><span class="actionSheetItemText">Metadaten bearbeiten</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  // Platzhalter-Bilder (ohne Netz): Verlaeufe als SVG
+  const svg = (w, h, hue, label) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 55% 34%)"/><stop offset="1" stop-color="hsl(${(hue + 50) % 360} 60% 14%)"/></linearGradient>` +
+    `<radialGradient id="r" cx="0.7" cy="0.3" r="0.7"><stop offset="0" stop-color="hsl(${(hue + 20) % 360} 80% 60%)" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#g)"/><rect width="${w}" height="${h}" fill="url(#r)"/>` +
+    `<path d="M0 ${h * 0.78} L${w * 0.22} ${h * 0.56} L${w * 0.4} ${h * 0.72} L${w * 0.62} ${h * 0.5} L${w * 0.82} ${h * 0.7} L${w} ${h * 0.6} L${w} ${h} L0 ${h}Z" fill="#000" fill-opacity=".38"/>` +
+    (label ? `<text x="${w * 0.08}" y="${h * 0.9}" font-family="Segoe UI, sans-serif" font-weight="800" font-size="${Math.round(w / 9)}" fill="#fff" fill-opacity=".85">${label}</text>` : '') + `</svg>`);
+  const titles = ['Starfall', 'Nachtzug', 'Das Meer', 'Letzter Akt', 'Echo', 'Gipfel', 'Nordlicht', 'Fremde Welt', 'Glasstadt'];
+  const card = (i, wide, withProgress, played) => {
+    const hue = (i * 47 + 200) % 360;
+    const el = document.createElement('div');
+    el.className = 'card ' + (wide ? 'overflowBackdropCard' : 'overflowPortraitCard');
+    el.innerHTML =
+      '<div class="cardBox"><div class="cardScalable"><div class="cardPadder"></div>' +
+      '<div class="cardContent"><div class="cardImageContainer coveredImage"><div class="cardImage" style="background-image:url(\'' + svg(wide ? 640 : 380, wide ? 360 : 570, hue, titles[i % titles.length]) + '\')"></div></div></div>' +
+      '<div class="cardOverlayContainer"><button class="cardOverlayFab-primary">&#9654;</button></div>' +
+      (played ? '<div class="cardIndicators"><div class="indicator playedIndicator">&#10003;</div></div>' : '') +
+      (withProgress ? '<div class="itemProgressBar"><div class="itemProgressBarForeground" style="width:' + (25 + (i * 17) % 60) + '%"></div></div>' : '') +
+      '</div><div class="cardFooter"><div class="cardText cardText-first"><bdi>' + titles[i % titles.length] + '</bdi></div><div class="cardText cardText-secondary"><bdi>' + (2015 + i) + '</bdi></div></div></div>';
+    return el;
+  };
+  const row1 = document.getElementById('row1');
+  for (let i = 0; i < 6; i++) row1.append(card(i, true, true, false));
+  const row2 = document.getElementById('row2');
+  for (let i = 0; i < 9; i++) row2.append(card(i + 2, false, false, i === 1 || i === 4));
+  document.getElementById('pageBackdrop').style.backgroundImage = "url('" + svg(1920, 1080, 215, '') + "')";
+  document.getElementById('bar-backdrop').style.backgroundImage = "url('" + svg(1920, 1080, 215, '') + "')";
+  document.getElementById('detailPoster').style.backgroundImage = "url('" + svg(380, 570, 215, 'Starfall') + "')";
+</script>
+</body>
+</html>

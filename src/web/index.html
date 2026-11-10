@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Einstieg der Web-/Handy-Fassung (Browser, Capacitor-Huelle fuer iOS und Android). Dieselbe Oberflaeche wie im Desktop-Programm (src/renderer),
+     aber ohne Electron: window.jc kommt aus jc-web.js und laeuft mit derselben Rueckseite (src/shared/backend.js) direkt in der Seite.
+     Die Content-Security-Policy erlaubt Verbindungen zu beliebigen Servern (die Adresse des eigenen Jellyfin-Servers ist vorher nicht bekannt). -->
+<html lang="de" data-theme="midnight" data-anim="full" data-blur="on" data-titles="on" data-platform="web">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' http: https: data: blob:; style-src 'self'; script-src 'self'; connect-src 'self' http: https:; frame-src https://www.youtube-nocookie.com" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Jellycloud Player</title>
+    <link rel="stylesheet" href="../renderer/css/app.css" />
+    <script src="../shared/media.js"></script>
+    <script src="../shared/accent.js"></script>
+    <script src="../shared/home-rows.js"></script>
+    <script src="../shared/jellyfin.js"></script>
+    <script src="../shared/seerr.js"></script>
+    <script src="../shared/config-core.js"></script>
+    <script src="../shared/backend.js"></script>
+    <script src="jc-web.js"></script>
+    <script type="module" src="../renderer/js/app.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="play-curtain" aria-hidden="true"></div>
+  </body>
+</html>

@@ -1,0 +1,70 @@
+{
+  "name": "jellycloud-player",
+  "productName": "Jellycloud Player",
+  "version": "1.1.6",
+  "description": "Jellycloud Player: Jellyfin-Client fuer Windows im Infuse-Stil mit mpv (Direct Play, HDR10, Dolby Vision, Audio-Passthrough)",
+  "main": "src/main/main.js",
+  "private": true,
+  "author": "Jellycloud Player",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "mock": "node tools/mock-server.js",
+    "icon": "electron tools/make-icon.js",
+    "dist:dir": "electron-builder --win --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "dev.jellycloud.player",
+    "productName": "Jellycloud Player",
+    "copyright": "MIT",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "THIRD-PARTY.txt",
+        "to": "THIRD-PARTY.txt"
+      },
+      {
+        "from": "vendor/mpv",
+        "to": "mpv",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Jellycloud Player",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Jellycloud-Player-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  }
+}

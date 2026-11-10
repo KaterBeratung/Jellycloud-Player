@@ -1,0 +1,44 @@
+# Abhaengigkeiten und Bau-Ausgaben
+node_modules/
+dist/
+out/
+*.log
+
+# Ausgabe der Pruefskripte (Bilder); die Skripte in tools/shots/ gehoeren ins Repo
+/shots/
+
+# Grosse Binaerdateien: Testvideo und mpv (siehe vendor/mpv/README.txt)
+tools/sample/
+vendor/mpv/*
+!vendor/mpv/README.txt
+*.exe
+*.apk
+*.aab
+*.mkv
+
+# Android-App (eigenes Projekt, nicht Teil des Windows-Repos)
+mobile/
+
+# Lokale Konfiguration, Anmeldedaten, Schluessel und Zertifikate
+.env
+.env.*
+/config.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.jks
+*.keystore
+keystore.properties
+local.properties
+.npmrc
+
+# Nur fuer den eigenen Rechner (enthaelt lokalen Benutzerpfad)
+tools/backup.ps1
+
+# Metadaten von Windows und macOS
+Thumbs.db
+Desktop.ini
+.DS_Store

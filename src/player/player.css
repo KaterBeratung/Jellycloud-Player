@@ -1,0 +1,413 @@
+/* Player-Overlay: transparentes Fenster ueber dem mpv-Video.
+   Layout-Regel: Elemente belegen feste, getrennte Zonen (oben Titel, unten Leiste, rechts darueber die Schwebe-Spalte),
+   damit sich nichts ueberlappt oder verdeckt. */
+:root {
+  /* Ausgangswerte (player.js ueberschreibt sie mit den Einstellungen): neutrales Silberweiss, --accent-rgb dunkler fuer durchscheinende Tonungen */
+  --accent-rgb: 147 147 148;
+  --accent: rgb(245 245 247);
+  --accent-fg: rgb(245 245 247);
+  --accent-ink: #12131a;
+  --ease: cubic-bezier(0.22, 0.9, 0.24, 1);
+  --ease-spring: cubic-bezier(0.34, 1.5, 0.5, 1);
+  --dur: 1;
+  --t-fast: calc(140ms * var(--dur));
+  --t-med: calc(280ms * var(--dur));
+  --bar-h: 138px;
+  --top-h: 104px;
+  --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --glass: rgb(16 18 28 / 0.78);
+  color-scheme: dark;
+}
+:root[data-anim='reduced'] { --dur: 0.45; }
+:root[data-anim='off'] { --dur: 0; }
+:root[data-anim='off'] *, :root[data-anim='off'] *::before, :root[data-anim='off'] *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
+:root[data-blur='off'] { --glass: rgb(20 22 32 / 0.96); }
+
+*, *::before, *::after { box-sizing: border-box; }
+a, img, svg, button { -webkit-user-drag: none; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color: #fff; font: 400 14px/1.4 var(--font); -webkit-font-smoothing: antialiased; user-select: none; }
+body.idle, body.idle * { cursor: none !important; }
+button { font: inherit; color: inherit; }
+.ico { display: inline-flex; flex: none; line-height: 0; }
+[hidden] { display: none !important; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+#ui { position: absolute; inset: 0; overflow: hidden; }
+
+/* ---------- Oben: Zurueck + Titel ---------- */
+.top { position: absolute; inset: 0 0 auto 0; height: var(--top-h); padding: 22px 28px 0; display: flex; align-items: flex-start; gap: 16px; background: linear-gradient(rgb(0 0 0 / 0.72), rgb(0 0 0 / 0)); opacity: 0; transform: translateY(-10px); transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); pointer-events: none; }
+.ui-on .top { opacity: 1; transform: none; pointer-events: auto; cursor: default; }
+.round { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.18); background: rgb(255 255 255 / 0.12); display: grid; place-items: center; cursor: pointer; transition: background var(--t-fast), transform var(--t-fast) var(--ease); }
+.round:hover { background: rgb(255 255 255 / 0.24); transform: scale(1.06); }
+.titles { min-width: 0; flex: 1 1 auto; max-width: calc(100% - 100px); padding-top: 1px; }
+/* Eigene Fensterknoepfe (die System-Knoepfe liegen im Hauptfenster unter dem Video) */
+.winctl { flex: none; display: flex; margin: -22px -28px 0 0; align-self: flex-start; }
+.wbtn { width: 48px; height: 36px; border: 0; background: none; display: grid; place-items: center; cursor: pointer; color: rgb(255 255 255 / 0.9); transition: background var(--t-fast); }
+.wbtn:hover { background: rgb(255 255 255 / 0.16); }
+.wbtn.close:hover { background: #c42b1c; color: #fff; }
+.t1 { font: 700 20px/1.25 var(--font-display); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 12px rgb(0 0 0 / 0.6); }
+.t2 { display: flex; align-items: center; gap: 10px; color: rgb(255 255 255 / 0.78); font-weight: 600; margin-top: 2px; min-width: 0; }
+.t2 .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.badges { display: inline-flex; gap: 6px; flex: none; }
+.badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font: 800 10.5px var(--font); letter-spacing: 0.04em; text-transform: uppercase; background: rgb(255 255 255 / 0.16); border: 1px solid rgb(255 255 255 / 0.24); }
+.badge.res { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.badge.hdr { background: rgb(255 255 255 / 0.92); color: #111; border-color: transparent; }
+.badge.dv { background: #111; border-color: rgb(255 255 255 / 0.5); }
+.badge.play { background: rgb(53 208 127 / 0.2); border-color: rgb(53 208 127 / 0.55); color: #6ff0ac; }
+
+/* ---------- Mitte: Puls + Ladeanzeige ---------- */
+.center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.spinner { width: 58px; height: 58px; border-radius: 50%; border: 4px solid rgb(255 255 255 / 0.2); border-top-color: #fff; animation: spin 0.9s linear infinite; opacity: 0; transition: opacity var(--t-med); }
+.busy .spinner { opacity: 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.pulse { position: absolute; width: 84px; height: 84px; border-radius: 50%; background: rgb(0 0 0 / 0.5); display: grid; place-items: center; opacity: 0; transform: scale(0.7); }
+.pulse.go { animation: pulse calc(620ms * var(--dur)) var(--ease) both; }
+@keyframes pulse { 0% { opacity: 0.95; transform: scale(0.7); } 100% { opacity: 0; transform: scale(1.35); } }
+.flash { position: absolute; top: 22%; left: 50%; transform: translate(-50%, -8px); padding: 10px 20px; border-radius: 999px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.14); font-weight: 700; opacity: 0; transition: opacity var(--t-med), transform var(--t-med) var(--ease); pointer-events: none; white-space: nowrap; max-width: 80%; overflow: hidden; text-overflow: ellipsis; }
+.flash.show { opacity: 1; transform: translate(-50%, 0); }
+.status { position: absolute; left: 50%; top: calc(50% + 56px); transform: translateX(-50%); text-align: center; color: rgb(255 255 255 / 0.85); font-weight: 600; text-shadow: 0 2px 10px rgb(0 0 0 / 0.7); max-width: 80%; }
+
+/* ---------- Fehlerkarte ---------- */
+.errcard { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, 86%); padding: 26px 28px; border-radius: 22px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.16); text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; box-shadow: 0 30px 80px rgb(0 0 0 / 0.6); }
+.errcard h3 { margin: 0; font: 700 18px var(--font-display); }
+.errcard p { margin: 0; color: rgb(255 255 255 / 0.78); overflow-wrap: anywhere; }
+
+/* ---------- Unten: Leiste ---------- */
+.bar { position: absolute; inset: auto 0 0 0; height: var(--bar-h); padding: 0 28px 16px; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; background: linear-gradient(rgb(0 0 0 / 0), rgb(0 0 0 / 0.82)); opacity: 0; transform: translateY(12px); transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); pointer-events: none; }
+.ui-on .bar { opacity: 1; transform: none; pointer-events: auto; }
+.seekrow { display: flex; align-items: center; gap: 14px; height: 30px; }
+.time { flex: none; min-width: 56px; font: 600 13px var(--font); font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.9); }
+.time.right { text-align: right; cursor: pointer; }
+.seek { position: relative; flex: 1; height: 30px; cursor: pointer; touch-action: none; }
+.track { position: absolute; left: 0; right: 0; top: 50%; height: 5px; margin-top: -2.5px; border-radius: 5px; background: rgb(255 255 255 / 0.22); overflow: visible; transition: height var(--t-fast) var(--ease), margin-top var(--t-fast) var(--ease); }
+.seek:hover .track, .seek.drag .track { height: 9px; margin-top: -4.5px; }
+.track > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; transform-origin: left; width: 100%; transform: scaleX(0); }
+.track .buf { background: rgb(255 255 255 / 0.28); }
+.track .played { background: var(--accent); }
+.track .seg { position: absolute; top: 0; bottom: 0; width: auto; background: rgb(255 255 255 / 0.5); border-radius: 3px; transform: none; }
+.track .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: rgb(0 0 0 / 0.55); transform: none; border-radius: 0; }
+.knob { position: absolute; top: 50%; left: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; box-shadow: 0 2px 10px rgb(0 0 0 / 0.55); transform: scale(0); transition: transform var(--t-med) var(--ease-spring); pointer-events: none; }
+.seek:hover .knob, .seek.drag .knob, .seek:focus-visible .knob { transform: scale(1); }
+.preview { position: absolute; bottom: 30px; left: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; transform: translateX(-50%); pointer-events: none; opacity: 0; transition: opacity var(--t-fast); }
+.seek:hover .preview, .seek.drag .preview { opacity: 1; }
+.pv-img { border-radius: 10px; overflow: hidden; background-color: #000; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.85), 0 14px 34px rgb(0 0 0 / 0.6); background-repeat: no-repeat; }
+.pv-time { padding: 3px 10px; border-radius: 999px; background: var(--glass); font: 700 12px var(--font); font-variant-numeric: tabular-nums; }
+.pv-chap { max-width: 220px; color: rgb(255 255 255 / 0.85); font-size: 12px; font-weight: 600; text-shadow: 0 1px 6px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ctrls { display: flex; align-items: center; gap: 4px; height: 52px; }
+.ctrls .sp { flex: 1; }
+.ibtn { position: relative; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; cursor: pointer; color: rgb(255 255 255 / 0.92); transition: background var(--t-fast), transform var(--t-fast) var(--ease), color var(--t-fast); }
+.ibtn:hover { background: rgb(255 255 255 / 0.16); transform: translateY(-1px); }
+.ibtn:active { transform: scale(0.94); }
+.ibtn.on { color: var(--accent-fg, var(--accent)); }
+.ibtn.big { width: 52px; height: 52px; background: #fff; color: #111; }
+.ibtn.big:hover { background: #fff; transform: scale(1.07); }
+.ibtn[disabled] { opacity: 0.35; pointer-events: none; }
+.vol { display: flex; align-items: center; }
+.vol-slider { width: 0; opacity: 0; overflow: hidden; transition: width var(--t-med) var(--ease), opacity var(--t-med); }
+.vol:hover .vol-slider, .vol:focus-within .vol-slider { width: 100px; opacity: 1; margin: 0 8px 0 2px; }
+.vol-slider input { -webkit-appearance: none; appearance: none; width: 100px; height: 24px; background: transparent; cursor: pointer; }
+.vol-slider input::-webkit-slider-runnable-track { height: 5px; border-radius: 5px; background: linear-gradient(to right, #fff var(--fill, 70%), rgb(255 255 255 / 0.28) var(--fill, 70%)); }
+.vol-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4.5px; border-radius: 50%; background: #fff; box-shadow: 0 1px 6px rgb(0 0 0 / 0.5); }
+.chip { height: 34px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 0.12); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; transition: background var(--t-fast); }
+.chip:hover { background: rgb(255 255 255 / 0.24); }
+
+/* ---------- Schwebe-Spalte: Skip + Naechste Folge (immer ueber der Leiste) ---------- */
+.floaters { position: absolute; right: 28px; bottom: 36px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; transition: bottom var(--t-med) var(--ease); pointer-events: none; z-index: 3; }
+.ui-on .floaters { bottom: calc(var(--bar-h) + 14px); }
+.floaters > * { pointer-events: auto; }
+.skip { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.25); background: var(--glass); font: 700 15px var(--font); cursor: pointer; box-shadow: 0 14px 36px rgb(0 0 0 / 0.5); animation: slide-in calc(420ms * var(--dur)) var(--ease) backwards; transition: background var(--t-fast), transform var(--t-fast) var(--ease); }
+/* "backwards" statt "both": Mit "both" haelt die Animation ihren Endwert (transform: none) fest und ueberschreibt die Hebung beim Zeigen, der Knopf hob sich nie an */
+.skip:hover { background: #fff; color: #111; transform: translateY(-2px); }
+.nextcard { display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 16px; width: 340px; max-width: calc(100vw - 56px); border-radius: 18px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.18); box-shadow: 0 18px 44px rgb(0 0 0 / 0.55); animation: slide-in calc(420ms * var(--dur)) var(--ease) both; }
+.nextcard .txt { min-width: 0; flex: 1; }
+.nextcard .k { color: var(--accent-fg, var(--accent)); font: 800 11px var(--font); text-transform: uppercase; letter-spacing: 0.08em; }
+.nextcard .n { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nextcard .go { flex: none; height: 38px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Panels (Audio & Untertitel, Menues) ---------- */
+.pop { position: absolute; bottom: calc(var(--bar-h) + 6px); z-index: 8; max-height: calc(100% - var(--bar-h) - var(--top-h) - 24px); min-width: 240px; max-width: calc(100% - 32px); overflow-y: auto; padding: 8px; border-radius: 18px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.16); box-shadow: 0 24px 60px rgb(0 0 0 / 0.6); opacity: 0; transform: translateY(10px) scale(0.97); transform-origin: bottom center; transition: opacity var(--t-fast), transform var(--t-med) var(--ease-spring); }
+.pop.open { opacity: 1; transform: none; }
+.pop::-webkit-scrollbar { width: 8px; }
+.pop::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.25); border-radius: 8px; }
+.pop.cols { display: flex; gap: 6px; min-width: 560px; padding: 10px; }
+.pop .col { flex: 1; min-width: 0; }
+.pop h4 { margin: 8px 12px 6px; color: rgb(255 255 255 / 0.55); font: 800 11px var(--font); text-transform: uppercase; letter-spacing: 0.09em; }
+.opt { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 12px 9px 8px; border: 0; border-radius: 12px; background: none; text-align: left; cursor: pointer; transition: background var(--t-fast); }
+.opt:hover, .opt:focus-visible { background: rgb(255 255 255 / 0.14); }
+.opt .ck { width: 18px; flex: none; color: var(--accent-fg, var(--accent)); }
+.opt .tx { min-width: 0; display: flex; flex-direction: column; }
+.opt .lb { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .sb { color: rgb(255 255 255 / 0.55); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt.sel .lb { color: var(--accent-fg, var(--accent)); }
+.opt .rt { margin-left: auto; color: rgb(255 255 255 / 0.55); font-variant-numeric: tabular-nums; font-size: 12px; flex: none; padding-left: 10px; }
+.stepper { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; }
+.stepper .lbl { color: rgb(255 255 255 / 0.7); font-weight: 600; }
+.stepper .ctl { display: flex; align-items: center; gap: 6px; }
+.stepper button { width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.14); cursor: pointer; font-weight: 800; }
+.stepper button:hover { background: rgb(255 255 255 / 0.28); }
+.stepper output { min-width: 62px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+/* ---------- Technik-Info ---------- */
+.info { position: absolute; top: calc(var(--top-h) - 12px); left: 28px; width: 344px; max-height: calc(100% - var(--top-h) - var(--bar-h) - 16px); overflow-y: auto; padding: 14px 16px; border-radius: 18px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.16); box-shadow: 0 24px 60px rgb(0 0 0 / 0.55); z-index: 4; animation: slide-in calc(380ms * var(--dur)) var(--ease) both; }
+.info h4 { margin: 14px 0 6px; padding-bottom: 5px; border-bottom: 1px solid rgb(255 255 255 / 0.14); color: rgb(255 255 255 / 0.66); font: 800 11px var(--font); text-transform: uppercase; letter-spacing: 0.1em; }
+.info h4:first-child { margin-top: 0; }
+.info dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+.info dt { color: rgb(255 255 255 / 0.55); }
+.info dd { margin: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.info::-webkit-scrollbar { width: 6px; }
+.info::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.25); border-radius: 6px; }
+/* ==========================================================================
+   Liquid Glass: mehrschichtiges Milchglas mit Lichtkante, starker Unschaerfe und Saettigung.
+   Gilt fuer alle schwebenden Flaechen des Players (Panels, Info, Karten, Hinweise).
+   ========================================================================== */
+:root {
+  --lg-fill: rgb(26 28 44 / 0.38);
+  --lg-edge: rgb(255 255 255 / 0.2);
+  --lg-edge-top: rgb(255 255 255 / 0.6);
+}
+:root[data-blur='off'] { --lg-fill: rgb(30 32 46 / 0.97); }
+.pop, .info, .nextcard, .flash, .errcard, .skip, .pv-time {
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0.08) 30%, rgb(255 255 255 / 0.02) 58%, rgb(255 255 255 / 0.16) 100%),
+    var(--lg-fill);
+ 
+  border: 1px solid var(--lg-edge);
+  box-shadow:
+    inset 0 1px 0 var(--lg-edge-top),
+    inset 0 -1px 0 rgb(255 255 255 / 0.1),
+    inset 1px 0 0 rgb(255 255 255 / 0.14),
+    inset -1px 0 0 rgb(255 255 255 / 0.06),
+    0 30px 70px -18px rgb(0 0 0 / 0.65),
+    0 4px 14px rgb(0 0 0 / 0.25);
+}
+.pop { padding: 10px; border-radius: 30px; min-width: 260px; transform: translateY(14px) scale(0.92); filter: blur(6px); transition: opacity var(--t-fast), transform calc(420ms * var(--dur)) var(--ease-spring), filter var(--t-med) var(--ease); }
+.pop.open { transform: none; filter: none; }
+.pop.cols { gap: 8px; padding: 12px; }
+.pop .col + .col { position: relative; padding-left: 8px; }
+.pop .col + .col::before { content: ''; position: absolute; left: -4px; top: 10px; bottom: 10px; width: 1px; background: linear-gradient(transparent, rgb(255 255 255 / 0.22), transparent); }
+.pop h4 { margin: 8px 14px 8px; color: rgb(255 255 255 / 0.6); font: 700 11px var(--font); letter-spacing: 0.1em; }
+.opt { gap: 10px; padding: 10px 14px 10px 10px; border-radius: 20px; transition: background var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast) var(--ease); }
+.opt:hover, .opt:focus-visible { background: rgb(255 255 255 / 0.16); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3); transform: none; }
+.opt:active { transform: scale(0.98); }
+.opt .ck { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgb(255 255 255 / 0.1); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18); }
+.opt .ck:empty { background: none; box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.22); }
+.opt.sel { background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.42), rgb(var(--accent-rgb) / 0.22)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), inset 0 0 0 1px rgb(var(--accent-rgb) / 0.55), 0 8px 22px -10px rgb(var(--accent-rgb) / 0.8); }
+.opt.sel .ck { background: var(--accent); color: var(--accent-ink); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 2px 8px rgb(0 0 0 / 0.3); }
+.opt.sel .lb { color: #fff; }
+.opt .lb { font-weight: 650; }
+.opt .sb { color: rgb(255 255 255 / 0.62); }
+.stepper { padding: 8px 10px 8px 14px; border-radius: 20px; background: rgb(255 255 255 / 0.06); margin-top: 6px; }
+.stepper .lbl { color: rgb(255 255 255 / 0.72); font-weight: 650; white-space: nowrap; }
+.stepper button { width: 32px; height: 32px; font-size: 17px; line-height: 1; background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.1)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 2px 6px rgb(0 0 0 / 0.25); transition: transform var(--t-fast) var(--ease-spring), background var(--t-fast); }
+.stepper button:hover { background: linear-gradient(180deg, rgb(255 255 255 / 0.38), rgb(255 255 255 / 0.16)); transform: scale(1.08); }
+.stepper button:active { transform: scale(0.92); }
+.stepper output { min-width: 60px; }
+.round, .ibtn.big, .chip { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 6px 18px rgb(0 0 0 / 0.3); }
+.round { background: linear-gradient(180deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.1)); border-color: rgb(255 255 255 / 0.24); }
+.chip { background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.1)); }
+.nextcard, .skip, .errcard, .info { border-radius: 26px; }
+.skip { border-radius: 999px; }
+.nextcard .go { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 8px 20px -6px rgb(var(--accent-rgb) / 0.8); }
+.skip:hover { background: linear-gradient(180deg, #fff, #e9e9f2); color: #111; }
+.pv-time { padding: 4px 12px; }
+@media (max-width: 760px) { .pop.cols { min-width: 0; flex-direction: column; } .info { width: min(344px, calc(100% - 56px)); } }
+/* Panels und Info teilen sich nie den Platz: ist ein Panel offen, tritt die Info zurueck. */
+.pop-open .info { animation: none; opacity: 0; visibility: hidden; pointer-events: none; }
+
+/* ==========================================================================
+   Passt ohne Scrollen: Info zweispaltig, bei Platzmangel schrittweise verdichtet
+   (compact -> minimal), Spurlisten bei vielen Eintraegen zweispaltig (compact -> dense).
+   Scrollen (overflow-y: auto) bleibt nur der letzte Notanker.
+   ========================================================================== */
+.info { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; width: min(640px, calc(100% - 56px)); padding: 16px 20px 18px; font-size: 13px; }
+.info .icol { min-width: 0; }
+.info section + section { margin-top: 12px; }
+.info h4, .info h4:first-child { margin: 0 0 7px; }
+.info dl { gap: 4px 14px; }
+.info dd { min-width: 0; }
+.info.compact { padding: 11px 16px 12px; font-size: 12px; gap: 0 22px; }
+.info.compact section + section { margin-top: 8px; }
+.info.compact h4 { margin-bottom: 4px; padding-bottom: 3px; }
+.info.compact dl { gap: 1px 12px; }
+.info.compact .minor { display: none; }
+.info.minimal { padding: 9px 14px; }
+.info.minimal h4 { display: none; }
+.info.minimal section + section { margin-top: 5px; }
+@media (max-width: 760px) { .info { grid-template-columns: 1fr; } }
+@media (max-height: 340px) { .info { display: none; } }
+
+/* ==========================================================================
+   Liquid Glass, Teil 2: Steuerleiste als Glas-Kapseln, Fensterknoepfe, Seekbar
+   ========================================================================== */
+:root { --bar-h: 150px; }
+.ctrls { height: 62px; align-items: center; }
+.cluster {
+  display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 999px;
+  background: linear-gradient(150deg, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0.08) 30%, rgb(255 255 255 / 0.02) 58%, rgb(255 255 255 / 0.16) 100%), var(--lg-fill);
+  border: 1px solid var(--lg-edge);
+  box-shadow: inset 0 1px 0 var(--lg-edge-top), inset 0 -1px 0 rgb(255 255 255 / 0.1), 0 18px 40px -14px rgb(0 0 0 / 0.65), 0 3px 10px rgb(0 0 0 / 0.25);
+}
+.cluster .ibtn { width: 44px; height: 44px; }
+.cluster .ibtn.big { width: 50px; height: 50px; background: linear-gradient(180deg, #ffffff, #e4e7f2); box-shadow: inset 0 1px 0 #fff, 0 6px 16px rgb(0 0 0 / 0.35); }
+.cluster .ibtn.big:hover { background: linear-gradient(180deg, #ffffff, #eef0f8); }
+.cluster .ibtn:not(.big):hover { background: rgb(255 255 255 / 0.2); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); transform: none; }
+.cluster .ibtn.on { background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.45), rgb(var(--accent-rgb) / 0.22)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5); color: #fff; }
+.cluster .chip { background: none; box-shadow: none; height: 40px; min-width: 46px; }
+.cluster .chip:hover { background: rgb(255 255 255 / 0.2); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); }
+.cluster .ico svg { filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35)); }
+.vol-slider input::-webkit-slider-thumb { background: linear-gradient(180deg, #fff, #e4e7f2); box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgb(0 0 0 / 0.5); }
+
+.winctl { margin: -2px -10px 0 0; padding: 3px; gap: 2px; border-radius: 999px; align-self: flex-start;
+  background: linear-gradient(150deg, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0.08) 30%, rgb(255 255 255 / 0.02) 58%, rgb(255 255 255 / 0.16) 100%), var(--lg-fill);
+  border: 1px solid var(--lg-edge);
+  box-shadow: inset 0 1px 0 var(--lg-edge-top), 0 12px 28px -10px rgb(0 0 0 / 0.6); }
+.wbtn { width: 40px; height: 32px; border-radius: 999px; }
+.wbtn:hover { background: rgb(255 255 255 / 0.22); }
+.wbtn.close:hover { background: #e5484d; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); }
+
+.track { background: rgb(255 255 255 / 0.2); box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.08); }
+.track .played { background: var(--lg-accent, var(--accent)); box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.7); }
+.knob { background: linear-gradient(180deg, #ffffff, #e4e7f2); box-shadow: inset 0 1px 0 #fff, 0 3px 10px rgb(0 0 0 / 0.55); }
+.badge { background: linear-gradient(150deg, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.06) 50%, rgb(255 255 255 / 0.14)), rgb(18 20 32 / 0.45); border-color: rgb(255 255 255 / 0.3); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); }
+.badge.res { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); }
+.badge.hdr { background: linear-gradient(180deg, #fff, #dfe2ee); color: #11131a; }
+.badge.dv { background: linear-gradient(180deg, #2a2a30, #0d0d10); }
+.badge.play { background: linear-gradient(180deg, rgb(53 208 127 / 0.34), rgb(53 208 127 / 0.14)); }
+.nextcard .go { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); }
+.spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.5)); }
+
+.pop .opts { display: flex; flex-direction: column; }
+.pop .opts[hidden] { display: none; }
+/* "Weitere Sprachen": klappt die uebrigen Untertitel-Sprachen unter den bevorzugten auf */
+.opt.more-toggle { margin-top: 2px; }
+.opt.more-toggle .ck { background: none; box-shadow: none; color: rgb(255 255 255 / 0.7); }
+.opt.more-toggle .ck svg { transition: transform var(--t-fast) var(--ease); }
+.opt.more-toggle.open .ck svg { transform: rotate(180deg); }
+.opt.more-toggle .lb { color: rgb(255 255 255 / 0.72); font-weight: 600; }
+.pop.compact { padding: 7px; }
+.pop.compact h4 { margin: 4px 12px 4px; }
+.pop.compact .opt { padding: 6px 12px 6px 8px; border-radius: 16px; }
+.pop.compact .opt .sb { display: none; }
+.pop.compact .stepper { padding: 4px 8px 4px 12px; margin-top: 3px; }
+.pop.tight { padding: 5px; }
+.pop.tight h4 { margin: 2px 10px; }
+.pop.tight .opt { padding: 3px 10px 3px 6px; gap: 8px; font-size: 13px; border-radius: 14px; }
+.pop.tight .opt .ck { width: 18px; height: 18px; }
+.pop.tight .stepper { padding: 2px 6px 2px 10px; margin-top: 2px; }
+.pop.tight .stepper button { width: 26px; height: 26px; font-size: 15px; }
+.pop.dense .opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6px; }
+.pop.dense:not(.cols) { min-width: min(560px, calc(100% - 32px)); }
+.pop.dense.cols { min-width: min(940px, calc(100% - 32px)); }
+
+/* ==========================================================================
+   Schliessen: sofortige Rueckmeldung (Steuerung weg, Ladekreis), solange der Player beendet wird.
+   Hinweis zur Leistung: Dieses Fenster ist durchsichtig und liegt ueber dem mpv-Fenster. Ein backdrop-filter kann nur Inhalt
+   derselben Seite verwischen, nie das Video dahinter; er sah daher gleich aus, kostete aber bei jedem Bild GPU-Zeit. Deshalb gibt es keinen.
+   ========================================================================== */
+.closing .top, .closing .bar, .closing .floaters, .closing .pop, .closing .info, .closing .flash, .closing .errcard { opacity: 0 !important; pointer-events: none !important; transition: opacity 90ms linear; }
+.closing .status { opacity: 0; }.cluster .ibtn.lim:not(.on) { color: var(--accent-fg, var(--accent)); }
+.pop-note { margin: 2px 12px 8px; padding: 8px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.1); color: rgb(255 255 255 / 0.85); font-size: 12.5px; line-height: 1.35; max-width: 280px; }
+
+/* ==========================================================================
+   Pausenbildschirm: nach einigen Sekunden Pause ohne Bedienung. Ein dunkler Verlauf von links (der Text liegt immer auf Dunkel, egal wie hell das angehaltene Bild ist),
+   rechts bleibt das Bild stehen. Logo oder Titel, Folge, Angaben, Beschreibung, Fortschritt mit "Endet um ..." und ein Knopf zum Weiterschauen.
+   Nur Verlaeufe, kein backdrop-filter (siehe Hinweis oben: er koennte das Video dahinter nicht verwischen).
+   ========================================================================== */
+.pause { position: absolute; inset: 0; z-index: 0; display: flex; align-items: center; padding: 0 clamp(32px, 7vw, 128px); pointer-events: none; opacity: 0;
+  background:
+    radial-gradient(70% 60% at 6% 62%, rgb(var(--accent-rgb) / 0.14), transparent 70%),
+    linear-gradient(0deg, rgb(0 0 0 / 0.6), rgb(0 0 0 / 0) 38%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0) 26%),
+    linear-gradient(90deg, rgb(3 4 9 / 0.92) 0%, rgb(3 4 9 / 0.8) 34%, rgb(3 4 9 / 0.42) 62%, rgb(3 4 9 / 0.14) 100%);
+  transition: opacity calc(650ms * var(--dur)) var(--ease); }
+.pause.in { opacity: 1; }
+.pause-card { width: min(640px, 48vw); max-height: 100%; padding: 56px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.pause-card > * { max-width: 100%; }
+/* Die Teile gleiten gestaffelt von unten ein (nur beim Einblenden; beim Ausblenden bleibt alles stehen und der Verlauf blendet als Ganzes aus) */
+.pause.in .pause-card > * { animation: pause-rise calc(700ms * var(--dur)) var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms * var(--dur)); }
+@keyframes pause-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+.pause-tag { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 14px 0 11px; border-radius: 999px; background: rgb(255 255 255 / 0.12); border: 1px solid rgb(255 255 255 / 0.22); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28); font: 800 11px var(--font); letter-spacing: 0.16em; text-transform: uppercase; color: rgb(255 255 255 / 0.92); }
+.pause-tag .ico { color: var(--accent-fg, var(--accent)); }
+.pause-logo { display: block; max-width: min(480px, 100%); max-height: clamp(64px, 17vh, 176px); object-fit: contain; object-position: left center; filter: drop-shadow(0 8px 26px rgb(0 0 0 / 0.65)); }
+.pause-title { margin: 0; padding-bottom: 0.1em; font: 800 clamp(34px, 5.2vw, 76px)/1.08 var(--font-display); letter-spacing: -0.025em; text-shadow: 0 6px 30px rgb(0 0 0 / 0.6); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
+.pause-ep { display: flex; flex-direction: column; gap: 3px; }
+.pause-ep .k { color: var(--accent-fg, var(--accent)); font: 800 12px var(--font); letter-spacing: 0.14em; text-transform: uppercase; }
+.pause-ep .n { font: 700 clamp(18px, 1.9vw, 26px)/1.25 var(--font-display); letter-spacing: -0.01em; text-shadow: 0 3px 16px rgb(0 0 0 / 0.6); }
+.pause-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; color: rgb(255 255 255 / 0.86); font: 600 15px var(--font); }
+.pause-meta > span:not(.badge) { display: inline-flex; align-items: center; gap: 5px; }
+.pause-rating { height: 22px; padding: 0 7px; border-radius: 6px; border: 1px solid rgb(255 255 255 / 0.5); font: 700 12px var(--font); }
+.pause-score { color: #ffd166; font-weight: 700; }
+.pause-score .ico { color: #ffd166; }
+.pause-ov { margin: 0; max-width: 56ch; color: rgb(255 255 255 / 0.86); font: 400 clamp(15px, 1.35vw, 19px)/1.55 var(--font); text-shadow: 0 2px 14px rgb(0 0 0 / 0.7); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.pause-genres { color: rgb(255 255 255 / 0.62); font: 600 13px var(--font); letter-spacing: 0.02em; }
+.pause-progress { width: min(520px, 100%); display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
+.pause-chapter { color: rgb(255 255 255 / 0.62); font: 600 12.5px var(--font); }
+.pause-bar { height: 5px; border-radius: 5px; background: rgb(255 255 255 / 0.2); box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.07); overflow: hidden; }
+.pause-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--lg-accent, var(--accent)); box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.7); }
+.pause-times { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font: 600 13px var(--font); font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.72); }
+.pause-times .b { display: inline-flex; align-items: baseline; gap: 8px; text-align: right; }
+.pause-times .b b { color: #fff; font-weight: 800; font-size: 14px; }
+.pause-actions { display: flex; align-items: center; gap: 16px; margin-top: 8px; pointer-events: auto; }
+.pause-go { height: 48px; padding: 0 26px 0 20px; border: 0; border-radius: 999px; display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); color: var(--accent-ink); font: 800 16px var(--font); cursor: pointer; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 12px 30px -8px rgb(var(--accent-rgb) / 0.8); transition: transform var(--t-fast) var(--ease), filter var(--t-fast); }
+.pause-go:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); }
+.pause-go:active { transform: scale(0.97); }
+/* Hover ohne Zittern (wie in der Oberflaeche, siehe app.css): Heben sich Knoepfe beim Zeigen an oder werden sie beim Druecken kleiner, verlieren sie am Rand den Hover und ein Klick dort ginge verloren.
+   Ein unsichtbarer Rand in Richtung der Bewegung haelt die Trefferflaeche unter der Maus. */
+:where(.skip, .pause-go, .round, .stepper button) { position: relative; }
+.skip::before, .pause-go::before { content: ''; position: absolute; inset: 0 0 -4px; border-radius: inherit; }
+.ibtn::before, .round::before, .stepper button::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
+/* Countdown an "Ueberspringen" und "Naechste Folge" (wie bei Netflix): hinter dem Text fuellt sich der Knopf von links nach rechts (die Breite setzt player.js, kein CSS-Ablauf: er muss bei
+   "Animationen aus" genauso zaehlen). Eigene Huelle mit Rundung und overflow, damit der unsichtbare Trefferstreifen (::before) des Knopfes nicht abgeschnitten wird. */
+.skip, .nextcard .go { position: relative; isolation: isolate; }
+.cd { display: none; position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.counting > .cd { display: block; }
+.cd > i { position: absolute; inset: 0; background: rgb(255 255 255 / 0.3); transform: scaleX(0); transform-origin: left center; will-change: transform; }
+.nextcard .go .cd > i { background: rgb(255 255 255 / 0.4); }
+.pause-hint { color: rgb(255 255 255 / 0.55); font: 600 12.5px var(--font); }
+.pause-hint kbd { padding: 3px 9px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.28); background: rgb(255 255 255 / 0.1); font: 700 11.5px var(--font); letter-spacing: 0.02em; }
+/* Solange er steht, gehoeren Leiste und Kopf nicht ins Bild (jede Regung holt sie zurueck) */
+.pause-on .top, .pause-on .bar { opacity: 0 !important; pointer-events: none !important; }
+
+/* Kleine Fenster: alles etwas enger, damit nichts abgeschnitten wird */
+@media (max-height: 760px) {
+  .pause-card { gap: 12px; padding: 40px 0; }
+  .pause-ov { -webkit-line-clamp: 3; }
+  .pause-logo { max-height: 112px; }
+  .pause-genres { display: none; }
+}
+@media (max-width: 1100px) {
+  .pause-card { width: min(640px, 64vw); }
+}
+/* ---------- Folgen und Staffeln (Knopf "Folgen", nur bei Serien) ----------
+   Gleiche Glasflaeche wie die anderen Fenster (.pop). Oben die Staffel-Reiter, darunter die Folgen mit Nummer, Bild, Titel und Laenge; die laufende Folge ist in Akzentfarbe
+   hervorgehoben, gesehene tragen einen Haken, angefangene einen Fortschrittsbalken. Die Liste scrollt in sich (das Fenster selbst nicht). */
+.pop.eps { display: flex; flex-direction: column; width: min(560px, calc(100% - 32px)); padding: 12px 12px 10px; overflow: hidden; }
+.pop.eps h4 { flex: none; margin: 4px 10px 8px; }
+.eps-tabs { flex: none; display: flex; gap: 8px; padding: 0 2px 10px; overflow-x: auto; scrollbar-width: none; }
+.eps-tabs::-webkit-scrollbar { display: none; }
+.eps-tab { flex: none; height: 34px; padding: 0 16px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.2); background: rgb(255 255 255 / 0.08); color: rgb(255 255 255 / 0.78); font: 650 13px var(--font); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.eps-tab:hover, .eps-tab:focus-visible { background: rgb(255 255 255 / 0.18); color: #fff; }
+.eps-tab.on { background: #fff; color: #111; border-color: transparent; }
+.eps-list { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+.eps-list::-webkit-scrollbar { width: 8px; }
+.eps-list::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.25); border-radius: 8px; }
+.ep-row { flex: none; display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px 8px 8px; border: 0; border-radius: 18px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--t-fast); }
+.ep-row:hover, .ep-row:focus-visible { background: rgb(255 255 255 / 0.14); }
+.ep-row.cur { background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.34), rgb(var(--accent-rgb) / 0.18)); box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5); }
+.ep-n { flex: none; width: 26px; text-align: center; font: 800 18px var(--font); color: rgb(255 255 255 / 0.6); font-variant-numeric: tabular-nums; }
+.ep-th { position: relative; flex: none; width: 132px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: rgb(255 255 255 / 0.08); display: grid; place-items: center; color: rgb(255 255 255 / 0.5); }
+.ep-th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ep-th.spoiler img { filter: blur(14px) saturate(0.6); transform: scale(1.2); }
+.ep-prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgb(255 255 255 / 0.3); }
+.ep-prog > i { display: block; height: 100%; background: var(--accent); }
+.ep-done { position: absolute; right: 5px; bottom: 5px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: rgb(0 0 0 / 0.65); color: #fff; }
+.ep-tx { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ep-t { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ep-m { color: rgb(255 255 255 / 0.62); font-size: 12.5px; }
+.ep-row.cur .ep-m { color: var(--accent-fg, var(--accent)); font-weight: 700; }
+@media (max-width: 560px) { .ep-th { width: 104px; } .ep-n { width: 20px; } }

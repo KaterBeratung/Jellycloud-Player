@@ -1,0 +1,32 @@
+Jellycloud Player - Hinweise zu mitgelieferter Software / Third-party notices
+==============================================================================
+
+Jellycloud Player selbst steht unter der MIT-Lizenz (siehe "license" in package.json).
+Der Installer enthaelt ausserdem freie Software anderer Autoren. Ihre Lizenzen gelten fuer diese Teile.
+
+mpv (Videoplayer, wird als eigener Prozess gestartet und per Fenster eingebettet)
+  Version:   0.41.0-1374-g48fca90e8 (Windows x86_64), Build vom 2026-11-01
+  Lizenz:    GNU General Public License, Version 2 oder neuer (GPLv2+); Teile unter LGPL.
+             Der Build enthaelt FFmpeg (N-128264-g078390418) und libplacebo (v7.387.0) sowie weitere Bibliotheken
+             unter GPL, LGPL und weiteren freien Lizenzen. Die Lizenztexte stehen in den jeweiligen Quellen.
+  Quellcode: https://github.com/mpv-player/mpv  (Commit 48fca90e8)
+  Build:     https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261101
+             (Bauanleitung und Quellen aller enthaltenen Bibliotheken dieses Builds)
+  Du darfst mpv nach den Bedingungen der GPL weitergeben und aendern. Eine Kopie der GPL: https://www.gnu.org/licenses/gpl-2.0.html
+  Auf Anfrage beim Anbieter dieses Installers wird der Quellcode der enthaltenen Fassung bereitgestellt.
+
+Electron und Chromium (Laufzeit der Oberflaeche)
+  Version:   Electron 45.2.1
+  Lizenz:    MIT (Electron), BSD-artige und weitere Lizenzen (Chromium). Die Lizenztexte liegen im Installationsordner
+             der App: LICENSE und LICENSES.chromium.html.
+  Quelle:    https://www.electronjs.org/  https://www.chromium.org/
+
+-------------------------------------------------------------------------------
+English summary
+
+Jellycloud Player itself is MIT licensed. The installer bundles free software by other authors:
+mpv 0.41.0-1374-g48fca90e8 (GPLv2 or later; this build includes FFmpeg and libplacebo and other GPL/LGPL libraries), source:
+https://github.com/mpv-player/mpv (commit 48fca90e8), build recipe and sources of this build:
+https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261101. Electron 45.2.1 (MIT) with Chromium (BSD-style and other
+licenses); the license texts are in the installation folder (LICENSE, LICENSES.chromium.html).
+The corresponding source of the bundled mpv build is available on request from the provider of this installer.
