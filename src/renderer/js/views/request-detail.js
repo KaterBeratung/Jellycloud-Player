@@ -4,6 +4,8 @@ import { initialsOf, lazyImage } from '../ui.js';
 import { navigate } from '../router.js';
 import { mapImage } from '../api.js';
 
+const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js): 6 gesperrt, 7 geloescht
+
 const TMDB_PATH = /^\/[\w-]{8,64}\.(?:jpg|jpeg|png|webp)$/;
 /** Bild von TMDB ueber das App-Protokoll (nur bekannte Groessen und harmlose Dateinamen, so wie der Hauptprozess sie annimmt). */
 const tmdb = (size, file) => (typeof file === 'string' && TMDB_PATH.test(file) ? { url: mapImage(`jellycloud://tmdb/${size}${file}`), hash: null } : null);
@@ -68,9 +70,9 @@ export function openRequestDetail({ item, request, onStatus = null, returnTo = n
   }
 
   function paintActions() {
-    const open = item.status <= 1 || item.status === 6;
-    if (!open) {
-      actions.replaceChildren(h('span', { class: `rq-status s${item.status}` }, t(`seerr.status.${item.status}`)));
+    // Anfragbar nur ohne Stand oder geloescht (src/shared/seerr-state.js); gesperrte Titel zeigen weder Knopf noch Stand
+    if (!SeerrState.isRequestable(item.status)) {
+      actions.replaceChildren(...(SeerrState.isTaken(item.status) ? [h('span', { class: `rq-status s${item.status}` }, t(`seerr.status.${item.status}`))] : []));
       return;
     }
     const btn = h('button', { class: 'btn primary lg', type: 'button' }, icon('plus', 18), h('span', null, t('seerr.request')));

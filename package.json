@@ -1,7 +1,7 @@
 {
   "name": "jellycloud-player",
   "productName": "Jellycloud Player",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Jellycloud Player: Jellyfin-Client fuer Windows im Infuse-Stil mit mpv (Direct Play, HDR10, Dolby Vision, Audio-Passthrough)",
   "main": "src/main/main.js",
   "private": true,

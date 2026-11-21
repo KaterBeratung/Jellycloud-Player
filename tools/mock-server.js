@@ -490,7 +490,7 @@ const SEERR = {
   sid: 'mock-seerr-sid',
   apiKey: 'mock-seerr-key',
   expired: false, // true: jede Anfrage bekommt 401 (Sitzung abgelaufen)
-  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 7]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt
+  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 6]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt (Seerr 3.5.1: 6 gesperrt, 7 geloescht)
   // Anfragen: { id, status (1 wartet, 2 genehmigt, 3 abgelehnt, 4 gescheitert, 5 abgeschlossen), mediaType, mediaId, seasons, readySeasons,
   // deleted, modifiedBy, requestedBy, createdAt, updatedAt, media }; GET /request liefert sie wie Seerr (neueste zuerst, take/skip/filter/sort)
   requests: [],
@@ -518,7 +518,7 @@ const SEERR = {
     { id: 2468, mediaType: 'movie', title: 'Dialog Anfrage Film', releaseDate: '2018-03-03', posterPath: '/mockposter0006.jpg', overview: 'Wird im Detailfenster angefragt.' }
   ],
   // Trend-Liste (GET /discover/trending?page=n): Filme, Serien und Personen gemischt, zwei Seiten zu je vier Eintraegen. Ein Film steht zweimal drin,
-  // Id 4242 ist verfuegbar, 5151 angefragt, 7004 gesperrt (Stand 7: darf nicht erscheinen). trendingError: Seerr antwortet mit 500.
+  // Id 4242 ist verfuegbar, 5151 angefragt, 7004 gesperrt (Stand 6: darf nicht erscheinen). trendingError: Seerr antwortet mit 500.
   trendingError: false,
   trendingDelay: 0, // ms: Seerr antwortet auf die Trend-Liste erst nach dieser Zeit (das Banner der Startseite wartet nicht darauf)
   trending: [
@@ -595,8 +595,8 @@ const SEERR_SID = SEERR.sid;
 const SEERR_INITIAL = { statuses: [...SEERR.statuses], quota: JSON.stringify(SEERR.quota) };
 
 /**
- * Stand eines Titels wie bei Seerr 3.5.1 aus seinen Anfragen: gestellter Stand (SEERR.media) geht vor; ab 4 (teilweise da, da, gesperrt,
- * geloescht) gilt der feste Stand; sonst die letzte lebende Anfrage (nicht entfernt, nicht abgelehnt): wartet 2, genehmigt 3, gescheitert 3,
+ * Stand eines Titels wie bei Seerr 3.5.1 aus seinen Anfragen: gestellter Stand (SEERR.media) geht vor; 4 bis 6 (teilweise da, da, gesperrt)
+ * gilt fest; sonst (auch geloescht, 7) die letzte lebende Anfrage (nicht entfernt, nicht abgelehnt): wartet 2, genehmigt 3, gescheitert 3,
  * abgeschlossen 5; ohne Anfrage der feste Stand (SEERR.statuses, undefined = unbekannt).
  */
 function seerrMediaStatus(type, id) {
@@ -604,7 +604,7 @@ function seerrMediaStatus(type, id) {
   if (SEERR.media.has(key)) return SEERR.media.get(key);
   const base = SEERR.statuses.get(key);
   const live = SEERR.requests.filter((r) => r.mediaType === type && r.mediaId === id && !r.deleted && r.status !== 3);
-  if (!live.length || base >= 4) return base;
+  if (!live.length || (base >= 4 && base !== 7)) return base; // ein geloeschter Titel (7) ist nach einer neuen Anfrage wieder "angefragt"
   return { 1: 2, 2: 3, 4: 3, 5: 5 }[live[live.length - 1].status] ?? base;
 }
 const withMediaInfo = (r) => {

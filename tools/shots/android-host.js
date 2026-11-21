@@ -30,8 +30,17 @@ module.exports = async (ctx) => {
 
   // Nachbildung dessen, was die echte Android-Bruecke (native-bridge.js) in der Seite bereitstellt: isNativePlatform, getPlatform, nativePromise, PluginHeaders (von Java eingefuegt)
   // und androidBridge. Es gibt hier absichtlich KEIN registerPlugin: das liefert erst die JavaScript-Laufzeit von @capacitor/core, die die App nicht laedt (in 1.1.5 brach die Huelle daran ab).
+  // Ersatz fuer den sicheren Speicher (SecureStorePlugin.java): die "native Datei" liegt in sessionStorage und ueberlebt so ein Neuladen der Seite.
+  // Beim ersten Laden liegt eine Konfiguration wie bei 1.1.6 im localStorage (Uebernahme). __secureFail = 'load' | 'save' laesst das Plugin scheitern.
+  const OLD_CONFIG = JSON.stringify({ version: 9, deviceId: 'seed-device-0001', servers: [], settings: {} });
   const FAKE = `(() => {
-    window.__calls = { play: [], openExternal: [] };
+    window.__calls = { play: [], openExternal: [], secureSave: 0 };
+    const secure = JSON.parse(sessionStorage.getItem('__secure') || '{}');
+    window.__secureStore = secure;
+    if (!sessionStorage.getItem('__seeded')) {
+      localStorage.setItem('jellycloud.config', ${JSON.stringify(OLD_CONFIG)});
+      sessionStorage.setItem('__seeded', '1');
+    }
     window.__playResults = [];
     window.androidBridge = { postMessage: () => {} };
     const http = async (o) => {
@@ -50,13 +59,26 @@ module.exports = async (ctx) => {
       getPlatform: () => 'android',
       PluginHeaders: [
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
-        { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }] }
+        { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }] },
+        { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] }
       ],
       nativePromise: async (plugin, method, options) => {
         if (plugin === 'CapacitorHttp' && method === 'request') return http(options);
         if (plugin === 'JellycloudPlayer' && method === 'play') {
           window.__calls.play.push(options);
           return window.__playResults.shift() ?? { positionMs: 0, durationMs: options.durationMs, ended: false, error: null, errorKind: null };
+        }
+        if (plugin === 'JellycloudSecureStore' && method === 'load') {
+          if (window.__secureFail === 'load') throw { message: 'Keystore nicht verfuegbar' };
+          return { value: secure[options.key] ?? null, unreadable: false };
+        }
+        if (plugin === 'JellycloudSecureStore' && method === 'save') {
+          if (window.__secureFail === 'save') throw { message: 'Speicher voll' };
+          await new Promise((r) => setTimeout(r, 20)); // wie die echte Bruecke: asynchron
+          secure[options.key] = options.value;
+          sessionStorage.setItem('__secure', JSON.stringify(secure));
+          window.__calls.secureSave++;
+          return {};
         }
         if (plugin === 'JellycloudPlayer' && method === 'openExternal') {
           window.__calls.openExternal.push(options);
@@ -95,6 +117,19 @@ module.exports = async (ctx) => {
   check('Huelle meldet sich: Plattform android, Version aus package.json, Geraetename', host.platform === 'android' && host.version === version && /Jellycloud/.test(host.name) && host.web === true, JSON.stringify(host));
   check('Auch ohne registerPlugin (wie in der echten Bruecke) startet die Huelle ohne Fehler (es geht allein ueber nativePromise)', host.registerPlugin === 'undefined' && host.error === null, JSON.stringify({ registerPlugin: host.registerPlugin, error: host.error }));
 
+  // ---------- Sicherer Speicher: Uebernahme aus dem localStorage von 1.1.6 ----------
+  await waitFor(`window.__calls.secureSave > 0`, 4000);
+  const moved = await ev(`({ old: localStorage.getItem('jellycloud.config'), stored: window.__secureStore['jellycloud.config'] ?? null, n: window.__calls.secureSave })`);
+  // Die Oberflaeche schreibt die uebernommene Konfiguration gleich in ihrer eigenen Form zurueck (eingerueckt, mit allen Standardwerten): verglichen wird der Inhalt
+  const movedCfg = (() => {
+    try {
+      return JSON.parse(moved.stored ?? 'null');
+    } catch {
+      return null;
+    }
+  })();
+  check('Uebernahme: die alte Konfiguration steht verschluesselt im nativen Speicher und ist aus dem localStorage entfernt', moved.old === null && movedCfg?.deviceId === 'seed-device-0001' && moved.n >= 1, JSON.stringify({ old: moved.old, deviceId: movedCfg?.deviceId, n: moved.n }));
+
   // ---------- Anmeldung ueber die "native" HTTP-Schicht ----------
   const probe = await ev(`window.jc.probeServer('127.0.0.1:8097').catch((e) => ({ err: e.message }))`);
   check('Server pruefen ueber die native HTTP-Schicht (Antwort mit ok, status, json)', probe?.name === 'Mock Jellyfin', JSON.stringify(probe));
@@ -102,6 +137,9 @@ module.exports = async (ctx) => {
   check('Falsches Passwort: Fehler 401 auch ueber die native Schicht', bad?.status === 401, JSON.stringify(bad));
   const login = await ev(`window.jc.login({ url: 'http://127.0.0.1:8097', username: 'demo', password: 'demo' }).then((s) => ({ ok: s.loggedIn, platform: s.platform }), (e) => ({ err: e.message }))`);
   check('Anmeldung gelingt, Zustand meldet Plattform android', login.ok === true && login.platform === 'android', JSON.stringify(login));
+  await ctx.wait(200); // Zurueckschreiben laeuft im Hintergrund
+  const saved = await ev(`({ ls: Object.keys(localStorage).filter((k) => k !== '__seeded'), cfg: JSON.parse(window.__secureStore['jellycloud.config'] ?? '{}') })`);
+  check('Nach der Anmeldung: Server und Zugangsdaten nur im nativen Speicher, nichts davon im localStorage, Geraetekennung uebernommen', saved.ls.length === 0 && saved.cfg.servers?.length === 1 && !!saved.cfg.servers[0].token && saved.cfg.deviceId === 'seed-device-0001', JSON.stringify({ ls: saved.ls, servers: saved.cfg.servers?.length, device: saved.cfg.deviceId }));
 
   // ---------- Wiedergabe ----------
   const movie = [...items.values()].find((i) => i.Name === 'Aurora Protocol');
@@ -181,6 +219,40 @@ module.exports = async (ctx) => {
   const diagText = await ev(`(document.body.innerText.match(/Diagnose: [^\\n]+/) ?? [''])[0]`);
   const cardText = (await ev(`(document.querySelector('.about-card')?.innerText ?? '').replace(/\\s+/g, ' ')`)) || `[Info-Karte fehlt; Adresse ${await ev('location.hash')}, Ansicht: ${(await ev(`(document.querySelector('#view')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 120)`))}]`;
   check('Einstellungen > Info zeigt Diagnose: Plattform, Huelle ok, Engine-Version; keine Windows/mpv-Texte', diag && /Hülle ok/.test(diagText) && /Chrome \d+/.test(diagText) && !/mpv|FFmpeg/.test(cardText), `${diagText} | ${cardText.slice(0, 160)}`);
+
+  // ---------- Zurueck-Taste (MainActivity fragt window.JCWeb.back) ----------
+  await ev(`location.hash = '#/home'`);
+  await waitFor(`!!document.querySelector('.home .rows .row')`, 8000);
+  check('Zurueck auf der Startseite: unbehandelt (die App geht in den Hintergrund)', (await ev(`window.JCWeb.back()`)) === false);
+  await ev(`location.hash = '#/item/'`);
+  await waitFor(`location.hash.includes('/item/') && !!document.querySelector('.detail')`, 8000);
+  const backDetail = await ev(`window.JCWeb.back()`);
+  const leftDetail = await waitFor(`!location.hash.includes('/item/')`, 4000);
+  check('Zurueck auf einer Detailseite: behandelt, eine Seite zurueck', backDetail === true && leftDetail, await ev('location.hash'));
+  // Ein echtes Menue der Oberflaeche: "Sortieren" in einer Bibliothek (Reiter unten, kompakte Ansicht)
+  const libHref = await ev(`[...document.querySelectorAll('.tabbar-item')].map((a) => a.getAttribute('href')).find((h) => /library/.test(h ?? '')) ?? null`);
+  await ev(`location.hash = ${JSON.stringify(libHref ?? '#/home')}`);
+  await waitFor(`[...document.querySelectorAll('.lib-controls .btn')].some((x) => /Sortier/.test(x.textContent))`, 8000);
+  await ev(`[...document.querySelectorAll('.lib-controls .btn')].find((x) => /Sortier/.test(x.textContent))?.click()`);
+  const hadMenu = await waitFor(`!!document.querySelector('.menu.open')`, 3000);
+  const backMenu = await ev(`window.JCWeb.back()`);
+  await ctx.wait(300);
+  const afterMenu = await ev(`({ menu: !!document.querySelector('.menu.open'), hash: location.hash })`);
+  check('Zurueck bei offenem Menue: behandelt, schliesst nur das Menue (die Seite bleibt)', !!libHref && hadMenu && backMenu === true && !afterMenu.menu && afterMenu.hash === libHref, JSON.stringify({ libHref, hadMenu, backMenu, afterMenu }));
+
+  // ---------- Neustart: angemeldet aus dem nativen Speicher ----------
+  const savesBefore = await ev(`window.__calls.secureSave`);
+  await win.webContents.reload();
+  await waitFor(`!!window.jc`, 8000);
+  const restarted = await ev(`window.jc.getState().then((s) => ({ in: s.loggedIn, ls: localStorage.getItem('jellycloud.config'), err: window.JCHostError ?? null }))`);
+  check('Nach einem Neustart angemeldet (aus dem nativen Speicher), localStorage bleibt leer, Huelle ohne Fehler', restarted.in === true && restarted.ls === null && restarted.err === null, JSON.stringify({ ...restarted, savesBefore }));
+
+  // ---------- Schreibfehler des nativen Speichers ----------
+  await ev(`window.__secureFail = 'save'; window.jc.setSettings({ player: { volume: 77 } })`).catch(() => null);
+  const failed = await waitFor(`/Speichern fehlgeschlagen/.test(window.JCHostError ?? '')`, 3000);
+  const leak = await ev(`localStorage.getItem('jellycloud.config')`);
+  check('Scheitert das sichere Speichern: Grund unter window.JCHostError (Diagnose), kein Rueckfall in den localStorage', failed && leak === null, JSON.stringify({ err: await ev('window.JCHostError ?? null'), leak }));
+  errors.splice(0, errors.length, ...errors.filter((e) => !/Sicherer Speicher: Speichern fehlgeschlagen/.test(e))); // erwartete Meldung dieses Falls
 
   check('Keine Konsolenfehler', errors.length === 0, errors.slice(0, 3).join(' | '));
   win.destroy();

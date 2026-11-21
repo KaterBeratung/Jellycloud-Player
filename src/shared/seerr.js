@@ -1,9 +1,9 @@
 /* Gemeinsames Modul: laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCSeerr) in der Oberflaeche der Web-/Handy-Fassung (src/web).
    Keine eigenen Abhaengigkeiten ausser dem eingespeisten fetch. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.JCSeerr = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./seerr-state'));
+  else root.JCSeerr = factory(root.JCSeerrState);
+})(typeof self !== 'undefined' ? self : this, function (SeerrState) {
   'use strict';
 /**
  * Anbindung an Seerr (Jellyseerr / Overseerr): Titel suchen, die noch nicht in der Bibliothek sind, und anfragen.
@@ -11,8 +11,8 @@
  * API: /api/v1, Anmeldung per Jellyfin-Konto (Session-Cookie connect.sid) oder API-Schluessel (Header X-Api-Key).
  */
 
-/** mediaInfo.status bei Seerr */
-const MEDIA_STATUS = { UNKNOWN: 1, PENDING: 2, PROCESSING: 3, PARTIALLY_AVAILABLE: 4, AVAILABLE: 5, DELETED: 6 };
+/** mediaInfo.status bei Seerr (6 gesperrt, 7 geloescht; die Regeln dazu in seerr-state.js) */
+const MEDIA_STATUS = SeerrState.SEERR_MEDIA;
 /** Art eines gemeldeten Problems (Seerr: IssueType) */
 const ISSUE_TYPES = { VIDEO: 1, AUDIO: 2, SUBTITLES: 3, OTHER: 4 };
 
@@ -254,7 +254,8 @@ class SeerrClient {
 
   /**
    * Filme, die gerade im Trend liegen (GET /discover/trending, Seerr mischt dort Filme, Serien und Personen). Serien, Personen, doppelte Eintraege und gesperrte Titel
-   * (Stand ueber 6) fallen weg; es werden hoechstens drei Seiten gelesen, bis `limit` Filme da sind. Scheitert eine spaetere Seite, bleibt es bei dem, was schon da ist.
+   * (Stand 6) fallen weg, geloeschte (7) bleiben (sie lassen sich wieder anfragen); es werden hoechstens drei Seiten gelesen, bis `limit` Filme da sind. Scheitert
+   * eine spaetere Seite, bleibt es bei dem, was schon da ist.
    * Zusaetzlich zum normalisierten Ergebnis: `rating` (TMDB-Bewertung, eine Nachkommastelle, sonst null) und `backdropPath` (Hintergrundbild, sonst null).
    * @returns {Promise<(ReturnType<typeof normalizeResult> & { rating: number|null, backdropPath: string|null })[]>}
    */
@@ -271,7 +272,7 @@ class SeerrClient {
       }
       for (const raw of r?.results ?? []) {
         const n = normalizeResult(raw);
-        if (n?.mediaType !== 'movie' || n.status > MEDIA_STATUS.DELETED || seen.has(n.id)) continue;
+        if (n?.mediaType !== 'movie' || SeerrState.isBlocklisted(n.status) || seen.has(n.id)) continue;
         seen.add(n.id);
         // Bewertung und Hintergrundbild kommen fuers Banner der Startseite mit (gut bewertete Trend-Titel); die Karten brauchen sie nicht
         out.push({ ...n, rating: ratingOf(raw.voteAverage), backdropPath: TMDB_PATH.test(raw.backdropPath ?? '') ? raw.backdropPath : null });

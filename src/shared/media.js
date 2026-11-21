@@ -19,7 +19,8 @@
   function hdrLabel(video) {
     if (!video) return null;
     var t = String(video.VideoRangeType || '');
-    if (/^DOVI/i.test(t)) {
+    // "DOVIInvalid": Jellyfin fand Dolby-Vision-Angaben, die kein gueltiges Profil ergeben; das ist kein Dolby Vision (dann gilt, was der Server sonst nennt)
+    if (/^DOVI/i.test(t) && !/Invalid/i.test(t)) {
       var sub = /HDR10Plus/i.test(t) ? ' + HDR10+' : /HDR10/i.test(t) ? ' + HDR10' : /HLG/i.test(t) ? ' + HLG' : '';
       var profile = video.DvProfile ? ' (P' + video.DvProfile + ')' : '';
       return { label: 'Dolby Vision', detail: 'Dolby Vision' + profile + sub, dv: true };
@@ -33,18 +34,40 @@
 
   var VIDEO_CODEC_NAMES = { hevc: 'HEVC', h265: 'HEVC', h264: 'H.264', avc: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', vc1: 'VC-1', mpeg4: 'MPEG-4' };
 
+  // DTS-HD Master Audio im Profil der Spur ("DTS-HD MA", "DTS-HD Master Audio"); "MA" als eigenes Wort, nicht jedes "ma" (etwa "DTS-ES Matrix")
+  var DTS_MA = /\bMA\b|master audio/i;
+
+  /**
+   * Das Premium-Tonformat einer Spur, hoechstens eines, in dieser Rangfolge: Dolby Atmos, DTS:X (beide nur mit Nachweis), Dolby TrueHD,
+   * DTS-HD MA, FLAC, LPCM, ALAC; sonst null. Nachweis fuer objektbasierten Ton: das raeumliche Format, das Jellyfin nennt (AudioSpatialFormat),
+   * oder das Profil aus der Analyse der Datei ("Dolby TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X"); der frei vergebene Name der Spur zaehlt nicht,
+   * und Atmos steht nur auf einem Codec, der es tragen kann (TrueHD, E-AC-3). Vorlage: MediaTags.premiumAudio der Apple-App.
+   * @returns {{ kind: 'atmos'|'dtsx'|'truehd'|'dtshdma'|'flac'|'lpcm'|'alac', text: string } | null}
+   */
+  function premiumAudio(a) {
+    if (!a) return null;
+    var codec = String(a.Codec || '').toLowerCase();
+    var profile = String(a.Profile || '');
+    if ((codec === 'truehd' || codec === 'eac3') && (a.AudioSpatialFormat === 'DolbyAtmos' || /atmos/i.test(profile))) return { kind: 'atmos', text: 'Dolby Atmos' };
+    if (codec === 'dts' && (a.AudioSpatialFormat === 'DTSX' || /dts[:\- ]?x\b/i.test(profile))) return { kind: 'dtsx', text: 'DTS:X' };
+    if (codec === 'truehd') return { kind: 'truehd', text: 'Dolby TrueHD' };
+    if (codec === 'dts' && DTS_MA.test(profile)) return { kind: 'dtshdma', text: 'DTS-HD MA' };
+    if (codec === 'flac') return { kind: 'flac', text: 'FLAC' };
+    if (codec.indexOf('pcm') === 0 && codec.indexOf('law') < 0) return { kind: 'lpcm', text: 'LPCM' }; // nicht die Telefonformate A-law, mu-law
+    if (codec === 'alac') return { kind: 'alac', text: 'ALAC' };
+    return null;
+  }
+
   function audioLabel(a) {
     if (!a) return null;
     var codec = String(a.Codec || '').toLowerCase();
     var profile = String(a.Profile || '');
-    var title = (a.DisplayTitle || '') + ' ' + profile;
-    var atmos = /atmos/i.test(title) || a.AudioSpatialFormat === 'DolbyAtmos';
-    var dtsx = /dts[:\- ]?x/i.test(title) || a.AudioSpatialFormat === 'DTSX';
+    var premium = premiumAudio(a);
     var name;
     if (codec === 'truehd') name = 'Dolby TrueHD';
     else if (codec === 'eac3') name = 'Dolby Digital Plus';
     else if (codec === 'ac3') name = 'Dolby Digital';
-    else if (codec === 'dts') name = /ma/i.test(profile) ? 'DTS-HD MA' : /hra|high res/i.test(profile) ? 'DTS-HD HRA' : 'DTS';
+    else if (codec === 'dts') name = DTS_MA.test(profile) ? 'DTS-HD MA' : /hra|high res/i.test(profile) ? 'DTS-HD HRA' : 'DTS';
     else if (codec === 'flac') name = 'FLAC';
     else if (codec === 'opus') name = 'Opus';
     else if (codec === 'aac') name = 'AAC';
@@ -52,7 +75,8 @@
     else name = codec ? codec.toUpperCase() : null;
     var ch = a.Channels;
     var channels = ch === 8 ? '7.1' : ch === 6 ? '5.1' : ch === 2 ? '2.0' : ch === 1 ? '1.0' : ch ? ch + 'ch' : null;
-    return { name: name, channels: channels, atmos: atmos, dtsx: dtsx, lossless: ['truehd', 'flac'].indexOf(codec) >= 0 || /ma/i.test(profile) };
+    var lossless = codec === 'truehd' || (codec === 'dts' && DTS_MA.test(profile)) || (premium != null && ['flac', 'lpcm', 'alac'].indexOf(premium.kind) >= 0);
+    return { name: name, channels: channels, atmos: !!premium && premium.kind === 'atmos', dtsx: !!premium && premium.kind === 'dtsx', lossless: lossless, premium: premium ? premium.text : null };
   }
 
   /** Kurzbeschreibung einer MediaSource fuer Badges und Info-Panels. */
@@ -73,7 +97,7 @@
     if (hdr) badges.push({ kind: hdr.dv ? 'dv' : 'hdr', text: hdr.label });
     if (audio && audio.atmos) badges.push({ kind: 'audio', text: 'Atmos' });
     else if (audio && audio.dtsx) badges.push({ kind: 'audio', text: 'DTS:X' });
-    else if (audio && audio.lossless && audio.name) badges.push({ kind: 'audio', text: audio.name });
+    else if (audio && audio.lossless && audio.premium) badges.push({ kind: 'audio', text: audio.premium });
     return {
       resolution: res,
       width: video ? video.Width || null : null,
@@ -235,5 +259,5 @@
     return null;
   }
 
-  return { resolutionLabel: resolutionLabel, hdrLabel: hdrLabel, audioLabel: audioLabel, describeMedia: describeMedia, langMatches: langMatches, langCode: langCode, subtitleKind: subtitleKind, groupByLanguage: groupByLanguage, pickStreams: pickStreams, youtubeId: youtubeId, trailerVideoId: trailerVideoId, LANG_ALIASES: LANG_ALIASES };
+  return { resolutionLabel: resolutionLabel, hdrLabel: hdrLabel, premiumAudio: premiumAudio, audioLabel: audioLabel, describeMedia: describeMedia, langMatches: langMatches, langCode: langCode, subtitleKind: subtitleKind, groupByLanguage: groupByLanguage, pickStreams: pickStreams, youtubeId: youtubeId, trailerVideoId: trailerVideoId, LANG_ALIASES: LANG_ALIASES };
 });

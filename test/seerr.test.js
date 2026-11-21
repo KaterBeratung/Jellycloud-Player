@@ -71,6 +71,33 @@ test('Trend: nur Filme (keine Serien, Personen, Doppelten, gesperrten Titel), ue
   assert.equal((await c.trending({ limit: 2 })).length, 2, 'limit begrenzt die Liste');
 });
 
+test('Trend: gesperrt (Stand 6) fehlt, geloescht (Stand 7) bleibt drin (Seerr 3.5.1; bis 1.1.6 vertauscht)', async () => {
+  const c = await cookieClient();
+  assert.equal(SEERR.statuses.get('movie:7004'), MEDIA_STATUS.BLOCKLISTED, 'Testserver: 7004 ist gesperrt');
+  assert.ok(!(await c.trending()).some((r) => r.id === 7004), 'gesperrt fehlt');
+  SEERR.statuses.set('movie:7004', MEDIA_STATUS.DELETED);
+  try {
+    const deleted = (await c.trending()).find((r) => r.id === 7004);
+    assert.ok(deleted, 'Gegenprobe: derselbe Titel als geloescht erscheint');
+    assert.equal(deleted.status, 7);
+  } finally {
+    SEERR.statuses.set('movie:7004', MEDIA_STATUS.BLOCKLISTED);
+  }
+});
+
+test('Anfragen: gesperrte Titel lehnt Seerr ab, geloeschte lassen sich wieder anfragen', async () => {
+  const c = await cookieClient();
+  await assert.rejects(() => c.requestMedia({ mediaType: 'movie', mediaId: 7004 }), (e) => e.status === 403);
+  SEERR.statuses.set('movie:7004', MEDIA_STATUS.DELETED);
+  try {
+    const r = await c.requestMedia({ mediaType: 'movie', mediaId: 7004 });
+    assert.equal(r.mediaStatus, MEDIA_STATUS.PENDING);
+  } finally {
+    SEERR.statuses.set('movie:7004', MEDIA_STATUS.BLOCKLISTED);
+    SEERR.requests.splice(SEERR.requests.findIndex((x) => x.mediaId === 7004), 1);
+  }
+});
+
 test('Trend: Bewertung (eine Nachkommastelle) und Hintergrundbild kommen mit, fehlende Angaben werden null', async () => {
   const c = await cookieClient();
   const by = Object.fromEntries((await c.trending()).map((r) => [r.id, r]));

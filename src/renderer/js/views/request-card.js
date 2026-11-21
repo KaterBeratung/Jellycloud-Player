@@ -5,6 +5,8 @@ import { navigate } from '../router.js';
 import { openRequestDetail } from './request-detail.js';
 import { mapImage } from '../api.js';
 
+const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js): 6 gesperrt, 7 geloescht
+
 /** Zeichnet die Karte zu einem Titel neu (Stand geaendert, etwa durch eine Anfrage im Detailfenster). */
 const repaint = new WeakMap();
 
@@ -43,11 +45,11 @@ export function requestCard(r, index) {
   const el = h('div', { class: 'card poster req-card', title: r.title }, thumb, meta, actions);
   el.style.setProperty('--i', Math.min(index, 18));
 
-  // Offen (unbekannt/geloescht): anfragen. Sonst nur der Stand als Beschriftung.
+  // Anfragbar (ohne Stand oder geloescht): anfragen. Angefragt bis verfuegbar: der Stand als Beschriftung. Gesperrt: weder noch.
   const paint = () => {
-    const open = r.status <= 1 || r.status === 6;
+    const open = SeerrState.isRequestable(r.status);
     actions.hidden = !open;
-    chip.hidden = open;
+    chip.hidden = open || !SeerrState.isTaken(r.status);
     chip.className = `req-status s${r.status}`;
     chip.textContent = t(`seerr.status.${r.status}`);
   };

@@ -12,6 +12,7 @@ import { requestCard, requestOne } from './request-card.js';
 import { openRequestDetail } from './request-detail.js';
 
 const Media = window.JCMedia;
+const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js)
 const HomeRows = window.JCHomeRows; // Anpassung der Startseite (src/shared/home-rows.js); Folien im Banner und Trend-Folien kommen aus den Einstellungen
 const HERO_MS = 9000; // so lange bleibt eine Folie ohne Trailer stehen
 const HERO_AFTER_TRAILER_MS = 1200; // nach dem Ende eines Trailers noch kurz das Bild, dann geht es weiter
@@ -154,10 +155,10 @@ function seerrSlide(entry, first) {
   const details = h('button', { class: 'btn primary lg', type: 'button' }, icon('info', 20), h('span', null, t('action.details')));
   const ask = h('button', { class: 'btn glass lg', type: 'button' }, icon('plus', 20), h('span', null, t('seerr.request')));
   const paint = () => {
-    const open = r.status <= 1 || r.status === 6; // unbekannt oder geloescht: anfragen moeglich
+    const open = SeerrState.isRequestable(r.status); // ohne Stand oder geloescht: anfragen moeglich; gesperrt nie
     ask.hidden = !open;
-    standTag.hidden = open;
-    standTag.textContent = open ? '' : t(`seerr.status.${r.status}`);
+    standTag.hidden = open || !SeerrState.isTaken(r.status);
+    standTag.textContent = standTag.hidden ? '' : t(`seerr.status.${r.status}`);
   };
   paint();
   const askFromDetails = async () => {

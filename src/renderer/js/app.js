@@ -324,6 +324,21 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Zurueck-Taste des Handys (Android: MainActivity fragt window.JCWeb.back, src/web/jc-web.js). Erst ein offenes Menue oder Fenster schliessen
+// (sie hoeren auf Escape und melden das mit preventDefault), sonst eine Seite zurueck; auf der Startseite und bei der Anmeldung bleibt das
+// Ereignis unbehandelt, dann geht die App in den Hintergrund.
+document.addEventListener('jc-back', (e) => {
+  const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  document.dispatchEvent(esc);
+  if (esc.defaultPrevented) return e.preventDefault();
+  if (!state.loggedIn || !$('#view')) return;
+  const path = location.hash.slice(1).split('?')[0];
+  if (!path || path === '/' || path === '/home') return;
+  e.preventDefault();
+  if (history.length > 1) history.back();
+  else navigate('/home');
+});
+
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason?.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
 });

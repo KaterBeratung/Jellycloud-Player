@@ -4,14 +4,16 @@
 
    Das Gehaeuse (die Handy-App) darf vorher window.JCHost setzen und Folgendes liefern, alles freiwillig:
      fetch(url, init)      Abruffunktion, z. B. die native HTTP-Schicht (kein CORS, Cookies fuer Seerr); Standard: fetch des Browsers
-     storage {get,set}     Ablage der Konfiguration (Zeichenketten); Standard: localStorage. Zugangsdaten sind dort nur kodiert, nicht verschluesselt: auf dem Handy den
-                           sicheren Speicher (Keychain / Keystore) einsetzen
+     storage {get,set}     Ablage der Konfiguration (Zeichenketten, synchron); Standard: localStorage. Zugangsdaten sind dort nur kodiert, nicht verschluesselt: auf dem Handy
+                           den sicheren Speicher einsetzen (Android: mobile/host-capacitor.js mit dem Keystore)
+     ready                 Promise, auf das die Web-Schicht vor dem ersten Lesen wartet (die Huelle laedt den sicheren Speicher asynchron); darf nicht scheitern
      codec {encode,decode} eigene Verschluesselung der Zugangsdaten (Standard: "plain:" mit Base64)
      version, platform     Version der App und "ios" | "android" | "web"
      deviceName            Name des Geraets fuer den Server
      play(req, ctx)        spielt einen Eintrag mit dem nativen Player ab; ctx = { client } mit baseUrl, token (Header: client.authHeader())
      openExternal(url)     Link im Systembrowser oeffnen
-   Fuer Ereignisse des Gehaeuses: window.JCWeb.playerActive(bool) und window.JCWeb.playerClosed(info). */
+   Fuer Ereignisse des Gehaeuses: window.JCWeb.playerActive(bool) und window.JCWeb.playerClosed(info). window.JCWeb.back() fuer die Zurueck-Taste des Geraets:
+   true, wenn die Oberflaeche etwas getan hat (Menue oder Fenster geschlossen, eine Seite zurueck), false, wenn nichts mehr zurueck geht. */
 (function () {
   'use strict';
   if (window.jc) return; // Desktop-Programm: die Vorlade-Datei hat schon alles bereitgestellt
@@ -69,25 +71,34 @@
     return `${h.slice(0, 4).join('')}-${h.slice(4, 6).join('')}-${h.slice(6, 8).join('')}-${h.slice(8, 10).join('')}-${h.slice(10).join('')}`;
   };
 
-  const config = new ConfigCore(io, codec, { uuid, hashId });
   const doFetch = host.fetch ?? ((url, init) => window.fetch(url, init));
   const platform = host.platform ?? 'web';
 
-  const backend = createBackend({
-    config,
-    fetch: doFetch,
-    appVersion: () => String(host.version ?? 'web'),
-    locale: () => navigator.language || 'de',
-    deviceName: host.deviceName,
-    extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false })
-  });
-  backend.buildSeerr();
-  if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
+  // Konfiguration und Rueckseite entstehen erst, wenn die Ablage bereit ist (host.ready: Android laedt den sicheren Speicher asynchron);
+  // jeder Aufruf von window.jc wartet darauf (call), ohne Huelle sofort
+  let config = null;
+  let backend = null;
+  const ready = Promise.resolve(host.ready)
+    .catch(() => {})
+    .then(() => {
+      config = new ConfigCore(io, codec, { uuid, hashId });
+      backend = createBackend({
+        config,
+        fetch: doFetch,
+        appVersion: () => String(host.version ?? 'web'),
+        locale: () => navigator.language || 'de',
+        deviceName: host.deviceName,
+        extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false })
+      });
+      backend.buildSeerr();
+      if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
+    });
 
   // ---------- Hilfen ----------
   /** Wie die Vorlade-Datei: Fehler als einfaches Objekt mit message, status und code (die Oberflaeche liest genau diese Felder). */
   async function call(fn) {
     try {
+      await ready;
       return await fn();
     } catch (e) {
       throw { name: 'JellycloudError', message: e?.message ?? String(e ?? 'Unbekannter Fehler'), status: e?.status ?? 0, code: e?.code ?? null };
@@ -102,7 +113,13 @@
   };
   window.JCWeb = {
     playerActive: (on) => listeners.player.forEach((cb) => cb(!!on)),
-    playerClosed: (info) => listeners.closed.forEach((cb) => cb(info))
+    playerClosed: (info) => listeners.closed.forEach((cb) => cb(info)),
+    // Zurueck-Taste des Geraets: die Oberflaeche entscheidet (Ereignis jc-back in src/renderer/js/app.js); behandelt heisst, sie hat etwas getan
+    back: () => {
+      const e = new CustomEvent('jc-back', { cancelable: true });
+      document.dispatchEvent(e);
+      return e.defaultPrevented;
+    }
   };
 
   // ---------- Bilder ----------
@@ -116,7 +133,7 @@
       if (u.protocol !== 'jellycloud:') return url; // schon eine echte Adresse (data:, blob: ...)
       const parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
       if (u.hostname === 'tmdb') return tmdbImageUrl(...parts) ?? '';
-      const base = backend.client?.baseUrl;
+      const base = backend?.client?.baseUrl;
       if (!base) return '';
       const q = new URLSearchParams();
       for (const k of ['maxWidth', 'maxHeight', 'quality', 'tag']) if (u.searchParams.get(k)) q.set(k, u.searchParams.get(k).replace(/[^\w.-]/g, ''));
