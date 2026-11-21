@@ -4,8 +4,8 @@ import { blurhashUrl } from './blurhash.js';
 import { posterOf, landscapeOf, itemHref } from './api.js';
 import { fmtDuration, ticksToSec } from './utils.js';
 import { markSharedElement } from './router.js';
+import { cardTags } from './tags.js';
 
-const Media = window.JCMedia;
 
 // ---------- Bilder mit Blurhash-Platzhalter ----------
 
@@ -39,18 +39,6 @@ export function initialsOf(name) {
   const first = Array.from(parts[0])[0] ?? '';
   const last = parts.length > 1 ? Array.from(parts[parts.length - 1])[0] ?? '' : '';
   return (first + last).toUpperCase();
-}
-
-// ---------- Badges ----------
-
-export function badges(media, { max = 3 } = {}) {
-  if (!media?.badges?.length) return null;
-  return h('div', { class: 'badges' }, media.badges.slice(0, max).map((b) => h('span', { class: `badge ${b.kind}` }, b.text)));
-}
-
-export function mediaBadges(item) {
-  const src = item.MediaSources?.[0] ?? (item.MediaStreams ? { MediaStreams: item.MediaStreams, Container: item.Container } : null);
-  return src ? Media.describeMedia(src) : null;
 }
 
 // ---------- Karten ----------
@@ -108,9 +96,10 @@ function attachTilt(card, thumb) {
 
 /**
  * Poster- oder Landscape-Karte.
- * @param {{variant?:'poster'|'landscape', index?:number, showBadges?:boolean, onPlay?:(item:any)=>void}} opts
+ * Tags (4K, HDR, Premium-Ton, HD) stehen unten links auf dem Poster, hoechstens zwei; es gibt keinen Schalter dafuer (wie in der Apple-App).
+ * @param {{variant?:'poster'|'landscape', index?:number, onPlay?:(item:any)=>void}} opts
  */
-export function card(item, { variant = 'poster', index = 0, showBadges = true, onPlay } = {}) {
+export function card(item, { variant = 'poster', index = 0, onPlay } = {}) {
   const landscape = variant === 'landscape';
   const img = landscape ? landscapeOf(item, 640) : posterOf(item, 380) ?? landscapeOf(item, 380);
   const a = h('a', { class: `card ${variant}`, href: itemHref(item), draggable: 'false', title: titleOf(item) });
@@ -124,9 +113,9 @@ export function card(item, { variant = 'poster', index = 0, showBadges = true, o
   if (u.Played && item.Type !== 'Series') thumb.append(h('span', { class: 'corner played' }, icon('check', 14)));
   else if (u.UnplayedItemCount > 0 && ['Series', 'Season', 'BoxSet'].includes(item.Type)) thumb.append(h('span', { class: 'corner count' }, String(u.UnplayedItemCount)));
 
-  if (showBadges && !landscape) {
-    const b = badges(mediaBadges(item), { max: 2 });
-    if (b) thumb.append(b);
+  if (!landscape) {
+    const tags = cardTags(item, { max: 2 });
+    if (tags) thumb.append(tags);
   }
   const p = progressOf(item);
   if (p > 0) {
@@ -180,9 +169,9 @@ export function skeletonRow(variant = 'poster', n = 9) {
 }
 
 /** Horizontale Reihe mit Pfeilen. Mit `render` baut die Reihe ihre Karten selbst (zum Beispiel die Anfrage-Karten von Seerr), sonst sind es Karten der Bibliothek. */
-export function row(title, items, { variant = 'poster', href = null, showBadges = true, onPlay, sub = '', render = null } = {}) {
+export function row(title, items, { variant = 'poster', href = null, onPlay, sub = '', render = null } = {}) {
   const scroller = h('div', { class: 'scroller' });
-  items.forEach((it, i) => scroller.append(render ? render(it, i) : card(it, { variant, index: i, showBadges, onPlay })));
+  items.forEach((it, i) => scroller.append(render ? render(it, i) : card(it, { variant, index: i, onPlay })));
   const left = h('button', { class: 'arrow left', type: 'button', 'aria-label': 'Zurück' }, icon('chevron-left', 22));
   const right = h('button', { class: 'arrow right', type: 'button', 'aria-label': 'Weiter' }, icon('chevron-right', 22));
   const sec = h(

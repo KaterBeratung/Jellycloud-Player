@@ -29,7 +29,6 @@ const DEFAULT_SETTINGS = {
     ambient: true, // Hintergrund nimmt dezent die Farbe des gezeigten Banners/Titels auf (wie Apple TV)
     startAnimation: true, // beim Start der App eine kurze Animation mit dem Logo (wie bei Netflix); entfaellt bei Animationen "aus", Klick oder Taste ueberspringt sie
     homeTrending: true, // Startseite: Reihe "Filme im Trend" (aus Seerr; ohne Verbindung steht dort ein Hinweis zur Einrichtung) und bis zu zwei gut bewertete davon im Banner
-    showBadges: true, // 4K / HDR / Atmos Badges auf Karten
     cardTitles: true // Titel unter den Postern
   },
   // Startseite anpassen: Banner (an/aus, Folien, Trend-Folien) und Reihen (Reihenfolge, ausgeblendet); Regeln in src/shared/home-rows.js.
@@ -209,6 +208,8 @@ class ConfigCore {
       }
       delete gen.updateSource;
       delete gen.updateCustom;
+      // Tags (4K, HDR, Atmos ...) haben keinen Schalter mehr (wie in der Apple-App, Entscheidung E7): ein gespeicherter Wert faellt weg
+      delete look.showBadges;
     } catch (e) {
       // Erste Ausfuehrung (keine Datei) oder defekte Datei: Standardwerte verwenden. Eine vorhandene, aber unlesbare Datei wird gesichert, bevor die Standardwerte sie ueberschreiben:
       // darin stehen Server, Anmeldungen und Einstellungen, und von Hand liesse sich daraus noch etwas retten.

@@ -1,5 +1,5 @@
 // Einstellungen wirken sofort (JC_DEV=1, JC_FAKE_MPV=1): Startseite und Bibliothek bleiben beim Verlassen im Speicher; was sie beim Aufbau aus den Einstellungen lesen
-// (Banner wechselt, Badges, Trailer, Spoiler-Schutz), muss beim naechsten Besuch neu gelten, ohne dass man neu laden muss. Reine Darstellung wirkt per CSS und laesst die Seiten in Ruhe.
+// (Banner wechselt, Trailer, Spoiler-Schutz), muss beim naechsten Besuch neu gelten, ohne dass man neu laden muss. Reine Darstellung wirkt per CSS und laesst die Seiten in Ruhe.
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/settings-live.js
 const path = require('node:path');
 const { server } = require('../mock-server');
@@ -34,9 +34,9 @@ module.exports = async (ctx) => {
   // Startseite und Bibliothek aufbauen und damit in den Speicher des Routers legen
   await go('#/home');
   check('Startseite: das Banner wechselt von selbst (Zeitbalken laeuft)', await waitFor(`!!document.querySelector('.hero-dots .dot.run')`, 8000));
-  check('Startseite: Reihen mit Qualitaets-Badges', await waitFor(`document.querySelectorAll('.rows .card .badges').length > 0`, 5000));
+  check('Startseite: Reihen mit Tags', await waitFor(`document.querySelectorAll('.rows .card .tags').length > 0`, 5000));
   await go(libHref);
-  check('Bibliothek: Karten mit Badges', await waitFor(`document.querySelectorAll('.grid .card .badges').length > 0`, 6000));
+  check('Bibliothek: Karten mit Tags', await waitFor(`document.querySelectorAll('.grid .card .tags').length > 0`, 6000));
   await ctx.run(`document.querySelector('.grid').dataset.mark = 'alt'`);
 
   // ---------- Reine Darstellung laesst die Seiten im Speicher ----------
@@ -62,20 +62,11 @@ module.exports = async (ctx) => {
   await go('#/home');
   check('Banner wieder an: der Zeitbalken laeuft wieder', await waitFor(`!!document.querySelector('.hero-dots .dot.run')`, 6000));
 
-  // ---------- Badges ----------
+  // ---------- Tags: fest, ohne Schalter (wie in der Apple-App, Entscheidung E7) ----------
   await go('#/settings/appearance');
-  await toggleSetting('/Qualitäts-Badges/');
-  await ctx.wait(400);
+  check('Erscheinungsbild: kein Schalter "Qualitäts-Badges" mehr (Tags sind fest)', (await waitFor(`!!document.querySelector('.setting')`, 4000)) && !(await ctx.run(`[...document.querySelectorAll('.setting-label')].some((l) => /Badges/.test(l.textContent))`)));
   await go('#/home');
-  check('Badges aus: die Reihen der Startseite zeigen keine mehr (ohne Neuladen)', (await waitFor(`document.querySelectorAll('.rows .card').length > 0`, 6000)) && (await ctx.run(`document.querySelectorAll('.rows .card .badges').length === 0`)));
-  await go(libHref);
-  check('Badges aus: auch die (vorher im Speicher gehaltene) Bibliothek zeigt keine mehr', (await waitFor(`document.querySelectorAll('.grid .card').length > 0`, 6000)) && (await ctx.run(`document.querySelectorAll('.grid .card .badges').length === 0 && document.querySelector('.grid')?.dataset.mark !== 'alt'`)));
-  await ctx.capture(path.join(out, 'SL-badges-aus.png'));
-  await go('#/settings/appearance');
-  await toggleSetting('/Qualitäts-Badges/');
-  await ctx.wait(400);
-  await go('#/home');
-  check('Badges wieder an: sofort wieder da', await waitFor(`document.querySelectorAll('.rows .card .badges').length > 0`, 6000));
+  check('Tags bleiben auf den Karten der Startseite', await waitFor(`document.querySelectorAll('.rows .card .tags .tag').length > 0`, 6000));
 
   // ---------- Trailer ----------
   await ctx.run(`document.querySelector('.home').dataset.mark = 'alt'`);
@@ -104,7 +95,7 @@ module.exports = async (ctx) => {
   // ---------- Gespeichert wird es auch (ueberlebt ein Neuladen der Oberflaeche) ----------
   await ctx.run(`document.dispatchEvent(new CustomEvent('relogin'))`);
   await ctx.wait(2200);
-  check('Nach dem Neuladen gelten dieselben Werte (Badges an, Banner an, Trailer auf der Startseite an)', ctx.config.settings.appearance.showBadges === true && ctx.config.settings.appearance.heroAutoplay === true && ctx.config.settings.trailer.home === true);
+  check('Nach dem Neuladen gelten dieselben Werte (Banner an, Trailer auf der Startseite an; kein Badge-Schalter mehr)', ctx.config.settings.appearance.showBadges === undefined && ctx.config.settings.appearance.heroAutoplay === true && ctx.config.settings.trailer.home === true);
 
   const pass = results.filter(Boolean).length;
   console.log(`\nErgebnis: ${pass}/${results.length} Pruefungen bestanden`);

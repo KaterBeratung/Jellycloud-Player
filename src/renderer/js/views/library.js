@@ -50,7 +50,6 @@ export function libraryView({ id }) {
   let generation = 0;
   let observer = null;
   let genres = null;
-  const showBadges = state.settings.appearance.showBadges;
 
   const onPlay = async (item) => {
     if (item.Type === 'Series') {
@@ -110,7 +109,7 @@ export function libraryView({ id }) {
       // Jede Seite ein eigener Block (siehe .grid-chunk im CSS)
       if (items.length) {
         const chunk = h('div', { class: 'grid-chunk' });
-        items.forEach((it, i) => chunk.append(card(it, { index: i, showBadges, onPlay: isFolder(it) ? undefined : onPlay })));
+        items.forEach((it, i) => chunk.append(card(it, { index: i, onPlay: isFolder(it) ? undefined : onPlay })));
         grid.append(chunk);
       }
       start += items.length;

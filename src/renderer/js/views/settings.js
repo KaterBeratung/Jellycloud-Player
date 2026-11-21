@@ -27,7 +27,7 @@ const ALIASES = { playback: 'video' };
 // Bereiche, die nur das Desktop-Programm braucht (mpv-Bild, Audio-Ausgabe des Rechners, Discord); auf dem Handy und im Browser entfallen sie
 const DESKTOP_ONLY = new Set(['video', 'audio', 'discord']);
 // Einstellungen, die Ansichten beim Aufbau lesen (siehe saveSoon): Abschnitt -> Schluessel ('*' = alle)
-const LIVE_VIEW_KEYS = { appearance: ['showBadges', 'heroAutoplay', 'homeTrending'], general: ['spoilerProtection'], trailer: '*', home: '*' };
+const LIVE_VIEW_KEYS = { appearance: ['heroAutoplay', 'homeTrending'], general: ['spoilerProtection'], trailer: '*', home: '*' };
 const HomeRows = window.JCHomeRows; // Regeln fuer Reihenfolge und Grenzen der Startseite (src/shared/home-rows.js)
 
 const LANGS = ['de', 'en', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'tr', 'ja', 'ko', 'zh', 'sv', 'da', 'no', 'fi', 'cs', 'hu', 'ar', 'he', 'el', 'uk', 'ro'];
@@ -258,7 +258,6 @@ export function settingsView({ section }) {
           )
         ),
         setting(t('set.ambient'), t('set.ambientDesc'), toggle(app().ambient, (v) => setAppearance({ ambient: v }), t('set.ambient'))),
-        setting(t('set.badges'), t('set.badgesDesc'), toggle(app().showBadges, (v) => setAppearance({ showBadges: v }), t('set.badges'))),
         setting(t('set.cardTitles'), t('set.cardTitlesDesc'), toggle(app().cardTitles, (v) => setAppearance({ cardTitles: v }), t('set.cardTitles'))),
         setting(
           t('set.language'),

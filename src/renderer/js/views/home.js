@@ -2,7 +2,8 @@ import { h, icon } from '../dom.js';
 import { t } from '../i18n.js';
 import { api, backdropOf, landscapeOf, logoOf, itemHref, mapImage } from '../api.js';
 import { state, updateSettings, SUPPORTED_COLLECTIONS } from '../state.js';
-import { lazyImage, row, skeletonRow, badges, mediaBadges, titleOf, toast } from '../ui.js';
+import { lazyImage, row, skeletonRow, titleOf, toast } from '../ui.js';
+import { cardTags } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
 import { setAmbient } from '../ambient.js';
@@ -111,8 +112,8 @@ function heroSlide(entry, first) {
     content.append(h('h1', { class: 'hero-title' }, titleOf(item)));
   }
   const meta = h('div', { class: 'hero-meta' }, metaLine(item).map((b) => (typeof b === 'string' ? h('span', null, b) : b)));
-  const b = badges(mediaBadges(item), { max: 3 });
-  if (b) meta.append(b);
+  const tags = cardTags(item, { max: 3 }); // Banner: bis zu drei (4K, HDR, Premium-Ton, HD)
+  if (tags) meta.append(tags);
   content.append(meta);
   if (item.Overview) content.append(h('p', { class: 'hero-overview' }, item.Overview));
   content.append(
@@ -326,7 +327,6 @@ export function homeView() {
   let destroyed = false;
   let away = false; // die Startseite liegt gerade im Speicher des Routers (nicht im Bild)
   let hero = null;
-  const showBadges = state.settings.appearance.showBadges;
   const onPlay = (item) => playItem({ itemId: item.Id, resume: true });
   const onPlaySeries = async (item) => {
     if (item.Type !== 'Series') return onPlay(item);
@@ -457,10 +457,10 @@ export function homeView() {
     };
     if (resume.length) offer('continue', () => row(t('home.continue'), resume, { variant: 'landscape', onPlay }));
     for (const { view, items } of latestPerLib) {
-      if (items.length) offer(`latest:${view.Id}`, () => row(t('home.latestIn', { name: view.Name }), items, { href: `#/library/${view.Id}`, showBadges, onPlay: onPlaySeries }));
+      if (items.length) offer(`latest:${view.Id}`, () => row(t('home.latestIn', { name: view.Name }), items, { href: `#/library/${view.Id}`, onPlay: onPlaySeries }));
     }
     if (nextUp.length) offer('nextUp', () => row(t('home.nextUp'), nextUp, { variant: 'landscape', onPlay }));
-    if (favorites.length) offer('favorites', () => row(t('home.favorites'), favorites, { showBadges, onPlay: onPlaySeries }));
+    if (favorites.length) offer('favorites', () => row(t('home.favorites'), favorites, { onPlay: onPlaySeries }));
     const contentRows = present.length;
     let trendSlot = null;
     offer('trending', () => (trendSlot = h('div', { class: 'trend-slot', hidden: true })));

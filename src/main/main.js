@@ -309,6 +309,11 @@ function registerIpc() {
     await player.play(req);
     return true;
   }));
+  // Wie der Server einen Eintrag liefern wuerde (Direct Play, Direct Stream, Transcode), ohne abzuspielen: fuer das Wiedergabe-Tag der Detailseite
+  ipcMain.handle('player:outlook', wrap(async (req) => {
+    if (!req || typeof req.itemId !== 'string' || !GUID.test(req.itemId)) throw new Error('Ungültiger Eintrag');
+    return player.outlook({ itemId: req.itemId, mediaSourceId: typeof req.mediaSourceId === 'string' ? req.mediaSourceId : undefined, audioIndex: Number.isInteger(req.audioIndex) ? req.audioIndex : undefined, subtitleIndex: Number.isInteger(req.subtitleIndex) ? req.subtitleIndex : undefined });
+  }));
 
   // Hinweise zu mitgelieferter Software (mpv, Electron): THIRD-PARTY.txt neben dem Programm
   ipcMain.handle('app:notices', wrap(async () => {

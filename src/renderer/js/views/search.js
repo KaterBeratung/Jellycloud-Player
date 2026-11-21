@@ -73,7 +73,7 @@ export function searchView({ query }) {
         const list = items.filter((i) => i.Type === type);
         if (!list.length) continue;
         const grid = h('div', { class: 'grid' });
-        list.forEach((it, i) => grid.append(card(it, { index: i, showBadges: state.settings.appearance.showBadges, onPlay })));
+        list.forEach((it, i) => grid.append(card(it, { index: i, onPlay })));
         results.append(h('section', { class: 'search-group' }, h('div', { class: 'row-head' }, h('h2', null, label), h('span', { class: 'sub' }, String(list.length))), grid));
       }
       addRequests(q, my, false);

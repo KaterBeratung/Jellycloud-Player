@@ -2,7 +2,8 @@ import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { api, backdropOf, landscapeOf, posterOf, logoOf, personImage, isFolder } from '../api.js';
 import { state, updateSettings } from '../state.js';
-import { badges, card, initialsOf, lazyImage, openMenu, row, titleOf, toast, closeMenu } from '../ui.js';
+import { card, initialsOf, lazyImage, openMenu, row, titleOf, toast, closeMenu } from '../ui.js';
+import { mediaTagRow } from '../tags.js';
 import { setAmbient } from '../ambient.js';
 import { endsAt, fmtBitrate, fmtDate, fmtDuration, fmtSize, langName, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget, toggleFavorite, toggleWatched } from '../actions.js';
@@ -12,6 +13,7 @@ import { editMetadata, identifyItem, deleteItem as deleteItemAdmin } from './adm
 import { canReportIssue, openIssueDialog } from './issue-dialog.js';
 
 const Media = window.JCMedia;
+const Tags = window.JCMediaTags; // Tags der Datei in der Reihenfolge der Detailseite (src/shared/media-tags.js)
 
 const epLabel = (it) => `${it.ParentIndexNumber != null ? `S${it.ParentIndexNumber}:` : ''}E${it.IndexNumber ?? '?'}`;
 
@@ -182,20 +184,54 @@ export function detailView({ id, query }) {
     if (item.RunTimeTicks && !isSeries) addMeta(h('span', { class: 'muted' }, t('detail.endsAt', { time: endsAt(ticksToSec(item.RunTimeTicks - (canResume ? pos : 0))) })));
     info.append(meta);
 
-    const badgeHost = h('div', { class: 'badge-host' });
+    // Tags der Datei wie in der Apple-App: Premium-Aufloesung, HDR-Format, Premium-Ton der gewaehlten Spur, dann die weitere Technik (Bildcodec,
+    // Tonformat, Kanaele) als zurueckhaltende Tags; reicht die Zeile nicht, fallen die hinteren weg. Jahr, Laufzeit und Bewertung stehen als Text darueber.
+    // Dazu, wie der Server liefern wuerde (Direct Play, Direct Stream, Transcoding), ruhiger als die Formate: gefragt wird ohne abzuspielen
+    // (window.jc.playbackOutlook) fuer die gewaehlte Version und Spuren; bis zur Antwort haelt ein unsichtbarer Platzhalter den Platz.
+    const tagHost = h('div', { class: 'detail-tags' });
+    const playableId = isSeries ? playItemObj?.Id : item.Id;
+    const outlook = { key: null, method: null, pending: false };
+    const selection = () => {
+      const s = cur();
+      if (!s) return { mediaSourceId: undefined, audioIndex: undefined, subtitleIndex: undefined };
+      const p = picks();
+      return { mediaSourceId: s.Id, audioIndex: sel.audio ?? p.audioIndex ?? undefined, subtitleIndex: sel.sub ?? p.subtitleIndex ?? undefined };
+    };
+    const refreshOutlook = () => {
+      if (!playableId || typeof window.jc.playbackOutlook !== 'function') return;
+      const req = { itemId: playableId, ...selection() };
+      const key = JSON.stringify(req);
+      if (key === outlook.key) return;
+      Object.assign(outlook, { key, method: null, pending: true });
+      window.jc
+        .playbackOutlook(req)
+        .then((r) => r?.method ?? null, () => null)
+        .then((method) => {
+          if (destroyed || outlook.key !== key) return; // inzwischen anders gewaehlt
+          Object.assign(outlook, { method, pending: false });
+          paintBadges();
+        });
+    };
     const paintBadges = () => {
-      badgeHost.replaceChildren();
+      refreshOutlook();
       const s = cur() ?? playItemObj?.MediaSources?.[0];
-      if (s) {
-        const media = Media.describeMedia(s);
-        const b = badges(media, { max: 6 });
-        const extra = [media.videoCodec, media.audio?.name && `${media.audio.name}${media.audio.channels ? ` ${media.audio.channels}` : ''}`].filter(Boolean);
-        if (b) badgeHost.append(b);
-        if (extra.length) badgeHost.append(h('span', { class: 'tech-line' }, extra.join(' · ')));
+      let audio = null;
+      if (s && s === cur()) {
+        const ai = selection().audioIndex;
+        audio = (s.MediaStreams ?? []).find((x) => x.Type === 'Audio' && x.Index === ai) ?? null;
       }
+      const playback = outlook.method ?? (outlook.pending ? 'DirectStream' : undefined); // Platzhalter in der breitesten Fassung
+      const tags = s ? Tags.source(s, { audio, playback, lang: getLocale().slice(0, 2) }) : [];
+      const tagRow = mediaTagRow(tags, { size: 'regular', surface: 'page', fit: true });
+      if (tagRow && !outlook.method && outlook.pending) {
+        const ph = tagRow.querySelector('.tag[data-kind="directStream"]');
+        if (ph) ph.style.visibility = 'hidden';
+      }
+      tagHost.replaceChildren(...(tagRow ? [tagRow] : []));
+      tagHost.hidden = !tagRow;
     };
     paintBadges();
-    info.append(badgeHost);
+    info.append(tagHost);
 
     // ----- Aktionen -----
     const actions = h('div', { class: 'detail-actions' });
@@ -448,7 +484,7 @@ export function detailView({ id, query }) {
     if (!isEpisode) {
       api.getSimilar(item.Id, 14).then((items) => {
         if (destroyed || !items.length) return;
-        body.append(row(t('detail.similar'), items, { showBadges: state.settings.appearance.showBadges, onPlay: (it) => playItem({ itemId: it.Id, resume: true }) }));
+        body.append(row(t('detail.similar'), items, { onPlay: (it) => playItem({ itemId: it.Id, resume: true }) }));
       });
     }
 

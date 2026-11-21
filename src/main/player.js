@@ -202,6 +202,16 @@ class PlayerController extends EventEmitter {
   }
 
   /**
+   * Wie der Server diesen Eintrag liefern wuerde, ohne abzuspielen (dieselbe Anfrage wie beim Start, _prepare aendert keinen Zustand):
+   * { method: 'DirectPlay' | 'DirectStream' | 'Transcode' } fuer das Wiedergabe-Tag der Detailseite; null ohne Anmeldung.
+   */
+  async outlook(req) {
+    if (!this.getClient()) return null;
+    const p = await this._prepare({ ...req, resume: false });
+    return { method: p.res.method };
+  }
+
+  /**
    * Nur Netzwerk, ohne mpv und ohne den Zustand zu aendern: Eintrag holen, Spuren waehlen, PlaybackInfo anfragen.
    * Die Spuren werden schon fuer die Anfrage gewaehlt: Bei einem Transcode steckt nur die angeforderte Tonspur im Strom.
    */

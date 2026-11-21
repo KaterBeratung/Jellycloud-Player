@@ -191,6 +191,11 @@ module.exports = async (ctx) => {
   const o5 = (await ev(`window.__calls.play`))[0] ?? {};
   check('Folge: Titel = Folgenname, Untertitel = Serie und "S<Staffel>:E<Folge>"', o5.title === ep.Name && /\S+ · S\d+:E\d+$/.test(o5.subtitle ?? '') && (o5.subtitle ?? '').startsWith(ep.SeriesName ?? '?'), `${o5.title} | ${o5.subtitle}`);
 
+  // ---------- Wie der Server liefern wuerde (Wiedergabe-Tag der Detailseite), ohne abzuspielen ----------
+  await ev(`window.__calls.play.length = 0`);
+  const ol = await ev(`window.jc.playbackOutlook({ itemId: '${movie.Id}' }).then((r) => r, (e) => ({ err: e.message }))`);
+  check('Ausblick: derselbe Plan wie beim Start (Direct Play), der Player wird dabei nicht aufgerufen', ol?.method === 'DirectPlay' && (await ev(`window.__calls.play.length`)) === 0, JSON.stringify(ol));
+
   // ---------- Links ----------
   await ev(`window.__calls.openExternal.length = 0; window.jc.openExternal('https://example.com/trailer')`);
   await ctx.wait(100);

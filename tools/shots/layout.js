@@ -56,7 +56,7 @@ const CHECK = `(() => {
   const hero = document.querySelector('.hero-slide.active .hero-content');
   if (hero && rect(hero).top < 100) issues.push('Hero-Inhalt unter der Topbar: top=' + Math.round(rect(hero).top));
   if (hero) { const d = document.querySelector('.hero-dots'); if (d && overlap(hero, d)) issues.push('Hero-Inhalt x Punkte'); }
-  for (const t of document.querySelectorAll('.card .thumb')) { const b = t.querySelector('.badges'), p = t.querySelector('.progress'), c = t.querySelector('.corner'); if (b && p && overlap(b, p)) issues.push('Badges x Fortschritt'); if (b && c && overlap(b, c)) issues.push('Badges x Ecke'); }
+  for (const t of document.querySelectorAll('.card .thumb')) { const b = t.querySelector('.tags'), p = t.querySelector('.progress'), c = t.querySelector('.corner'); if (b && p && overlap(b, p)) issues.push('Tags x Fortschritt'); if (b && c && overlap(b, c)) issues.push('Tags x Ecke'); }
   for (const s of document.querySelectorAll('.setting')) {
     const a = s.querySelector('.setting-text'), b = s.querySelector('.setting-control');
     if (a && b && overlap(a, b)) issues.push('Einstellung Text x Steuerung: ' + a.textContent.slice(0, 30));

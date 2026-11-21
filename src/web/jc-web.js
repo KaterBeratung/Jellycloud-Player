@@ -11,6 +11,7 @@
      version, platform     Version der App und "ios" | "android" | "web"
      deviceName            Name des Geraets fuer den Server
      play(req, ctx)        spielt einen Eintrag mit dem nativen Player ab; ctx = { client } mit baseUrl, token (Header: client.authHeader())
+     outlook(req, ctx)     wie der Server diesen Eintrag liefern wuerde, ohne abzuspielen: { method: 'DirectPlay' | 'DirectStream' | 'Transcode' }
      openExternal(url)     Link im Systembrowser oeffnen
    Fuer Ereignisse des Gehaeuses: window.JCWeb.playerActive(bool) und window.JCWeb.playerClosed(info). window.JCWeb.back() fuer die Zurueck-Taste des Geraets:
    true, wenn die Oberflaeche etwas getan hat (Menue oder Fenster geschlossen, eine Seite zurueck), false, wenn nichts mehr zurueck geht. */
@@ -192,6 +193,14 @@
         if (!backend.client) throw Object.assign(new Error('Nicht angemeldet'), { status: 401 });
         await play(req, { client: backend.client });
         return true;
+      }),
+    // Wie der Server liefern wuerde (Wiedergabe-Tag der Detailseite): nur mit einer Huelle, die abspielt (Android); im Browser null
+    playbackOutlook: (req) =>
+      call(async () => {
+        if (!req || typeof req.itemId !== 'string' || !GUID.test(req.itemId)) throw new Error('Ungültiger Eintrag');
+        const outlook = window.JCHost?.outlook;
+        if (!outlook || !backend.client) return null;
+        return outlook(req, { client: backend.client });
       }),
     openExternal: (url) =>
       call(async () => {

@@ -12,7 +12,7 @@ PGS-/ASS-Untertitel.
   Dolby Vision (Profil 5/8) wird über die RPU-Daten abgebildet, Profil 7 FEL nur als Basisschicht.
 - **Audio:** WASAPI-Passthrough für AC3/E-AC3/DTS/DTS-HD/TrueHD, optional exklusiv (für Bitstream von TrueHD/DTS-HD).
   Die App erkennt das Ausgabegerät (Kanalzahl, Bauart) und wählt danach Stereo oder Surround, siehe *Ton-Ausgabe und Kanalerkennung*.
-- **Infuse-ähnliche Oberfläche:** Hero-Banner und Reihen vor allem mit **Neuzugängen** (Banner: nur Neues, Filme und Serien abwechselnd; darunter ganz oben *Weiterschauen*, dann *Neu in Filme*, *Neu in Serien*, Als Nächstes, Favoriten), Poster-Raster mit 4K/HDR/Atmos-Badges,
+- **Infuse-ähnliche Oberfläche:** Hero-Banner und Reihen vor allem mit **Neuzugängen** (Banner: nur Neues, Filme und Serien abwechselnd; darunter ganz oben *Weiterschauen*, dann *Neu in Filme*, *Neu in Serien*, Als Nächstes, Favoriten), Poster-Raster mit **Tags wie in der Apple-App** (4K, HDR-Format, Premium-Ton, siehe *Tags*),
   Detailseite mit Version, Audio und Untertiteln vor dem Start, Staffeln und Folgen, Besetzung, technische Details.
 - **Player:** eigene Steuerung im Liquid-Glass-Stil (Seekbar mit Trickplay-Vorschau, Kapitel, Intro/Abspann überspringen,
   nächste Folge, **Folgen und Staffeln der Serie** zum Wechseln, Countdown an Überspringen und Nächste Folge, Tempo, Bildformat, Audio-/Untertitel-Panel mit Verzögerung und Größe, Technik-Info). Untertitel
@@ -314,7 +314,7 @@ Das dürfen nur Administratoren; sonst erscheint eine verständliche Meldung. Be
 
 ## Einstellungen wirken sofort
 
-Startseite und Bibliothek bleiben beim Verlassen im Speicher des Routers (schnelles Zurück) und lesen die Einstellungen beim Aufbau. Ändert man in den Einstellungen etwas, das sie betrifft (*Banner wechselt automatisch*, *Filme im Trend auf der Startseite*, *Qualitäts-Badges*,
+Startseite und Bibliothek bleiben beim Verlassen im Speicher des Routers (schnelles Zurück) und lesen die Einstellungen beim Aufbau. Ändert man in den Einstellungen etwas, das sie betrifft (*Banner wechselt automatisch*, *Filme im Trend auf der Startseite*,
 *Spoiler-Schutz*, alle *Trailer*-Einstellungen), verwirft `settings.js` die gemerkten Ansichten (`invalidate()`), und der nächste Besuch baut sie mit den neuen Werten auf, ohne Neuladen. Reine Darstellung (Theme, Akzent, Radius, Postergröße) wirkt sofort per CSS und lässt
 die gemerkten Seiten in Ruhe. Das Szenario `tools/shots/settings-live.js` prüft es.
 
@@ -400,7 +400,7 @@ dass `--updated`, `--force-run` und `/S` die richtigen Schalter sind, steht in d
 ## Leistung großer Bibliotheken
 
 Die Bibliothek teilt jede nachgeladene Seite in einen eigenen Block (`content-visibility`), statt ein einziges wachsendes Raster neu zu berechnen. Gemessen mit `tools/shots/perf-library.js`
-(3000 Filme, VM ohne GPU): Laden bis zum Ende 94,9 s auf 38,2 s, lange Aufgaben beim Laden 25,4 s auf 0, Bildzeit beim Zurückscrollen 156 ms auf 31 ms. Badges auf Karten haben keinen Weichzeichner mehr.
+(3000 Filme, VM ohne GPU): Laden bis zum Ende 94,9 s auf 38,2 s, lange Aufgaben beim Laden 25,4 s auf 0, Bildzeit beim Zurückscrollen 156 ms auf 31 ms. Tags auf Karten haben keinen Weichzeichner.
 
 ## Arbeitsspeicher der Startseite
 
@@ -410,6 +410,22 @@ Startseite danach wieder rund 230 MB (Arbeitssatz 1051 auf 658 MB). Das Bildspei
 auf 720p (Banner-Trailer 720p statt 1080p: rund 85 MB weniger). Die Neuzugänge je Bibliothek werden gleichzeitig mit Weiterschauen, Als Nächstes und Favoriten geladen (früher danach), die Startseite steht eine Wartezeit früher.
 Szenario: `tools/shots/trailer-release.js`.
 
+## Tags
+
+Die Formate eines Titels stehen als **Tags wie in der Apple-App** (Regeln und Farben: `src/shared/media-tags.js`, Baustein: `src/renderer/js/tags.js`, Gestaltung:
+Abschnitt „Tags“ in `app.css`). Es gibt **keinen Schalter** dafür (früher *Qualitäts-Badges*; ein gespeicherter Wert fällt beim Laden weg).
+- **Welche:** Premium-Bild (4K, genau ein HDR-Format: Dolby Vision vor HDR10+ vor HDR10 vor HLG, „HDR“ nur ohne bestimmtes), Premium-Ton (höchstens einer:
+  Dolby Atmos, DTS:X, Dolby TrueHD, DTS-HD MA, FLAC/ALAC, LPCM; nur mit Nachweis, nie nach dem Namen der Spur), wie der Server liefert (Direct Play, Direct
+  Stream, Transcoding) und gewöhnliche Angaben (HD, 1440p, 720p, SD, Bildcodec, Tonformat, Kanäle). Nichts doppelt: neben einem Premium-Ton steht sein Codec nicht.
+- **Wo:** Karten unten links, höchstens zwei, Kurzformen („Atmos“, „TrueHD“); Banner bis zu drei; Detailseite in der Reihenfolge Premium-Auflösung, HDR,
+  Premium-Ton der **gewählten** Tonspur, Wiedergabe, weitere Technik, einzeilig (reicht der Platz nicht, fallen die hinteren weg). Jahr, Laufzeit und Bewertung bleiben Text.
+- **Aussehen:** feste Farbpaare je Art (4K Gold, Dolby Vision Violett zu Indigo, Atmos Eisblau zu Indigo, Direct Play Grün …), unabhängig von Design und
+  Akzentfarbe. Fläche aus den zwei Farben auf feste Helligkeit gebracht, Tiefe oben hell, unten dunkel, Kontur 1 px, Schrift mindestens 7:1 zur Fläche
+  (`test/media-tags.test.js`), dazu ein Schein: einmal je Art, Größe und Stärke mit einem Canvas gerechnet und als `border-image` gedehnt, ohne Weichzeichner
+  zur Laufzeit. Klein 17 px (Karten, Banner), normal 22 px (Detailseite). Gewöhnliche Angaben neutral: über Bildern Schwarz 55 %, auf der Seite Schriftfarbe 12 %.
+- **Wiedergabe-Tag der Detailseite:** `window.jc.playbackOutlook` fragt den Server wie beim Start (Hauptprozess `player.outlook`, Android `JCHost.outlook`),
+  ohne abzuspielen, für Version, Ton- und Untertitelspur; bis zur Antwort hält ein unsichtbarer Platzhalter den Platz. Es leuchtet ruhiger (Kontur 70 %,
+  Schein 45 %) als die Formate der Datei. Im Browser ohne Hülle gibt es keins. Im Player kommen die Tags erst mit der Player-Angleichung (Paket P22).
 ## Versionen
 
 Jede Änderung erhöht die Version in `package.json` (und den Wurzeleintrag in `package-lock.json`): 0.0.1 bis 0.0.50, danach 1.1.x. Die Version erscheint unter *Info* und im Namen des Installers.
@@ -585,7 +601,8 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-release.js` | Trailer nach einer Minute Ruhe (Fenster verdeckt oder aus dem Blick) abgebaut, hier mit 1,5 s: kurze Pausen behalten denselben Player, danach kein YouTube-Rahmen mehr (Hauptprozess geprüft), Arbeitsspeicher sinkt, beim Zurückkommen ein neuer Player, `destroy` räumt den Zeitgeber ab; braucht Internet |
 | `trailer-once.js` | Trailer nur einmal: keine Schleife in der Einbettung, nach dem Ende kein Neustart durch Scrollen oder Sichtbarkeitswechsel, Banner spielt eine Folie im selben Besuch nicht noch einmal, neuer Besuch spielt wieder; braucht Internet |
 | `home-back.js` | zurück auf die Startseite auf vielen Wegen (aus Detail, Bibliothek, Einstellungen, Suche, gescrollt, mit und ohne Trailer im Banner): Bild für Bild, ob Banner und Reihen an ihrem Platz sind |
-| `settings-live.js` | Einstellungen wirken ohne Neuladen (Banner, Badges, Trailer, Theme lässt die Seiten im Speicher) |
+| `settings-live.js` | Einstellungen wirken ohne Neuladen (Banner, Trailer, Theme lässt die Seiten im Speicher; Tags ohne Schalter) |
+| `tags-look.js` | Tags wie in der Apple-App: Karten (höchstens zwei, unten links, Kurzformen), Banner (bis drei), Detailseite (Reihenfolge, gewählte Tonspur, Wiedergabe-Tag ruhiger, einzeilig), feste Farben in allen Designs und mit anderer Akzentfarbe, Schein als geteiltes Bild ohne Weichzeichner, nichts abgeschnitten; Aufnahmen `TG-*.png` |
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
@@ -618,7 +635,8 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `src/main/` | Hauptprozess: Jellyfin-API (`jellyfin.js`), Direct-Play-Profil (`profile.js`), mpv-Steuerung (`mpv.js`, `mpv-args.js`), Player-Sitzung (`player.js`), Ausgabegerät und Kanäle (`audio-output.js`), Selbst-Aktualisierung (`updater.js`), Angaben für den Pausenbildschirm (`pause-info.js`), Folgenliste des Players (`episode-list.js`), Lage des Overlays im Vollbild (`fullscreen-bounds.js`), Konfiguration (`config.js`), Bildspeicher des App-Protokolls (`image-cache.js`), Discord Rich Presence (`discord-ipc.js`, `discord-presence.js`) |
 | `src/renderer/` | Oberfläche (Vanilla-JS-Module, `css/app.css`) |
 | `src/player/` | Overlay-Fenster über dem mpv-Video |
-| `src/shared/media.js` | Auswertung von HDR/Dolby Vision/Atmos für Badges (Hauptprozess und Oberfläche); Erkennung wie in der Apple-App (`premiumAudio`): Atmos nur auf TrueHD/E-AC-3 und DTS:X nur auf DTS, jeweils mit Nachweis (`AudioSpatialFormat` oder Profil, nie der Name der Spur), `DOVIInvalid` ist kein Dolby Vision, DTS-HD MA nur bei `MA` als Wort oder „Master Audio“, dazu LPCM und ALAC |
+| `src/shared/media-tags.js` | Tags: welche ein Titel bekommt, in welcher Reihenfolge (Karten, Detailseite) und ihre fest gerechneten Farben (Fläche, Kontur, Schrift, Schein); Baustein zum Zeichnen `src/renderer/js/tags.js` |
+| `src/shared/media.js` | Auswertung von HDR/Dolby Vision/Atmos (Hauptprozess und Oberfläche); Erkennung wie in der Apple-App (`premiumAudio`): Atmos nur auf TrueHD/E-AC-3 und DTS:X nur auf DTS, jeweils mit Nachweis (`AudioSpatialFormat` oder Profil, nie der Name der Spur), `DOVIInvalid` ist kein Dolby Vision, DTS-HD MA nur bei `MA` als Wort oder „Master Audio“, dazu LPCM und ALAC |
 | `src/shared/seerr-state.js` | Stände bei Seerr nach Seerr 3.5.1 (6 gesperrt, 7 gelöscht): anfragbar nur ohne Stand und gelöscht, nie gesperrt (`isRequestable`, `isTaken`, `isPresent`); bis 1.1.6 waren 6 und 7 vertauscht |
 | `src/shared/jellyfin.js`, `seerr.js`, `config-core.js`, `backend.js` | Clients, Konfiguration und die Rückseite der Oberfläche ohne Electron-Abhängigkeit; gemeinsam für Hauptprozess, Tests und `src/web` (siehe „Gemeinsamer Kern und Web-Fassung“) |
 | `src/web/`, `tools/build-web.js`, `mobile/` | Oberfläche ohne Electron (`jc-web.js`), Baustein für den Ordner `www/` (mit `--host` samt Hülle), Android-App (Capacitor, Media3; Werkzeuge in `%LOCALAPPDATA%\jc-android`) |

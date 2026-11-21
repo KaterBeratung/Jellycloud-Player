@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('jc', {
   clearCache: () => call('cache:clear'),
   resetSettings: () => call('settings:reset'),
   play: (req) => call('player:play', req),
+  playbackOutlook: (req) => call('player:outlook', req),
   openExternal: (url) => call('shell:open', url),
   openNotices: () => call('app:notices'),
   setTitleBar: (o) => call('window:titlebar', o),
