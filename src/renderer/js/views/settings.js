@@ -3,6 +3,7 @@ import { t, setLocale, getLocale } from '../i18n.js';
 import { state, updateSettings, activeServer } from '../state.js';
 import { applyAppearance, THEMES, ACCENTS, DEFAULT_ACCENT, isHexColor } from '../theme.js';
 import { openMenu, segmented, slider, toast, toggle } from '../ui.js';
+import { glowSection } from './glow-settings.js';
 import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
@@ -123,7 +124,7 @@ function sectionList(sections) {
 
 export function settingsView({ section }) {
   section = ALIASES[section] ?? section;
-  const el = h('div', { class: 'page settings' });
+  const el = h('div', { class: 'page settings', 'data-glow': 'settings' });
   const nav = h('nav', { class: 'settings-nav' });
   const panel = h('div', { class: 'settings-panel' });
   el.append(h('h1', { class: 'page-title' }, t('nav.settings')), h('div', { class: 'settings-layout' }, nav, panel));
@@ -227,10 +228,11 @@ export function settingsView({ section }) {
     return h(
       'div',
       { class: 'settings-stack' },
+      group(null, setting(t('set.theme'), t('set.themeDesc'), themes, { wide: true }), setting(t('set.accent'), t('set.accentDesc'), accentControl, { wide: true })),
+      // Ambient Glow direkt nach Design und Akzentfarbe (Reihenfolge der Apple-App); die ganze Einstellung wird gespeichert
+      glowSection({ save: (g) => saveSoon({ glow: g }), setting, group }).el,
       group(
         null,
-        setting(t('set.theme'), t('set.themeDesc'), themes, { wide: true }),
-        setting(t('set.accent'), t('set.accentDesc'), accentControl, { wide: true }),
         setting(t('set.posterSize'), t('set.posterSizeDesc'), slider({ min: 120, max: 260, step: 4, value: app().posterSize, format: (v) => `${v}px`, onInput: (v) => setAppearance({ posterSize: v }) })),
         setting(t('set.radius'), t('set.radiusDesc'), slider({ min: 0, max: 28, step: 1, value: app().radius, format: (v) => `${v}px`, onInput: (v) => setAppearance({ radius: v }) })),
         setting(

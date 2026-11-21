@@ -32,7 +32,9 @@ function queryFor(parent) {
 }
 
 export function libraryView({ id }) {
-  const el = h('div', { class: 'page library' });
+  // Ambient Glow: Bibliotheken mit Filmen tragen den Bereich Filme, mit Serien den Bereich Serien, alle anderen den Bereich Mediatheken (glow.js)
+  const kind = state.views?.find((v) => v.Id === id)?.CollectionType;
+  const el = h('div', { class: 'page library', 'data-glow': kind === 'movies' ? 'movies' : kind === 'tvshows' ? 'series' : 'libraries' });
   const titleEl = h('h1', null, ' ');
   const countEl = h('span', { class: 'count' });
   const controls = h('div', { class: 'lib-controls' });

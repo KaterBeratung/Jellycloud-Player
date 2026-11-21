@@ -46,7 +46,7 @@ const clock = (sec) => {
 };
 
 export function adminView({ section = 'server' }) {
-  const el = h('div', { class: 'page settings admin' });
+  const el = h('div', { class: 'page settings admin', 'data-glow': 'settings' });
   const nav = h('nav', { class: 'settings-nav' });
   const panel = h('div', { class: 'settings-panel' });
   el.append(h('h1', { class: 'page-title' }, t('admin.title')), h('div', { class: 'settings-layout' }, nav, panel));

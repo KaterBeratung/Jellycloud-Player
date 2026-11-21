@@ -7,10 +7,10 @@ import { state } from '../state.js';
  * @param {{onDone:()=>void, onCancel?:()=>void}} o
  */
 export function loginView({ onDone, onCancel }) {
-  const el = h('div', { class: 'login page-enter' });
-  const aurora = h('div', { class: 'aurora' }, h('i'), h('i'), h('i'));
+  // Hintergrund: der Ambient Glow des Bereichs Anmeldung (glow.js; vorher eine laufende, unscharfe Aurora in der Akzentfarbe)
+  const el = h('div', { class: 'login page-enter', 'data-glow': 'signIn' });
   const panel = h('div', { class: 'login-card' });
-  el.append(aurora, panel);
+  el.append(panel);
   let stopQc = null;
 
   const mark = h('div', { class: 'brand-mark' }, icon('cloud-logo', 72));

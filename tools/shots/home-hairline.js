@@ -202,9 +202,16 @@ module.exports = async (ctx) => {
       await ctx.wait(900);
       await ctx.run(`location.hash = '#/item/${movie.Id}'`);
       await waitFor(`!!document.querySelector('.detail-bd')`, 8000);
+      // Was sich auf der Seite noch von selbst aendert, muss vor dem Vergleich stehen: das Wiedergabe-Tag (Antwort des Servers ohne Abspielen)
+      await waitFor(`!document.querySelector('.detail-tags .tag[style*="visibility: hidden"]')`, 5000);
       await ctx.wait(300);
       for (const t of [0, 60, 120, 180, 240, 300, 380]) {
-        await ctx.run(`document.getAnimations().forEach((a) => { if (['page-in', 'bd-in'].includes(a.animationName)) { a.pause(); a.currentTime = ${t}; } })`);
+        // Der Farbton der Detailseite (ambient.js, --tint/--tint-amt) blendet 1,1 s lang ein; seit 1.2.3 hat die Startseite keinen (Ambient Glow statt
+        // Farbton, Entscheidung E7), er beginnt also bei 0. Zwischen den zwei Aufnahmen (80 ms) aendert er sonst den ganzen Hintergrund um einige
+        // Farbstufen: abschliessen, damit nur der Rand des Hintergrundbilds verglichen wird.
+        // Alles andere, was noch laeuft (Einblenden des Inhalts "rise", frisch geladene Bilder), wird angehalten: verglichen werden zwei sonst gleiche
+        // Bilder, die sich nur im Hintergrund unterscheiden (vorher liefen diese weiter und machten den Vergleich zufaellig).
+        await ctx.run(`document.getAnimations().forEach((a) => { if (['page-in', 'bd-in'].includes(a.animationName)) { a.pause(); a.currentTime = ${t}; } else if (['--tint', '--tint-amt'].includes(a.transitionProperty)) a.finish(); else if (a.playState === 'running') a.pause(); })`);
         await ctx.wait(120);
         await diffMeasure(`Detailseite Film ${w}x${hgt}, Einblenden bei ${t} ms (${i + 1}. Mal)`, `ein-${w}-${t}-${i}`);
       }

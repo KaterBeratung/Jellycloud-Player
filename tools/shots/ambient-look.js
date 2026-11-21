@@ -1,4 +1,4 @@
-// Hintergrundton aus dem Artwork: an auf Start und Detail, aus auf Bibliothek/Einstellungen, abschaltbar.
+// Hintergrundton aus dem Artwork: nur noch auf der Detailseite (die Startseite und die uebrigen Bereiche haben seit 1.2.3 den Ambient Glow, glow-look.js), abschaltbar.
 const path = require('node:path');
 const { server } = require('../mock-server');
 module.exports = async (ctx) => {

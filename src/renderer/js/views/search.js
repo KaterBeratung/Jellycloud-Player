@@ -11,7 +11,7 @@ import { requestCard } from './request-card.js';
 const SEERR_AVAILABLE = 5;
 
 export function searchView({ query }) {
-  const el = h('div', { class: 'page search' });
+  const el = h('div', { class: 'page search', 'data-glow': 'search' });
   const input = h('input', { class: 'search-input', type: 'search', placeholder: t('search.placeholder'), autocomplete: 'off', spellcheck: 'false', 'aria-label': t('nav.search') });
   input.value = query?.get('q') ?? '';
   const results = h('div', { class: 'search-results' });

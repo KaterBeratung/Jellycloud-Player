@@ -6,7 +6,7 @@ import { lazyImage, row, skeletonRow, titleOf, toast } from '../ui.js';
 import { cardTags } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
-import { setAmbient } from '../ambient.js';
+import { refreshGlow } from '../glow.js';
 import { createTrailer } from '../trailer.js';
 import { navigate } from '../router.js';
 import { requestCard, requestOne } from './request-card.js';
@@ -315,7 +315,7 @@ function createHero(entries, { autoplay, onActive, trailers = null }) {
 }
 
 export function homeView() {
-  const el = h('div', { class: 'page home' });
+  const el = h('div', { class: 'page home', 'data-glow': 'home' }); // Ambient Glow der Startseite (glow.js)
   const heroHost = h('div', { class: 'hero-host' });
   const rows = h('div', { class: 'rows' });
   el.append(heroHost, rows);
@@ -437,7 +437,6 @@ export function homeView() {
       const tr = state.settings.trailer ?? {};
       hero = createHero(entries, {
         autoplay: state.settings.appearance.heroAutoplay,
-        onActive: (hash) => setAmbient(el, hash),
         // Trailer im Banner: Einstellungen "Trailer automatisch abspielen" und "Auch auf der Startseite"; ohne Netz gar nicht erst versuchen (sonst wartete jede Folie auf den Zeitablauf)
         trailers: tr.autoplay && tr.home !== false && navigator.onLine !== false ? tr : null
       });
@@ -446,6 +445,7 @@ export function homeView() {
     } else {
       heroHost.append(h('div', { class: 'hero-empty' }));
     }
+    refreshGlow(); // Ambient Glow: das Banner steht jetzt (Reichweite von unten, oberer Schein erst ohne Banner)
 
     // Reihen: Standardreihenfolge ist Weiterschauen (ganz oben), Neuzugaenge je Bibliothek, Als Naechstes, Favoriten, Filme im Trend (wie HomeRows.defaultOrder); der Nutzer kann sie umordnen und ausblenden
     // (Einstellungen > Startseite). "Filme im Trend" kommt als Platzhalter an seinen Platz und fuellt sich, sobald Seerr geantwortet hat.

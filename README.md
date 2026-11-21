@@ -410,6 +410,22 @@ Startseite danach wieder rund 230 MB (Arbeitssatz 1051 auf 658 MB). Das Bildspei
 auf 720p (Banner-Trailer 720p statt 1080p: rund 85 MB weniger). Die Neuzugänge je Bibliothek werden gleichzeitig mit Weiterschauen, Als Nächstes und Favoriten geladen (früher danach), die Startseite steht eine Wartezeit früher.
 Szenario: `tools/shots/trailer-release.js`.
 
+## Ambient Glow
+
+Wie in der Apple-App liegt hinter dem Inhalt ein **weicher Lichtschein vom oberen und unteren Rand** (Regeln: `src/shared/glow.js`, Ebene: `src/renderer/js/glow.js`,
+Einstellungen: `src/renderer/js/views/glow-settings.js`). Er ersetzt die laufende, unscharfe Aurora der Anmeldung und auf der Startseite den Hintergrundton aus
+dem Bild (der bleibt nur auf Detailseiten, Einstellung *Hintergrund der Detailseite aus dem Bild*; beide liegen nie übereinander).
+- **Bereiche:** Startseite, Filme (Bibliotheken mit Filmen), Serien, Suche, Anfragen (kommt mit dem Reiter), Mediatheken (andere Bibliotheken), Anmeldung,
+  Einstellungen (auch Verwaltung). Kein Ambient Glow auf Detailseiten, im Player, in Menüs und Dialogen. Jede Seite nennt ihren Bereich (`data-glow`).
+- **Form:** je Rand ein elliptischer Verlauf, Mittelpunkt 8 % der Höhe außerhalb des Randes, Deckkraft in der Mitte Intensität × 0,85, Glockenabfall in 15 Stufen;
+  jeder Schein reicht 58 % der Fensterhöhe, höchstens 760 px (Handy-Ansicht 600). Zwei Farben laufen quer über den Lichtfleck (als Maske). Keine Unschärfe,
+  keine laufende Bewegung, fest hinter dem Inhalt; Wechsel blenden in 0,3 s.
+- **Startseite:** von unten nur bis unter die Unterkante des Banners in Ruhelage (mindestens 160 px), von oben erst ohne Banner oder wenn es ganz hinausgescrollt ist.
+- **Einstellungen** (*Erscheinungsbild*, direkt nach Design und Akzentfarbe): Vorschau, Ein/Aus, Intensität, Farbverlauf; 14 vorgegebene Verläufe und zwei eigene
+  Farben oder sechs feste Einzelfarben und eine eigene (beide Wahlen getrennt gemerkt); je Bereich *Allgemein*, *Eigene* (dieselben Zeilen, *Bereich zurücksetzen*)
+  oder *Aus*; *Ambient Glow zurücksetzen* mit Rückfrage. Standard: an, Verlauf Lila zu Blau, 100 %. Eigene Farben werden für die Fläche so weit abgedunkelt,
+  dass weiße Schrift auf der stärksten Stelle 4,5:1 hat. Gespeichert in `settings.glow` (nur was vom Standard abweicht, tolerant gelesen).
+- **Tests:** `test/glow.test.js` (Fälle aus `GlowStyleTests` der Apple-App), Szenario `tools/shots/glow-look.js` (Bereiche, Startseite, Einstellungen, Speichern; Aufnahmen `GL-*.png`).
 ## Tags
 
 Die Formate eines Titels stehen als **Tags wie in der Apple-App** (Regeln und Farben: `src/shared/media-tags.js`, Baustein: `src/renderer/js/tags.js`, Gestaltung:
@@ -602,6 +618,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-once.js` | Trailer nur einmal: keine Schleife in der Einbettung, nach dem Ende kein Neustart durch Scrollen oder Sichtbarkeitswechsel, Banner spielt eine Folie im selben Besuch nicht noch einmal, neuer Besuch spielt wieder; braucht Internet |
 | `home-back.js` | zurück auf die Startseite auf vielen Wegen (aus Detail, Bibliothek, Einstellungen, Suche, gescrollt, mit und ohne Trailer im Banner): Bild für Bild, ob Banner und Reihen an ihrem Platz sind |
 | `settings-live.js` | Einstellungen wirken ohne Neuladen (Banner, Trailer, Theme lässt die Seiten im Speicher; Tags ohne Schalter) |
+| `glow-look.js` | Ambient Glow: Bereiche (Anmeldung ohne Aurora, Startseite, Filme, Serien, Suche, Einstellungen; keiner auf Detailseiten), Startseite oben erst ohne Banner, unten bis unter das Banner, keine Unschärfe und keine Animation, Einstellungen (Ein/Aus, Einzelfarbe, Verlauf gemerkt, Intensität, eigener Bereich, Bereich aus, zurücksetzen) wirken sofort und werden gespeichert; Aufnahmen `GL-*.png` |
 | `tags-look.js` | Tags wie in der Apple-App: Karten (höchstens zwei, unten links, Kurzformen), Banner (bis drei), Detailseite (Reihenfolge, gewählte Tonspur, Wiedergabe-Tag ruhiger, einzeilig), feste Farben in allen Designs und mit anderer Akzentfarbe, Schein als geteiltes Bild ohne Weichzeichner, nichts abgeschnitten; Aufnahmen `TG-*.png` |
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
@@ -635,6 +652,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `src/main/` | Hauptprozess: Jellyfin-API (`jellyfin.js`), Direct-Play-Profil (`profile.js`), mpv-Steuerung (`mpv.js`, `mpv-args.js`), Player-Sitzung (`player.js`), Ausgabegerät und Kanäle (`audio-output.js`), Selbst-Aktualisierung (`updater.js`), Angaben für den Pausenbildschirm (`pause-info.js`), Folgenliste des Players (`episode-list.js`), Lage des Overlays im Vollbild (`fullscreen-bounds.js`), Konfiguration (`config.js`), Bildspeicher des App-Protokolls (`image-cache.js`), Discord Rich Presence (`discord-ipc.js`, `discord-presence.js`) |
 | `src/renderer/` | Oberfläche (Vanilla-JS-Module, `css/app.css`) |
 | `src/player/` | Overlay-Fenster über dem mpv-Video |
+| `src/shared/glow.js` | Ambient Glow: Farben, Verläufe, Bereiche, Standard, tolerantes Lesen, Ändern (`set.*`), die eine Lesestelle `resolve`, Begrenzung eigener Farben, Glockenabfall, Reichweite, CSS der zwei Scheine |
 | `src/shared/media-tags.js` | Tags: welche ein Titel bekommt, in welcher Reihenfolge (Karten, Detailseite) und ihre fest gerechneten Farben (Fläche, Kontur, Schrift, Schein); Baustein zum Zeichnen `src/renderer/js/tags.js` |
 | `src/shared/media.js` | Auswertung von HDR/Dolby Vision/Atmos (Hauptprozess und Oberfläche); Erkennung wie in der Apple-App (`premiumAudio`): Atmos nur auf TrueHD/E-AC-3 und DTS:X nur auf DTS, jeweils mit Nachweis (`AudioSpatialFormat` oder Profil, nie der Name der Spur), `DOVIInvalid` ist kein Dolby Vision, DTS-HD MA nur bei `MA` als Wort oder „Master Audio“, dazu LPCM und ALAC |
 | `src/shared/seerr-state.js` | Stände bei Seerr nach Seerr 3.5.1 (6 gesperrt, 7 gelöscht): anfragbar nur ohne Stand und gelöscht, nie gesperrt (`isRequestable`, `isTaken`, `isPresent`); bis 1.1.6 waren 6 und 7 vertauscht |

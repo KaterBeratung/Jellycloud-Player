@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { route, start, refresh, navigate, invalidate } from './router.js';
 import { toast, closeMenu, initialsOf } from './ui.js';
 import { syncAmbient } from './ambient.js';
+import { syncGlow } from './glow.js';
 import { homeView } from './views/home.js';
 import { libraryView } from './views/library.js';
 import { detailView } from './views/detail.js';
@@ -51,6 +52,7 @@ function showLogin({ cancellable = false, message = '' } = {}) {
     onCancel: cancellable ? () => boot() : undefined
   });
   root.replaceChildren(h('div', { class: 'drag-strip' }), currentLogin.el);
+  syncGlow(currentLogin.el); // Bereich Anmeldung
   if (message) toast(message, { type: 'error' });
 }
 
@@ -155,7 +157,8 @@ function buildShell() {
   const onRoute = (e) => {
     markActive(e.detail);
     paintUpdateDot();
-    syncAmbient(view.firstElementChild); // Hintergrundton der jetzt sichtbaren Ansicht (oder ausblenden)
+    syncAmbient(view.firstElementChild); // Hintergrundton der jetzt sichtbaren Ansicht (oder ausblenden; nur Detailseiten)
+    syncGlow(view.firstElementChild); // Ambient Glow des Bereichs der jetzt sichtbaren Ansicht (glow.js; Seiten ohne Bereich: keiner)
   };
   document.addEventListener('route', onRoute);
   const resizeObserver = new ResizeObserver(() => place(links.find((a) => a.classList.contains('on'))));

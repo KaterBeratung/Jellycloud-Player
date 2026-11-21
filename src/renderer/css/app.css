@@ -636,12 +636,22 @@ kbd { display: inline-block; padding: 3px 9px; border-radius: 7px; background: v
 
 /* ---------- Login ---------- */
 .login { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 24px; }
-.aurora { position: absolute; inset: 0; overflow: hidden; filter: blur(70px) saturate(1.3); opacity: 0.8; }
-.aurora i { position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%; background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.55), transparent 65%); animation: drift 22s ease-in-out infinite alternate; }
-.aurora i:nth-child(1) { left: -12vmax; top: -16vmax; }
-.aurora i:nth-child(2) { right: -14vmax; bottom: -18vmax; background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.4), transparent 65%); animation-duration: 28s; }
-.aurora i:nth-child(3) { left: 38%; top: 40%; width: 30vmax; height: 30vmax; background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.26), transparent 65%); animation-duration: 34s; animation-direction: alternate-reverse; }
-@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(9vmax, 6vmax, 0) scale(1.18); } }
+/* ---------- Ambient Glow (Regeln: src/shared/glow.js, Ebene: js/glow.js) ----------
+   Feste Ebene hinter dem Inhalt (scrollt nicht mit), je ein Lichtschein vom oberen und unteren Rand; Farbe, Form und Hoehe setzt glow.js
+   (elliptischer Verlauf in 15 Stufen, bei zwei Farben als Maske). Keine Unschaerfe, keine laufende Bewegung; Ein- und Ausblenden 0,3 s.
+   Startseite: der obere Schein zeigt sich erst, wenn das Banner ganz hinausgescrollt ist (.hero-visible). */
+#glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+#glow i, .glow-preview i { position: absolute; left: 0; right: 0; opacity: 0; transition: opacity calc(300ms * var(--dur)) ease-in-out; }
+#glow i.on, .glow-preview i.on { opacity: 1; }
+#glow .glow-top, .glow-preview .glow-top { top: 0; }
+#glow .glow-bottom, .glow-preview .glow-bottom { bottom: 0; }
+#glow.hero-visible .glow-top.on { opacity: 0; }
+#glow.instant i { transition: none; } /* Seitenwechsel: der Schein wechselt mit der Seite, ohne Ueberblenden */
+.glow-preview { position: relative; width: 100%; min-width: 220px; height: 132px; border-radius: 18px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.glow-preview i { height: 58%; }
+.swatch.two { background: linear-gradient(135deg, var(--c) 0 50%, var(--c2) 50% 100%); } /* Verlauf: beide Farben im Farbfeld */
+.swatch.custom.glow-pick { background: var(--c); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.28); } /* eigene Glow-Farbe: zeigt die gewaehlte Farbe */
+.glow-own { margin: 2px 0 10px 14px; padding-left: 14px; border-left: 2px solid var(--line2); } /* eigene Einstellung eines Bereichs, unter seiner Zeile */
 .login-card { position: relative; width: min(430px, 100%); padding: 38px 36px 32px; border-radius: 28px; background: var(--glass); border: 1px solid var(--line2); backdrop-filter: blur(34px) saturate(1.5); box-shadow: 0 40px 100px -30px rgb(0 0 0 / 0.8); display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; animation: rise calc(800ms * var(--dur)) var(--ease) both; }
 .login-card.shake { animation: shake 0.45s var(--ease); }
 @keyframes shake { 20% { transform: translateX(-9px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }

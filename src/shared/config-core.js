@@ -3,9 +3,9 @@
    Wohin gespeichert wird und wie Zugangsdaten verschluesselt werden, steckt in `io` und `codec` (Hauptprozess: Datei und Windows-DPAPI in src/main/config.js,
    Web/Handy: localStorage bzw. der sichere Speicher des Geraets in src/web/jc-web.js). Der Aufbau der Konfiguration und alle Regeln beim Laden sind fuer alle gleich. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./home-rows'));
-  else root.JCConfig = factory(root.JCHomeRows);
-})(typeof self !== 'undefined' ? self : this, function (HomeRows) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./home-rows'), require('./glow'));
+  else root.JCConfig = factory(root.JCHomeRows, root.JCGlow);
+})(typeof self !== 'undefined' ? self : this, function (HomeRows, Glow) {
   'use strict';
 /** Standardwerte aller Einstellungen. Neue Schluessel werden beim Laden automatisch ergaenzt. */
 /**
@@ -34,6 +34,9 @@ const DEFAULT_SETTINGS = {
   // Startseite anpassen: Banner (an/aus, Folien, Trend-Folien) und Reihen (Reihenfolge, ausgeblendet); Regeln in src/shared/home-rows.js.
   // "Filme im Trend" blendet appearance.homeTrending aus, "Banner wechselt automatisch" ist appearance.heroAutoplay.
   home: structuredClone(HomeRows.DEFAULTS),
+  // Ambient Glow (wie in der Apple-App): an, Verlauf Lila zu Blau, 100 %, je Bereich an und ohne eigene Einstellung. Regeln, tolerantes Lesen und
+  // Aendern in src/shared/glow.js; gespeichert wird die ganze Einstellung (updateSettings ersetzt sie, statt sie zu verschmelzen).
+  glow: Glow.defaults(),
   // Discord Rich Presence: zeigt in Discord, was du gerade schaust (Titel, Folge, Poster, Fortschritt). Aus, bis du es einschaltest. Die Anwendung "Jellycloud Player" ist eingebaut
   // (DEFAULT_CLIENT_ID in src/main/discord-presence.js). Regeln: src/main/discord-presence.js (normalizeSettings).
   discord: {
@@ -184,6 +187,7 @@ class ConfigCore {
       if (raw.seerr && typeof raw.seerr === 'object' && raw.seerr.url && raw.seerr.secret) this.data.seerr = raw.seerr;
       this.data.settings = deepMerge(DEFAULT_SETTINGS, raw.settings);
       this.data.settings.home = HomeRows.homeConfig(this.data.settings.home); // Grenzen und Listen pruefen (eine von Hand bearbeitete Datei darf nichts zerlegen)
+      this.data.settings.glow = Glow.normalize(raw.settings?.glow); // Ambient Glow tolerant lesen (Unlesbares faellt einzeln weg)
       // Version 2 (Apple-TV-Stil): der alte Standard-Eckenradius 14 wird einmalig auf den neuen Standard gehoben. Bewusst gewaehlte andere Werte bleiben.
       const ver = raw.version ?? 1;
       const look = this.data.settings.appearance;
@@ -272,6 +276,8 @@ class ConfigCore {
   updateSettings(patch) {
     this.data.settings = deepMerge(this.data.settings, patch);
     if (patch && typeof patch === 'object' && 'home' in patch) this.data.settings.home = HomeRows.homeConfig(this.data.settings.home);
+    // Ambient Glow: die Oberflaeche schickt die ganze Einstellung (src/shared/glow.js set.*); sie ersetzt die alte, damit Bereiche auch wegfallen koennen
+    if (patch && typeof patch === 'object' && 'glow' in patch) this.data.settings.glow = Glow.normalize(patch.glow);
     this._save();
     return this.data.settings;
   }
