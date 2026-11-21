@@ -1,4 +1,4 @@
-// Seerr-Anbindung (JC_DEV=1): Verbinden (Jellyfin-Konto und API-Schluessel), Suche, Anfragen, Fehlerfaelle, Trennen. Nutzt den Mock-Seerr des Mock-Servers.
+// Seerr-Anbindung (JC_DEV=1): Verbinden (nur mit dem Jellyfin-Konto, je Profil), Suche, Anfragen, Fehlerfaelle, Trennen (Adresse bleibt vorbelegt). Nutzt den Mock-Seerr des Mock-Servers.
 //   $env:JC_DEV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/seerr.js
 const fs = require('node:fs');
 const path = require('node:path');
@@ -51,9 +51,10 @@ module.exports = async (ctx) => {
   // ---------- Verbinden mit dem Jellyfin-Konto ----------
   await go('#/settings/seerr');
   check('Einstellungsbereich "Anfragen (Seerr)" ist in der Seitenleiste', await ctx.run(`!![...document.querySelectorAll('.snav')].find((a) => /Seerr/.test(a.innerText))`));
-  check('Formular: Adresse, Benutzer (vorbelegt mit dem Jellyfin-Konto), Passwort', await ctx.run(`document.querySelectorAll('.settings-panel input.field').length === 4 && document.querySelector('.settings-panel input[placeholder="Benutzername"]')?.value === 'demo'`));
+  check('Formular: Adresse, Benutzer (vorbelegt mit dem Jellyfin-Konto), Passwort', await ctx.run(`document.querySelectorAll('.settings-panel input.field').length === 3 && document.querySelector('.settings-panel input[placeholder="Benutzername"]')?.value === 'demo'`));
   const visibleFields = () => ctx.run(`[...document.querySelectorAll('.settings-panel input.field')].filter((i) => !i.closest('[hidden]')).map((i) => i.type)`);
-  check('Jellyfin-Modus zeigt Adresse, Benutzer, Passwort (nicht den Schluessel)', JSON.stringify(await visibleFields()) === JSON.stringify(['text', 'text', 'password']), JSON.stringify(await visibleFields()));
+  check('Nur das Jellyfin-Konto: Adresse, Benutzer, Passwort; keine Wahl der Anmeldung, kein API-Schluessel', JSON.stringify(await visibleFields()) === JSON.stringify(['text', 'text', 'password']) && (await ctx.run(`!document.querySelector('.settings-panel .segmented') && !/API/.test(document.querySelector('.settings-panel').innerText)`)), JSON.stringify(await visibleFields()));
+  check('Hinweis: die Verbindung gilt nur fuer dieses Profil', await ctx.run(`/nur für dieses Profil/.test(document.querySelector('.settings-panel').innerText)`));
   await ctx.capture(path.join(out, 'S-01-seerr-settings.png'));
   await type('.settings-panel input[placeholder="seerr.example.com"]', '127.0.0.1:8097');
   await type('.settings-panel input[type=password]', 'falsch');
@@ -64,7 +65,9 @@ module.exports = async (ctx) => {
   await clickText('.settings-panel .btn.primary', 'Verbinden');
   check('Verbunden: Statuszeile mit Adresse und Benutzer', await waitFor(`/Verbunden mit http:\\/\\/127\\.0\\.0\\.1:8097 als Demo/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000), await ctx.run(`document.querySelector('.settings-panel .account-card')?.innerText`));
   const saved = ctx.config.getSeerr();
-  check('Zugangsdaten gespeichert (entschluesselt: Session-Cookie), Modus Jellyfin', saved?.secret === 'mock-seerr-sid' && saved?.mode === 'jellyfin', JSON.stringify({ mode: saved?.mode, user: saved?.userName }));
+  check('Zugangsdaten gespeichert (entschluesselt: Session-Cookie) samt Jellyfin-Kennung von Seerr, ohne Modus', saved?.secret === 'mock-seerr-sid' && typeof saved?.jellyfinUserId === 'string' && saved.jellyfinUserId.length > 0 && !('mode' in saved), JSON.stringify({ user: saved?.userName, jf: saved?.jellyfinUserId }));
+  const file = JSON.parse(raw());
+  check('In der Datei beim aktiven Profil, nicht fuer das ganze Geraet', !('seerr' in file) && file.servers.find((s) => s.id === file.activeServerId)?.seerr?.url === 'http://127.0.0.1:8097' && file.version === 10);
   check('Session-Cookie steht nicht im Klartext in der Konfigurationsdatei', !raw().includes('mock-seerr-sid'));
   const pub = await ctx.run(`window.jc.getState().then((s) => JSON.stringify(s.seerr))`);
   check('Oberflaeche bekommt keine Zugangsdaten', !/mock-seerr-sid/.test(pub) && JSON.parse(pub).url === 'http://127.0.0.1:8097', pub);
@@ -178,27 +181,20 @@ module.exports = async (ctx) => {
   check('Suche bei abgelaufener Sitzung: Hinweis statt Karten', await ctx.run(`/abgelaufen/.test(document.querySelector('.seerr-note')?.textContent ?? '') && !document.querySelector('.req-card')`));
   SEERR.expired = false;
 
-  // ---------- Trennen, dann mit API-Schluessel verbinden ----------
+  // ---------- Trennen, dann erneut verbinden (Adresse vorbelegt) ----------
   await go('#/settings/seerr');
   await clickText('.settings-panel .btn.danger', 'Trennen');
-  check('Trennen: Zugangsdaten sind geloescht', await waitFor(`!!document.querySelector('.settings-panel input.field')`, 4000) && ctx.config.getSeerr() === null);
+  check('Trennen: Zugangsdaten sind geloescht', await waitFor(`!!document.querySelector('.settings-panel input.field')`, 4000) && ctx.config.getSeerr() === null && !JSON.parse(raw()).servers.some((s) => s.seerr));
+  check('...die Adresse steht zum erneuten Verbinden schon im Formular, der Benutzer auch', await ctx.run(`document.querySelector('.settings-panel input[placeholder="seerr.example.com"]').value === 'http://127.0.0.1:8097' && document.querySelector('.settings-panel input[placeholder="Benutzername"]').value === 'demo'`));
   await search('mock');
   check('Nach dem Trennen keine Seerr-Gruppe mehr', await ctx.run(`!document.querySelector('.seerr-group, .req-card')`));
   await go('#/settings/seerr');
-  await clickText('.settings-panel button.seg', 'API-Schlüssel');
-  await ctx.wait(300);
-  check('API-Schluessel-Modus zeigt das Schluesselfeld statt Benutzer/Passwort', JSON.stringify(await visibleFields()) === JSON.stringify(['text', 'password']), JSON.stringify(await visibleFields()));
-  await type('.settings-panel input[placeholder="seerr.example.com"]', 'http://127.0.0.1:8097');
-  await type('.settings-panel input[placeholder="API-Schlüssel"]', 'falscher-schluessel');
+  await type('.settings-panel input[type=password]', 'demo');
   await clickText('.settings-panel .btn.primary', 'Verbinden');
-  check('Falscher Schluessel wird abgelehnt', await waitFor(`/abgelehnt/.test(document.querySelector('.settings-panel .form-error')?.textContent ?? '')`, 5000), await ctx.run(`document.querySelector('.settings-panel .form-error')?.textContent`));
-  await type('.settings-panel input[placeholder="API-Schlüssel"]', SEERR.apiKey);
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
-  check('Mit gueltigem Schluessel verbunden (Konto des Schluessels)', await waitFor(`/als Schluessel-Konto/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 5000) && ctx.config.getSeerr()?.mode === 'apikey');
+  check('Erneut verbunden, ohne die Adresse noch einmal einzugeben', await waitFor(`/Verbunden mit http:\\/\\/127\\.0\\.0\\.1:8097 als Demo/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 5000));
   state.log.length = 0;
   await search('thrones');
-  check('Mit Schluessel funktioniert die Suche (Header X-Api-Key)', (await cards()).some((c) => c.title === 'Mock Thrones' && c.chip === 'Angefragt'), JSON.stringify(await cards()));
-
+  check('Die Suche funktioniert wieder (Sitzung des Jellyfin-Kontos)', (await cards()).some((c) => c.title === 'Mock Thrones' && c.chip === 'Angefragt'), JSON.stringify(await cards()));
   // Meldungen der Konsole: erwartete Fehlerfaelle (500 der Details, 401, 403, 409) erscheinen als "Failed to load resource" nur bei Bildern, nie als Skriptfehler
   const scriptErrors = consoleErrors.filter((m) => !/Failed to load resource|ERR_/.test(m));
   check('Keine Skriptfehler und keine Warnungen in der Konsole der Oberflaeche', scriptErrors.length === 0, scriptErrors.slice(0, 3).join(' | '));

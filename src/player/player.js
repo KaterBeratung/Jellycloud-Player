@@ -1,8 +1,10 @@
 import { h, icon } from '../renderer/js/dom.js';
 import { installNoDrag } from '../renderer/js/no-drag.js';
+import { installMotion } from '../renderer/js/motion.js';
 import { formatSpan, formatClock, endsAt, chapterAt, isGenericChapter } from './pause.js';
 
 installNoDrag();
+installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (motion.js)
 
 // ---------- Texte ----------
 const TEXT = {
@@ -1080,7 +1082,6 @@ function apply(patch) {
       style.setProperty('--accent-fg', `rgb(${c.fg.join(' ')})`);
       style.setProperty('--accent-ink', c.ink);
     }
-    document.documentElement.dataset.anim = a.animations ?? 'full';
     document.documentElement.dataset.blur = a.blur === false ? 'off' : 'on';
     paintSeekButtons();
   }

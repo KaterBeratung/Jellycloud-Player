@@ -3,7 +3,7 @@
 // Titel verbergen, Knopf, Ende, Neustart von Discord, Ausschalten. Mock-Server auf eigenem Port 9097.
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/discord.js
 const path = require('node:path');
-const { server, items, SEERR, state } = require('../mock-server');
+const { server, items, state } = require('../mock-server');
 const { startFakeDiscord, fakePipeBase } = require('../../test/fake-discord');
 
 module.exports = async (ctx) => {
@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
   ctx.presence.retryMs = 800;
   await ctx.run(`window.jc.login({url:'http://127.0.0.1:${PORT}', username:'demo', password:'demo'}).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
   await ctx.wait(2500);
-  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', mode: 'apikey', apiKey: ${JSON.stringify(SEERR.apiKey)} }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', username: 'demo', password: 'demo' }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
   await ctx.wait(1800);
 
   const player = ctx.player;

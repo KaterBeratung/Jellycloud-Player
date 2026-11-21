@@ -1,10 +1,12 @@
 import { h } from './dom.js';
+import { reducedMotion } from './motion.js';
 
 /**
  * Startanimation (wie bei Netflix): Beim Start der App zeichnet sich das Wolken-Logo, ein Lichtblitz folgt, der Schriftzug erscheint Buchstabe fuer Buchstabe,
  * dann faehrt die Kamera durch das Logo hindurch in die Oberflaeche. Gebaut aus Elementen und CSS-Animationen (css/app.css, Abschnitt "Startanimation"), ohne Bild- und Tondatei.
  *
- * Ablauf (bei Animationen "voll"; bei "reduziert" laeuft alles in 45 % der Zeit, ohne Zoom und Lichtblitz; bei "aus" gibt es nichts):
+ * Sie laeuft bei jedem Start der App (kein Schalter, keine Vorschau: wie in der Apple-App, Entscheidung E7). Ablauf; bei "Bewegung reduzieren" (System, motion.js)
+ * laeuft alles in 45 % der Zeit, ohne Zoom und Lichtblitz:
  *   0 bis 1,0 s   Umriss zeichnet sich    1,0 s   Dreieck springt auf, Blitz, Ring    1,0 bis 1,7 s   Schriftzug
  *   1,95 s        Zoom durch das Logo; die Oberflaeche blendet dahinter ein, der dunkle Grund verschwindet    2,7 s   fertig
  * Ein Klick oder eine Taste ueberspringt sie. Waehrend sie laeuft, ist die Oberflaeche unsichtbar (Klasse is-splash am Wurzelelement), Hinweise warten (afterSplash).
@@ -13,7 +15,6 @@ import { h } from './dom.js';
 
 const TOTAL_MS = 2700; // so lange laeuft sie insgesamt
 const REVEAL_MS = 1950; // ab hier blendet die Oberflaeche ein
-const PREVIEW_IN_MS = 260; // Vorschau: der dunkle Grund blendet erst ein, dann verschwindet die Oberflaeche dahinter
 const SKIP_MS = 260; // Ueberspringen: so lange dauert das Ausblenden
 const WORD = 'Jellycloud';
 const CLOUD = 'M126 351H400A64 64 0 0 0 400 223A64 64 0 0 0 312 152A103 103 0 0 0 127 198A77 77 0 0 0 126 351Z';
@@ -31,9 +32,6 @@ export function afterSplash(fn) {
   else fn();
 }
 
-/** Soll beim Start eine Animation laufen? Schalter in den Einstellungen und Animationsstufe "aus" gelten. */
-export const splashEnabled = (appearance) => appearance?.startAnimation !== false && appearance?.animations !== 'off';
-
 /** Das Logo als SVG: derselbe Umriss und dasselbe Dreieck wie das Symbol "cloud-logo" (icons.js). Der Text stammt aus diesem Modul, nicht vom Server. */
 function logoSvg(cls) {
   const wrap = document.createElement('span');
@@ -46,14 +44,12 @@ function logoSvg(cls) {
 }
 
 /**
- * Spielt die Startanimation.
- * @param {{animations?:string}} appearance die Erscheinungs-Einstellungen (Animationsstufe)
- * @param {{preview?:boolean}} o preview: ueber der laufenden Oberflaeche (Vorschau in den Einstellungen), nicht beim Start
- * @returns {boolean} false, wenn schon eine laeuft oder die Animationen aus sind
+ * Spielt die Startanimation (beim Start der App, app.js).
+ * @returns {boolean} false, wenn schon eine laeuft
  */
-export function playSplash(appearance, { preview = false } = {}) {
-  if (active || appearance?.animations === 'off') return false;
-  const calm = appearance?.animations === 'reduced';
+export function playSplash() {
+  if (active) return false;
+  const calm = reducedMotion();
   const k = calm ? 0.45 : 1; // wie --dur im CSS
   const html = document.documentElement;
   const timers = [];
@@ -85,7 +81,7 @@ export function playSplash(appearance, { preview = false } = {}) {
     if (finished || el) return;
     el = h(
       'div',
-      { id: 'splash', class: `${calm ? 'calm ' : ''}${preview ? 'preview' : ''}`.trim(), 'aria-hidden': 'true' },
+      { id: 'splash', class: calm ? 'calm' : '', 'aria-hidden': 'true' },
       h(
         'div',
         { class: 'sp-stage' },
@@ -104,8 +100,7 @@ export function playSplash(appearance, { preview = false } = {}) {
     );
     document.body.append(el);
     html.classList.toggle('splash-calm', calm);
-    if (preview) later(PREVIEW_IN_MS * k, () => html.classList.add('is-splash'));
-    else html.classList.add('is-splash');
+    html.classList.add('is-splash');
     later(REVEAL_MS * k, () => html.classList.add('splash-reveal'));
     later(TOTAL_MS * k, finish);
     // Ueberspringen: Klick oder Taste. Der Grund blendet von seinem jetzigen Stand aus, die Oberflaeche kommt sofort.
@@ -128,7 +123,7 @@ export function playSplash(appearance, { preview = false } = {}) {
       begin();
     }
   }
-  if (!preview && document.visibilityState !== 'visible') {
+  if (document.visibilityState !== 'visible') {
     html.classList.add('is-splash');
     document.addEventListener('visibilitychange', onVisible);
   } else {

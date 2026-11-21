@@ -2,7 +2,7 @@
 // Nutzt den Mock-Server (eigener Port 8797) und den Mock-Seerr.
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/home-customize.js
 const path = require('node:path');
-const { server, SEERR } = require('../mock-server');
+const { server } = require('../mock-server');
 
 module.exports = async (ctx) => {
   const out = process.env.SHOT_DIR || path.join(__dirname, '..', '..', 'shots');
@@ -47,10 +47,10 @@ module.exports = async (ctx) => {
   };
   const listNames = () => ctx.run(`[...document.querySelectorAll('.home-row .home-row-name')].map((e) => e.textContent.trim())`);
   const clickRow = (name, what) => ctx.run(`(() => { const r = [...document.querySelectorAll('.home-row')].find((x) => x.querySelector('.home-row-name').textContent.trim() === ${JSON.stringify(name)}); if (!r) return 'nicht gefunden'; ${what}; return 'ok'; })()`);
-  const cfgHome = () => ctx.config.settings.home;
+  const cfgHome = () => ({ ...ctx.config.settings.home, ...ctx.config.homeRows() }); // seit Version 10: Banner und Folien beim Geraet, Reihen beim aktiven Profil (wie publicState)
 
   // Mock-Seerr verbinden, damit "Filme im Trend" eine echte Reihe ist
-  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', mode: 'apikey', apiKey: ${JSON.stringify(SEERR.apiKey)} }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', username: 'demo', password: 'demo' }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
   await ctx.wait(1500);
 
   // ---------- Ausgangslage ----------

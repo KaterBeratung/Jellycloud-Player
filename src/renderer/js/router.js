@@ -22,7 +22,8 @@ export const navigate = (path) => {
 
 /** Markiert ein Element fuer den Shared-Element-Uebergang (Poster -> Detailseite). */
 export function markSharedElement(el) {
-  if (!document.startViewTransition || document.documentElement.dataset.anim === 'off') return;
+  // Bei "Bewegung reduzieren" (System) fliegt das Poster nicht zur Detailseite: die Seite wechselt ohne diesen Flug (motion.js)
+  if (!document.startViewTransition || document.documentElement.dataset.anim === 'reduced') return;
   sharedEl?.style.removeProperty('view-transition-name');
   sharedEl = el;
   el.style.viewTransitionName = 'poster';
@@ -107,7 +108,7 @@ async function render() {
     document.dispatchEvent(new CustomEvent('route', { detail: current.info }));
   };
 
-  const animate = document.startViewTransition && document.documentElement.dataset.anim !== 'off' && sharedEl;
+  const animate = document.startViewTransition && document.documentElement.dataset.anim !== 'reduced' && sharedEl;
   if (animate) {
     const vt = document.startViewTransition(swap);
     try {

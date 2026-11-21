@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, deepMerge, skipCountdownSec } = require('../shared/config-core');
+const { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec } = require('../shared/config-core');
 
 /**
  * Konfiguration des Hauptprozesses: die Regeln und der Aufbau stehen in src/shared/config-core.js (sie gelten auch fuer die Web-/Handy-Fassung),
@@ -62,4 +62,4 @@ class ConfigStore extends ConfigCore {
   }
 }
 
-module.exports = { ConfigStore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, deepMerge, skipCountdownSec };
+module.exports = { ConfigStore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec };

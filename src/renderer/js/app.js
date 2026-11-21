@@ -16,9 +16,11 @@ import { adminView } from './views/admin.js';
 import { loginView } from './views/login.js';
 import { installNoDrag } from './no-drag.js';
 import { installCompact } from './compact.js';
-import { playSplash, splashEnabled, splashActive, afterSplash } from './splash.js';
+import { playSplash, splashActive, afterSplash } from './splash.js';
+import { installMotion } from './motion.js';
 
 installNoDrag();
+installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (data-anim)
 installCompact(); // Handy: <html data-compact="on"> bei schmalem Fenster (im Desktop-Programm ohne Wirkung)
 const root = $('#app');
 let routerStarted = false;
@@ -212,7 +214,7 @@ async function boot() {
   applyAppearance(state.settings.appearance);
   if (!splashStarted) {
     splashStarted = true;
-    if (splashEnabled(state.settings.appearance)) playSplash(state.settings.appearance); // darunter baut sich die Oberflaeche ganz normal auf
+    if (!state.devNoSplash) playSplash(); // darunter baut sich die Oberflaeche ganz normal auf (devNoSplash: nur in den Szenarien, main.js)
   }
   if (!state.loggedIn) return showLogin();
   try {

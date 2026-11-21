@@ -1,4 +1,4 @@
-// Standard-Akzent (neutrales Silberweiss): Werte pruefen und Aufnahmen auf Midnight, Daylight und mit Koenigsblau.
+// Standard-Akzent (neutrales Silberweiss): Werte pruefen und Aufnahmen auf Midnight, Midnight Blue und mit Koenigsblau.
 const path = require('node:path');
 const { server } = require('../mock-server');
 module.exports = async (ctx) => {
@@ -27,18 +27,21 @@ module.exports = async (ctx) => {
   await ctx.wait(600);
   await ctx.capture(path.join(out, 'N-settings-switches.png'));
 
-  // Daylight: neutraler Akzent wird dunkel
-  await ctx.run(`document.querySelector('[data-theme-id="daylight"]').click()`);
+  // Midnight Blue (ersetzt das helle Daylight, wie in der Apple-App): dunkel, der neutrale Akzent bleibt Silberweiss
+  check('Kein helles Design mehr: statt Daylight steht Midnight Blue zur Wahl', await ctx.run(`!document.querySelector('[data-theme-id="daylight"]') && document.querySelector('[data-theme-id="midnightBlue"]')?.textContent === 'Midnight Blue'`));
+  await ctx.run(`document.querySelector('[data-theme-id="midnightBlue"]').click()`);
   await ctx.wait(900);
   v = await vars();
-  console.log('Daylight:', JSON.stringify(v));
-  check('Daylight: neutraler Akzent wird dunkel (sonst unsichtbar)', v.theme === 'daylight' && v.accent === 'rgb(29 29 31)' && v.ink === '#ffffff', JSON.stringify(v));
+  const page = await ctx.run(`(() => { const s = getComputedStyle(document.documentElement); return ['--bg', '--surface', '--surface2', '--surface3', '--text', '--muted', '--faint'].map((k) => s.getPropertyValue(k).trim()).join(' '); })()`);
+  console.log('Midnight Blue:', JSON.stringify(v), page);
+  check('Midnight Blue: Farben wie in der Apple-App (Theme.swift)', page === '#0c1426 #101b30 #1d2a40 #24334a #f2f5fb #a3aec4 #6f7b93', page);
+  check('Midnight Blue: neutraler Akzent bleibt Silberweiss', v.theme === 'midnightBlue' && v.accent === 'rgb(245 245 247)' && v.ink === '#12131a', JSON.stringify(v));
   await ctx.run(`document.querySelector('.settings-stack, .settings')?.scrollIntoView({ block: 'start' })`);
   await ctx.wait(400);
-  await ctx.capture(path.join(out, 'N-settings-day.png'));
+  await ctx.capture(path.join(out, 'N-settings-blue-theme.png'));
   await ctx.run(`location.hash = '#/home'`);
   await ctx.wait(2800);
-  await ctx.capture(path.join(out, 'N-home-day.png'));
+  await ctx.capture(path.join(out, 'N-home-blue-theme.png'));
 
   // zurueck auf Midnight, dann Koenigsblau gezielt waehlen (muss weiterhin funktionieren)
   await ctx.run(`location.hash = '#/settings/appearance'`);

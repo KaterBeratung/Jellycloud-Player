@@ -113,8 +113,10 @@ module.exports = async (ctx) => {
   const about = await ev(`document.querySelector('.settings-panel').innerText`);
   check('Info im Browser: keine Update-Verwaltung', !/Updates/i.test(about) && /Jellycloud Player/.test(about), about.replace(/\s+/g, ' ').slice(0, 100));
   await page('#/settings/appearance', `!!document.querySelector('.settings') || !!document.querySelector('.settings-stack')`);
-  check('Einstellung wirkt und wird gespeichert (Animationen aus)', (await ev(`window.jc.setSettings({ appearance: { animations: 'off' } }).then((s) => s.appearance.animations)`)) === 'off' && JSON.parse(await ev(`localStorage.getItem('jellycloud.config')`)).settings.appearance.animations === 'off');
-  await ev(`window.jc.setSettings({ appearance: { animations: 'full' } })`);
+  check('Einstellung wirkt und wird gespeichert (Glas-Effekte aus)', (await ev(`window.jc.setSettings({ appearance: { blur: false } }).then((s) => s.appearance.blur)`)) === false && JSON.parse(await ev(`localStorage.getItem('jellycloud.config')`)).settings.appearance.blur === false);
+  await ev(`window.jc.setSettings({ appearance: { blur: true } })`);
+  const look = JSON.parse(await ev(`localStorage.getItem('jellycloud.config')`));
+  check('Gespeichert als Konfigurationsversion 10, ohne Eckenradius und Animationsstufe', look.version === 10 && !('radius' in look.settings.appearance) && !('animations' in look.settings.appearance) && (await ev(`document.documentElement.dataset.anim`)) === 'full', JSON.stringify({ v: look.version, anim: await ev(`document.documentElement.dataset.anim`) }));
 
   // ---------- Haken fuer das Gehaeuse ----------
   const noPlay = await ev(`window.jc.play({ itemId: '${movie.Id}' }).then(() => null, (e) => e.message)`);

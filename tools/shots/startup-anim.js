@@ -1,6 +1,7 @@
-// Startanimation (JC_DEV=1): Ablauf, Ueberspringen, Stufen "aus" und "reduziert", Schalter, Vorschau, kein zweites Mal, Warten bis das Fenster sichtbar ist.
+// Startanimation (JC_DEV=1): Ablauf, Ueberspringen, ruhige Fassung bei "Bewegung reduzieren" (System), kein Schalter und keine Vorschau (wie in der Apple-App),
+// kein zweites Mal, Warten bis das Fenster sichtbar ist.
 //   $env:JC_DEV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/startup-anim.js
-// Die anderen Szenarien laufen ohne Startanimation (main.js schaltet sie in --shots aus); hier wird sie gezielt eingeschaltet und die Seite neu geladen.
+// Die anderen Szenarien laufen ohne Startanimation (main.js meldet in --shots devNoSplash); hier wird sie mit ctx.splash(true) eingeschaltet und die Seite neu geladen.
 const path = require('node:path');
 const { server } = require('../mock-server');
 
@@ -34,7 +35,7 @@ module.exports = async (ctx) => {
     }
     return false;
   };
-  const setAppearance = (patch) => ctx.config.updateSettings({ appearance: patch });
+
   /** Seite neu laden (wie ein App-Start) und zurueckgeben, wann (ms nach dem Laden) die Animation zum ersten Mal zu sehen ist (null: nie innerhalb von 1,5 s). */
   const restart = async () => {
     const loaded = new Promise((r) => ctx.win.webContents.once('did-finish-load', r));
@@ -63,9 +64,11 @@ module.exports = async (ctx) => {
   };
 
   // ---------- Standard ----------
-  check('Szenarien starten ohne Startanimation (main.js schaltet sie in --shots aus)', ctx.config.settings.appearance.startAnimation === false);
-  check('Im Normalbetrieb ist die Startanimation eingeschaltet (Standardwert)', require('../../src/main/config').DEFAULT_SETTINGS.appearance.startAnimation === true);
-  setAppearance({ startAnimation: true, animations: 'full' });
+  check('Szenarien starten ohne Startanimation (Zustand devNoSplash aus main.js, nur mit --shots)', await ctx.run(`window.jc.getState().then((s) => s.devNoSplash === true)`));
+  const look = require('../../src/main/config').DEFAULT_SETTINGS.appearance;
+  check('Keine Einstellung fuer Startanimation oder Animationsstufe: sie laeuft immer (wie in der Apple-App, E7)', !('startAnimation' in look) && !('animations' in look) && !('startAnimation' in ctx.config.settings.appearance));
+  ctx.splash(true);
+  check('Ohne Szenario-Schalter meldet der Zustand nichts (devNoSplash fehlt)', await ctx.run(`window.jc.getState().then((s) => !('devNoSplash' in s))`));
 
   // ---------- Voller Ablauf ----------
   const r1 = await restart();
@@ -135,65 +138,26 @@ module.exports = async (ctx) => {
   const keyGone = await goneAfter(tKey, 3000);
   check('Eine Taste ueberspringt sie ebenfalls', r3.seen !== null && keyGone !== null && keyGone < 800, String(keyGone));
 
-  // ---------- Stufen ----------
-  setAppearance({ animations: 'off' });
-  const r4 = await restart();
-  await ctx.wait(1200);
-  const off = await appState();
-  check('Animationen "aus": keine Startanimation, die Oberflaeche ist gleich da', r4.seen === null && !off.splash && off.opacity === '1' && !/splash/.test(off.cls), JSON.stringify(off));
-  setAppearance({ animations: 'reduced' });
+  // ---------- Systemeinstellung "Bewegung reduzieren": ruhige, kuerzere Fassung (keine Stufe "aus") ----------
+  await ctx.reducedMotion(true);
   const r5 = await restart();
-  const calmInfo = await ctx.run(`(() => { const s = document.getElementById('splash'); return s ? { calm: s.classList.contains('calm'), ring: getComputedStyle(s.querySelector('.sp-ring')).display, streak: getComputedStyle(s.querySelector('.sp-streak')).display, zoom: getComputedStyle(s.querySelector('.sp-zoom')).animationName, html: document.documentElement.className } : null; })()`);
+  const calmInfo = await ctx.run(`(() => { const s = document.getElementById('splash'); return s ? { calm: s.classList.contains('calm'), ring: getComputedStyle(s.querySelector('.sp-ring')).display, streak: getComputedStyle(s.querySelector('.sp-streak')).display, zoom: getComputedStyle(s.querySelector('.sp-zoom')).animationName, html: document.documentElement.className, anim: document.documentElement.dataset.anim } : null; })()`);
   const calmGone = await goneAfter(r5.at, 4000);
-  check('Animationen "reduziert": ruhige Fassung ohne Ring, Blitz und Zoom', r5.seen !== null && calmInfo?.calm && calmInfo.ring === 'none' && calmInfo.streak === 'none' && calmInfo.zoom === 'sp-zoom-calm' && /splash-calm/.test(calmInfo.html), JSON.stringify(calmInfo));
+  check('Bewegung reduzieren: ruhige Fassung ohne Ring, Blitz und Zoom', r5.seen !== null && calmInfo?.calm && calmInfo.anim === 'reduced' && calmInfo.ring === 'none' && calmInfo.streak === 'none' && calmInfo.zoom === 'sp-zoom-calm' && /splash-calm/.test(calmInfo.html), JSON.stringify(calmInfo));
   check('...und kuerzer: nach rund 1,2 s vorbei (45 % der vollen Zeit)', calmGone !== null && calmGone > 900 && calmGone < 1900, String(calmGone));
-  setAppearance({ animations: 'full', startAnimation: false });
+  await ctx.reducedMotion(false);
+  ctx.splash(false);
   const r6 = await restart();
   await ctx.wait(1000);
-  check('Schalter "Startanimation" aus: keine Animation', r6.seen === null && !(await appState()).splash && (await appState()).opacity === '1');
+  check('Nur der Szenario-Schalter laesst sie weg (devNoSplash)', r6.seen === null && !(await appState()).splash && (await appState()).opacity === '1');
+  ctx.splash(true);
 
-  // ---------- Einstellungen: Schalter und Vorschau ----------
+  // ---------- Einstellungen: kein Schalter, keine Vorschau, keine Animationsstufe, kein Eckenradius ----------
   await ctx.run(`location.hash = '#/settings/appearance'`);
   await ctx.wait(700);
-  const sw = `[...document.querySelectorAll('.setting')].find((s) => s.querySelector('.setting-label')?.textContent === 'Startanimation')`;
-  check('Einstellungen > Erscheinungsbild: "Startanimation" mit Erklaerung, Schalter (aus) und Vorschau-Knopf', await ctx.run(`(() => { const s = ${sw}; return !!s && s.querySelector('button.switch')?.getAttribute('aria-checked') === 'false' && /Netflix/.test(s.querySelector('.setting-desc')?.textContent ?? '') && /Vorschau/.test(s.querySelector('.ctl-pair .btn')?.textContent ?? ''); })()`));
-  await ctx.run(`${sw}.querySelector('button.switch').click()`);
-  const stored = async () => {
-    const end = Date.now() + 3000;
-    while (Date.now() < end) {
-      if (ctx.config.settings.appearance.startAnimation === true) return true;
-      await ctx.wait(60);
-    }
-    return false;
-  };
-  check('Einschalten wird gespeichert', await stored());
-  await ctx.run(`${sw}.querySelector('.ctl-pair .btn').click()`);
-  const tPrev = Date.now();
-  check('Vorschau: der Vorspann erscheint ueber der Einstellungsseite (Klasse preview)', await waitFor(`document.getElementById('splash')?.classList.contains('preview')`, 1500, 25));
-  await ctx.wait(700);
-  const prevMid = await ctx.run(`(() => ({ app: getComputedStyle(document.getElementById('app')).opacity, panel: !!document.querySelector('.settings-panel'), hash: location.hash }))()`);
-  check('...die Seite dahinter ist da, aber verdeckt', prevMid.app === '0' && prevMid.panel && prevMid.hash.startsWith('#/settings'), JSON.stringify(prevMid));
-  await grab('vorschau');
-  const prevGone = await goneAfter(tPrev, 6000);
-  check('...und nach rund 3 s ist die Vorschau vorbei, die Einstellungsseite steht unveraendert da', prevGone !== null && prevGone > 2400 && prevGone < 4200 && (await ctx.run(`getComputedStyle(document.getElementById('app')).opacity === '1' && !!document.querySelector('.settings-panel') && location.hash.startsWith('#/settings')`)), String(prevGone));
-  await ctx.run(`${sw}.querySelector('.ctl-pair .btn').click()`);
-  await ctx.wait(400);
-  await ctx.run(`${sw}.querySelector('.ctl-pair .btn').click()`);
-  check('Zweiter Klick auf "Vorschau" mitten im Ablauf startet keine zweite Animation', await ctx.run(`document.querySelectorAll('#splash').length === 1`));
-  await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  await goneAfter(Date.now(), 2000);
-  setAppearance({ animations: 'off' });
-  await ctx.run(`location.hash = '#/settings/behavior'; location.hash = '#/settings/appearance'`);
-  await ctx.wait(500);
-  await ctx.run(`document.dispatchEvent(new CustomEvent('relogin'))`);
-  await ctx.wait(1500);
-  await ctx.run(`location.hash = '#/settings/appearance'`);
-  await ctx.wait(700);
-  await ctx.run(`${sw}.querySelector('.ctl-pair .btn').click()`);
-  await ctx.wait(300);
-  check('Vorschau bei "Animationen: aus": kein Vorspann, dafuer ein Hinweis', (await ctx.run(`!document.getElementById('splash')`)) && /braucht Animationen/.test(await ctx.run(`[...document.querySelectorAll('.toast')].map((t) => t.innerText).join(' | ')`)));
-  setAppearance({ animations: 'full' });
-
+  const labels = await ctx.run(`[...document.querySelectorAll('.settings-panel .setting-label')].map((l) => l.textContent)`);
+  check('Einstellungen > Erscheinungsbild: weder "Startanimation" noch "Animationen" noch "Eckenradius", keine Vorschau', labels.length > 4 && !labels.some((l) => /Startanimation|^Animationen$|Eckenradius/.test(l)) && !(await ctx.run(`[...document.querySelectorAll('.settings-panel button')].some((b) => /Vorschau/.test(b.textContent))`)), labels.join(' | '));
+  check('Ecken fest 18 px (app.css)', (await ctx.run(`getComputedStyle(document.documentElement).getPropertyValue('--radius').trim()`)) === '18px');
   // ---------- Fenster noch unsichtbar (minimierter Autostart) ----------
   await restart();
   await goneAfter(Date.now(), 6000);
@@ -201,7 +165,7 @@ module.exports = async (ctx) => {
     const m = await import('./js/splash.js');
     const log = [];
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-    m.playSplash({ animations: 'full' });
+    m.playSplash();
     log.push({ step: 'unsichtbar', splash: !!document.getElementById('splash'), app: getComputedStyle(document.getElementById('app')).opacity, waiting: m.splashActive() });
     await new Promise((r) => setTimeout(r, 400));
     log.push({ step: 'noch unsichtbar', splash: !!document.getElementById('splash') });
@@ -224,7 +188,6 @@ module.exports = async (ctx) => {
   check('afterSplash ohne laufende Animation: sofort', await ctx.run(`(async () => { const m = await import('./js/splash.js'); let ran = false; m.afterSplash(() => { ran = true; }); return ran; })()`));
 
   // Ruckeln: Abstaende zwischen zwei Bildern waehrend der Animation (nur zur Information, die VM hat keine Grafikkarte)
-  setAppearance({ startAnimation: true });
   const loaded = new Promise((r) => ctx.win.webContents.once('did-finish-load', r));
   ctx.win.webContents.reload();
   await loaded;

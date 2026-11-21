@@ -8,7 +8,7 @@
 /**
  * Anbindung an Seerr (Jellyseerr / Overseerr): Titel suchen, die noch nicht in der Bibliothek sind, und anfragen.
  * Alles laeuft im Hauptprozess, Zugangsdaten verlassen ihn nie (wie beim Jellyfin-Token).
- * API: /api/v1, Anmeldung per Jellyfin-Konto (Session-Cookie connect.sid) oder API-Schluessel (Header X-Api-Key).
+ * API: /api/v1, Anmeldung nur per Jellyfin-Konto (Session-Cookie connect.sid; einen API-Schluessel nimmt die App seit Version 10 nicht mehr, Entscheidung E12).
  */
 
 /** mediaInfo.status bei Seerr (6 gesperrt, 7 geloescht; die Regeln dazu in seerr-state.js) */
@@ -55,8 +55,8 @@ function candidateSeerrUrls(input) {
 
 /**
  * credentials "omit": Der Cookie-Speicher von Chromium (Electron net.fetch) bleibt aussen vor. Sonst legte er das Seerr-Cookie selbst ab und
- * haengte es spaeter an jede Anfrage: ein falscher API-Schluessel wuerde durch das alte Cookie akzeptiert, und "Trennen" liesse es liegen.
- * Die Anmeldung wird ausschliesslich ueber unsere eigenen Header (Cookie bzw. X-Api-Key) mitgegeben.
+ * haengte es spaeter an jede Anfrage: eine falsche Anmeldung wuerde durch das alte Cookie akzeptiert, "Trennen" liesse es liegen, und ein Profil saehe das Seerr eines anderen.
+ * Die Anmeldung wird ausschliesslich ueber unseren eigenen Header (Cookie) mitgegeben.
  */
 async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 15000) {
   const ctrl = new AbortController();
@@ -197,18 +197,17 @@ function tmdbImageUrl(size, file) {
 }
 
 class SeerrClient {
-  /** @param {{baseUrl:string, apiKey?:string|null, cookie?:string|null, fetch?:typeof fetch}} o */
-  constructor({ baseUrl, apiKey = null, cookie = null, fetch = globalThis.fetch }) {
+  /** Nur mit der Sitzung des Jellyfin-Kontos (Cookie connect.sid); einen API-Schluessel gibt es seit Version 10 nicht mehr (Entscheidung E12).
+   * @param {{baseUrl:string, cookie?:string|null, fetch?:typeof fetch}} o */
+  constructor({ baseUrl, cookie = null, fetch = globalThis.fetch }) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.apiKey = apiKey;
     this.cookie = cookie;
     this.fetch = fetch;
   }
 
   headers(extra = {}) {
     const h = { Accept: 'application/json', ...extra };
-    if (this.apiKey) h['X-Api-Key'] = this.apiKey;
-    else if (this.cookie) h.Cookie = `connect.sid=${this.cookie}`;
+    if (this.cookie) h.Cookie = `connect.sid=${this.cookie}`;
     return h;
   }
 

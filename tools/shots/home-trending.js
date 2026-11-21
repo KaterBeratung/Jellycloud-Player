@@ -69,14 +69,14 @@ module.exports = async (ctx) => {
     await clickText('.settings-panel .btn.primary', 'Verbinden');
     return waitFor(`/Verbunden mit/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
   };
-  const connectKey = async () => {
+  // Ein anderes Seerr-Konto (Mock: "demo2"), damit die Liste nicht aus dem Speicher kommt; einen API-Schluessel gibt es nicht mehr
+  const connectOther = async () => {
     await go('#/settings/seerr');
-    await clickText('.settings-panel button.seg', 'API-Schlüssel');
-    await ctx.wait(300);
     await type('.settings-panel input[placeholder="seerr.example.com"]', `http://127.0.0.1:${PORT}`);
-    await type('.settings-panel input[placeholder="API-Schlüssel"]', SEERR.apiKey);
+    await type('.settings-panel input[placeholder="Benutzername"]', 'demo2');
+    await type('.settings-panel input[type=password]', 'demo');
     await clickText('.settings-panel .btn.primary', 'Verbinden');
-    return waitFor(`/als Schluessel-Konto/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
+    return waitFor(`/als Demo Zwei/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
   };
   const disconnect = async () => {
     await go('#/settings/seerr');
@@ -172,7 +172,7 @@ module.exports = async (ctx) => {
 
   // ---------- Fehlerfälle ----------
   SEERR.trendingError = true;
-  check('Seerr mit API-Schlüssel verbunden (anderes Konto, damit nichts aus dem Speicher kommt)', await connectKey());
+  check('Seerr mit einem anderen Konto verbunden (damit nichts aus dem Speicher kommt)', await connectOther());
   await go('#/home');
   await waitFor(`!!document.querySelector('.home .rows .row:not(.skeleton)')`, 8000);
   await ctx.wait(1500);

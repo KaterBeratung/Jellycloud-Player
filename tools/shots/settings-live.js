@@ -68,7 +68,37 @@ module.exports = async (ctx) => {
   await go('#/home');
   check('Tags bleiben auf den Karten der Startseite', await waitFor(`document.querySelectorAll('.rows .card .tags .tag').length > 0`, 6000));
 
+  // ---------- Konfigurationsversion 10: nur dunkle Designs; Ecken, Animationsstufe und Startanimation nicht einstellbar (E7) ----------
+  await go('#/settings/appearance');
+  const tiles = await ctx.run(`[...document.querySelectorAll('.theme-tile')].map((b) => b.dataset.themeId)`);
+  check('Designs wie in der Apple-App: Midnight, Graphite, AMOLED, Midnight Blue (kein Daylight)', JSON.stringify(tiles) === JSON.stringify(['midnight', 'graphite', 'amoled', 'midnightBlue']), JSON.stringify(tiles));
+  await ctx.run(`document.querySelector('[data-theme-id="midnightBlue"]').click()`);
+  check('Midnight Blue wirkt sofort (Seitengrund #0c1426) und wird gespeichert', (await waitFor(`document.documentElement.dataset.theme === 'midnightBlue' && getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() === '#0c1426'`, 2000)) && (await (async () => { for (let i = 0; i < 30; i++) { if (ctx.config.settings.appearance.theme === 'midnightBlue') return true; await ctx.wait(100); } return false; })()));
+  await ctx.run(`document.querySelector('[data-theme-id="midnight"]').click()`);
+  await ctx.wait(400);
+  const labels = await ctx.run(`[...document.querySelectorAll('.settings-panel .setting-label')].map((l) => l.textContent)`);
+  check('Erscheinungsbild ohne "Eckenradius", "Animationen" und "Startanimation"', !labels.some((l) => /Eckenradius|^Animationen$|Startanimation/.test(l)) && labels.includes('Glas-Effekte'), labels.join(' | '));
+  check('Bewegung folgt dem System (data-anim "full" ohne "Bewegung reduzieren"), Ecken fest 18 px', await ctx.run(`document.documentElement.dataset.anim === 'full' && getComputedStyle(document.documentElement).getPropertyValue('--radius').trim() === '18px'`));
+
+  // ---------- Reihen der Startseite gehoeren dem Profil ----------
+  await go('#/settings/home');
+  const favSw = `document.querySelector('.home-row[data-row="favorites"] button.switch')`;
+  await waitFor(`!!${favSw}`, 4000);
+  await ctx.run(`${favSw}.click()`);
+  const rowsSaved = async (want) => {
+    for (let i = 0; i < 30; i++) {
+      if ((ctx.config.homeRows().hidden.includes('favorites')) === want) return true;
+      await ctx.wait(100);
+    }
+    return false;
+  };
+  check('Reihe "Favoriten" ausblenden: gespeichert beim aktiven Profil, nicht fuer das Geraet', (await rowsSaved(true)) && !ctx.config.settings.home.hidden.includes('favorites') && ctx.config.data.homeRowsByProfile[ctx.config.data.activeServerId]?.hidden.includes('favorites'), JSON.stringify(ctx.config.data.homeRowsByProfile));
+  await ctx.run(`${favSw}.click()`);
+  check('...und wieder einblenden', await rowsSaved(false));
+
   // ---------- Trailer ----------
+  await go('#/home');
+  await waitFor(`!!document.querySelector('.home .hero-slide.active')`, 6000);
   await ctx.run(`document.querySelector('.home').dataset.mark = 'alt'`);
   await go('#/settings/behavior');
   await ctx.run(`[...document.querySelectorAll('.setting')].find((s) => /Auch auf der Startseite/.test(s.textContent))?.scrollIntoView({ block: 'center' })`);

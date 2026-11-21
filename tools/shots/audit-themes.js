@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
     check(`${label}: Textkontrast (${rows.length} Stellen geprueft)`, bad.length === 0, bad.map((r) => `${r.sel} "${r.text}" ${r.ratio} < ${r.need}`).slice(0, 5).join('; '));
   };
 
-  for (const theme of ['midnight', 'graphite', 'amoled', 'daylight']) {
+  for (const theme of ['midnight', 'graphite', 'amoled', 'midnightBlue']) {
     ctx.config.updateSettings({ appearance: { theme } });
     await ctx.run(`document.dispatchEvent(new CustomEvent('relogin'))`);
     await ctx.wait(2300);

@@ -75,7 +75,7 @@ function attachTilt(card, thumb) {
   };
   card.addEventListener('pointermove', (e) => {
     const mode = document.documentElement.dataset.anim;
-    if (e.pointerType !== 'mouse' || mode === 'off') return;
+    if (e.pointerType !== 'mouse') return;
     const { clientX, clientY } = e;
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {

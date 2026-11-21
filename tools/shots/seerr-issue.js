@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
     return false;
   };
   const connectSeerr = async () => {
-    await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', mode: 'apikey', apiKey: ${JSON.stringify(SEERR.apiKey)} }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+    await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', username: 'demo', password: 'demo' }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
     await ctx.wait(1800);
   };
   const openItem = async (item) => {

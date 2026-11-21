@@ -17,8 +17,8 @@ PGS-/ASS-Untertitel.
 - **Player:** eigene Steuerung im Liquid-Glass-Stil (Seekbar mit Trickplay-Vorschau, Kapitel, Intro/Abspann überspringen,
   nächste Folge, **Folgen und Staffeln der Serie** zum Wechseln, Countdown an Überspringen und Nächste Folge, Tempo, Bildformat, Audio-/Untertitel-Panel mit Verzögerung und Größe, Technik-Info). Untertitel
   weichen der Steuerleiste aus. Alle Panels passen ohne Scrollen (zweispaltig bzw. verdichtet).
-- **Anpassbar:** Themes (Midnight, Graphite, AMOLED, Daylight), **Akzentfarbe für Buttons usw.** (Farbfelder,
-  Farbwähler, Hex-Code), Postergröße, Eckenradius, Animationen (voll/reduziert/aus), Glas-Effekte, Sprache (DE/EN).
+- **Anpassbar:** Designs wie in der Apple-App (Midnight, Graphite, AMOLED, Midnight Blue; nur dunkle), **Akzentfarbe für Buttons usw.** (Farbfelder,
+  Farbwähler, Hex-Code), Postergröße, Glas-Effekte, Sprache (DE/EN). Ecken (18 px) und Bewegung sind fest: Bewegung nimmt allein die Systemeinstellung *Bewegung reduzieren* (Windows: *Animationseffekte*) zurück (src/renderer/js/motion.js).
 - **Konto:** Anmeldung mit Benutzer/Passwort oder Quick Connect, mehrere Server, Token per Windows-DPAPI verschlüsselt.
   Fortschritt, „gesehen“ und Favoriten werden mit dem Server synchronisiert.
 - **Trailer:** Auf der Detailseite und im Banner der Startseite läuft der Trailer im Hintergrund, sofort und leise (siehe *Trailer*).
@@ -30,7 +30,7 @@ PGS-/ASS-Untertitel.
 - **Startseite anpassen:** *Einstellungen > Startseite*: Banner an oder aus, Zahl der Folien und der Trend-Folien, Reihen ein- und ausschalten und umsortieren (siehe *Startseite anpassen*).
 - **Neu laden:** F5, Knopf in der Kopfzeile, Metadaten vom Server aktualisieren lassen (siehe *Neu laden und Metadaten*).
 - **Autostart:** Optional mit Windows starten, auf Wunsch minimiert.
-- **Startanimation:** Beim Start zeichnet sich das Logo, dann fährt die Kamera durch es hindurch in die Oberfläche (siehe *Startanimation*). Abschaltbar, mit Vorschau.
+- **Startanimation:** Beim Start zeichnet sich das Logo, dann fährt die Kamera durch es hindurch in die Oberfläche (siehe *Startanimation*). Immer an (wie in der Apple-App), bei *Bewegung reduzieren* eine ruhige Fassung.
 
 ## Starten (Entwicklung)
 
@@ -55,24 +55,24 @@ Bibliotheken einhalten.
 - **Icon und Logo:** eine weiße Wolke als Umriss mit Play-Symbol und Leuchten, wie das Logo der Startanimation. Das **App-Symbol** (`build/icon.png`: Taskleiste, Fenster, Installer, Verknüpfung)
   ist dieselbe Wolke **freistehend**, ohne Platte und ohne dunklen Rand, auf transparentem Grund; es entsteht mit `npm run icon` (`tools/make-icon.js`). Weil es weiß ist, steht es auf dunklem Grund (Taskleiste und Startmenü im dunklen Design) klar,
   auf hellem Grund (Explorer im hellen Design) tritt es zurück und ist nur noch schwach zu sehen; das ist gewollt, die dunkle Platte (0.0.44 bis 0.0.47) und der dunkle Rand (bis 0.0.43) waren unerwünscht. In der Oberfläche steht dieselbe Form als Logo in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
-  auf Daylight nimmt sie die dunkle Textfarbe mit schwächerem Leuchten. (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
+  (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
 - **Standardfarbe:** neutrales Silberweiß (`#f5f5f7`) wie bei Apple TV für Buttons, Navigation, Fortschritt und Markierungen. Die Farbe ist unter *Erscheinungsbild* frei wählbar (Königsblau ist eines der Farbfelder). Die Regeln stehen in `src/shared/accent.js`
-  und gelten für Oberfläche und Player gleich: Weiß, Grau und Schwarz passen sich dem Theme an (auf Daylight wird Weiß zu Fast-Schwarz, sonst wären
+  und gelten für Oberfläche und Player gleich: Weiß, Grau und Schwarz passen sich dem Theme an (auf einem hellen Grund würde Weiß zu Fast-Schwarz, sonst wären
   Buttons unsichtbar); helle Akzente bekommen dunkle Schrift und eine abgedunkelte Tönung für durchscheinende Auswahlzustände (`--accent-rgb`);
   Text und Icons in Akzentfarbe werden so weit aufgehellt bzw. abgedunkelt, dass der Kontrast mindestens 4,5:1 beträgt (`--accent-fg`).
   Bestehende Installationen mit dem alten Standard-Blau bekommen einmalig das neue Silberweiß (Konfigurationsversion 3); eine danach bewusst
   gewählte Farbe bleibt.
 - **Hintergrundton:** Die Seite nimmt auf Start (aktuelles Banner) und Detailseite dezent die Farbe des gezeigten Bilds auf (13 % bei Midnight, bei
-  AMOLED weniger, bei Daylight ein Hauch) und blendet sie bei anderen Seiten wieder aus. Die Farbe kommt aus dem Blurhash des Servers
+  AMOLED weniger) und blendet sie bei anderen Seiten wieder aus. Die Farbe kommt aus dem Blurhash des Servers
   (`ImageBlurHashes`, ohne Bild zu laden); fehlt er, bleibt der Hintergrund neutral. Abschaltbar unter *Erscheinungsbild*
   („Hintergrund passt sich dem Bild an“). Umsetzung: `ambient.js`, `color.js`, CSS-Eigenschaften `--tint`, `--tint-amt`, `--page`.
 - **Kopfzeile:** ganz oben eine schmale Titelzeile (Ziehfläche und Windows-Fensterknöpfe), darunter links die **Marke „Jellycloud“** als eigene Glas-Kapsel (44 px, bei schmalen
-  Fenstern nur die Wolke), gestaltet wie das Logo der Startanimation: Wolkenumriss mit Leuchten in der Akzentfarbe (auf Daylight in der dunklen Textfarbe und mit schwächerem Leuchten) und der Schriftzug in Großbuchstaben mit weitem Buchstabenabstand (`.brand-mark`, `.brand-name` in `app.css`), die Navigation (Start, Filme, Serien) als Kapsel **mittig** (wie die Tab-Leiste in Apple TV) und rechts eine Kapsel gleicher Höhe mit Suche, Neu laden, Einstellungen und
+  Fenstern nur die Wolke), gestaltet wie das Logo der Startanimation: Wolkenumriss mit Leuchten in der Akzentfarbe und der Schriftzug in Großbuchstaben mit weitem Buchstabenabstand (`.brand-mark`, `.brand-name` in `app.css`), die Navigation (Start, Filme, Serien) als Kapsel **mittig** (wie die Tab-Leiste in Apple TV) und rechts eine Kapsel gleicher Höhe mit Suche, Neu laden, Einstellungen und
   Konto als identische 36-px-Scheiben. Die Ziehfläche sind die Titelzeile und der freie Platz neben den Kapseln: Eine ganze Leiste als Ziehfläche zu markieren
   und Knöpfe auszunehmen verschluckt unter Windows die Klicks.
 - **Apple-TV-Stil:** neutrales Dunkel ohne Blaustich (Apple-Grautöne), großer Hero mit dem Inhalt unten links und Seitenpunkten in einer Glaskapsel
   unten mittig, Reihentitel mit Pfeil (führt zur ganzen Bibliothek), Karten mit größerem Radius, die sich beim Zeigen heben, zur Maus neigen
-  (bis 7°, bei „reduziert“ halb so stark, bei „aus“ gar nicht) und einen Glanzpunkt bekommen (`attachTilt` in `ui.js`), Fokusring weiß statt in
+  reduziert halb so stark, bei aus gar nicht)„reduziert“ halb so stark, bei „aus“ gar nicht) und einen Glanzpunkt bekommen (`attachTilt` in `ui.js`), Fokusring weiß statt in
   der Akzentfarbe. Die Akzentfarbe bleibt für Buttons, Fortschritt und Markierungen. Bestehende Installationen mit dem alten Standard-Radius 14
   bekommen einmalig den neuen Standard 18 (Konfigurationsversion 2); eigene Werte bleiben.
 - **Kein Scrollbalken (seit 1.1.4):** Die Oberfläche hat nirgends einen sichtbaren Scrollbalken (weder am Fensterrand noch in Menüs, Dialogen und Listen), wie bei Netflix und Apple TV; es bleibt auch kein 12-px-Streifen reserviert, der Inhalt nutzt die volle Breite.
@@ -87,17 +87,17 @@ Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbiete
 
 | Bereich | Auswahl |
 | --- | --- |
-| Erscheinungsbild | Theme, Akzentfarbe (Farbfelder, Farbwähler, Hex), Postergröße, Eckenradius, Animationen, Glas-Effekte, **Startanimation** (mit Vorschau), Sprache |
+| Erscheinungsbild | Design (Midnight, Graphite, AMOLED, Midnight Blue), Akzentfarbe (Farbfelder, Farbwähler, Hex), **Ambient Glow**, Postergröße, Glas-Effekte, Sprache |
 | Startseite | **Banner** (an/aus, wechselt automatisch, Folien 3 bis 10, Trend-Folien 0 bis 4) und **Reihen** (jede ein- und ausschaltbar, mit Pfeilen umsortieren, *Filme im Trend* eingeschlossen), Zurücksetzen |
 | Bild & HDR | HDR-Ausgabe, Tone-Mapping-Verfahren, Spitzenhelligkeit, Hardware-Dekodierung, Grafik-API (D3D11/Vulkan), Skalierungsqualität, Video-Sync, Bewegungsglättung, Debanding, Zeilensprung, Helligkeit/Kontrast/Sättigung/Gamma |
 | Ton | Ausgabegerät (mit Anzeige des erkannten Geräts), Kanäle (Auto/Stereo/5.1/7.1), Passthrough (nur digitale Ausgänge), WASAPI exklusiv, Nachtmodus |
 | Sprache & Untertitel | Audiosprache, Untertitel-Modus (Server/Aus/Erzwungen/Immer/Smart), Untertitelsprache, Größe, Position, Farbe, Umrandung, Hintergrundkasten, Fett, Schriftart, ASS-Stil, Live-Vorschau |
 | Wiedergabe | **Trailer** (automatisch, stumm starten, Verzögerung, Text ausblenden, Lautstärke, Qualität bis 4K), nächste Folge automatisch, Intro/Abspann überspringen (Button/Auto/Aus), Countdown an den Knöpfen (6 s), Rücksprung beim Fortsetzen, Vollbild beim Start, Sprungweiten, Mausrad, Pause beim Minimieren, Bildschirm anlassen |
 | Netzwerk | Qualitätsgrenze, Transcoding erlauben, Puffergröße, Vorausladen, selbstsignierte Zertifikate |
-| Anfragen (Seerr) | Verbindung zu Seerr: Adresse, Anmeldung per Jellyfin-Konto oder API-Schlüssel |
+| Anfragen (Seerr) | Verbindung zu Seerr **für das aktive Profil**: Adresse (vorbelegt), Anmeldung mit dem Jellyfin-Konto |
 | Discord | **Rich Presence** (zeigt, was du schaust): Schalter, Verbindung testen, Statuszeile, **Name in Discord** (frei wählbar, Knopf *Servername*), Poster-Quelle (Automatisch/TMDB/Server/Kein), Titel verbergen, Link zur Titelseite (Knopf und anklickbarer Titel), optional eine eigene Application-ID mit Anleitung |
 | Allgemein | mpv-Status (nur Anzeige), **mit Windows starten**, **minimiert starten**, Fenster merken, Spoiler-Schutz, Bildcache leeren, alles zurücksetzen |
-| Konto, Info | Server, Abmelden, Tastenkürzel |
+| Konto, Info | Server und Profile (höchstens **vier** je Gerät wie in der Apple-App; ein gemerktes Profil meldet sich immer neu an, ältere über der Grenze bleiben), Abmelden, Tastenkürzel |
 
 ## Ton-Ausgabe und Kanalerkennung
 
@@ -211,7 +211,7 @@ YouTube verlangt für Einbettungen einen Referer (sonst Fehler 153). Die Oberfl�
 ## Anfragen mit Seerr
 
 *Einstellungen > Anfragen (Seerr)* verbindet die App mit Seerr (Jellyseerr / Overseerr): mit dem **Jellyfin-Konto** (das Passwort wird nicht gespeichert, nur das Session-Cookie von Seerr, verschlüsselt)
-oder mit einem **API-Schlüssel**. Die Zugangsdaten bleiben im Hauptprozess. Ist Seerr verbunden, zeigt die **Suche** unter den Treffern der Bibliothek die Gruppe *Bei Seerr anfragen*:
+(einen API-Schlüssel nimmt die App seit 1.2.4 nicht mehr, wie die Apple-App). Die Verbindung gilt **je Profil**: jedes Profil meldet sich selbst an, ein Profilwechsel nimmt sein eigenes Seerr mit; gespeichert werden Adresse, Benutzername, die Jellyfin-Kennung von Seerr und die verschlüsselte Sitzung. Nach *Trennen* bleibt die Adresse vorbelegt. Die Zugangsdaten bleiben im Hauptprozess. Ist Seerr verbunden, zeigt die **Suche** unter den Treffern der Bibliothek die Gruppe *Bei Seerr anfragen*:
 Titel, die es noch nicht gibt, mit Poster von TMDB (über das App-Protokoll, nur feste Größen) und der Schaltfläche *Anfragen*. Bereits Angefragtes, in Bearbeitung Befindliches oder teilweise Verfügbares
 zeigt eine Beschriftung statt der Schaltfläche, Verfügbares fehlt (es steht schon in der Bibliothek). Serien werden komplett angefragt. Fehler sind verständlich (Kontingent, schon angefragt, Sitzung abgelaufen);
 eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern zu einem Hinweis mit Weg in die Einstellungen.
@@ -242,7 +242,7 @@ Das Banner wartet höchstens 1,5 s auf Seerr (`TREND_WAIT_MS`): ist die Liste bi
 Seerr-Fehlern, ohne passende Filme oder bei ausgeschalteter Reihe (*Einstellungen > Startseite > Reihen > Filme im Trend*, der Schalter gilt für Reihe und Banner) oder 0 Trend-Folien bleibt das Banner wie es war. Ein Fehlschlag wird nicht gemerkt, der nächste Aufbau fragt wieder. Szenario: `tools/shots/home-trend-hero.js` (Port 8397).
 
 Technisch: `src/main/seerr.js`, API `/api/v1` (`auth/jellyfin`, `search`, `request`, `issue`, `discover/trending`, `movie/{id}`, `tv/{id}`); die Detailantwort wird auf feste Typen und Längen reduziert (`normalizeDetails`), Bildpfade gelten nur in der Form, die das App-Protokoll annimmt. Alle Anfragen laufen mit `credentials: omit`, damit Chromiums Cookie-Speicher das Seerr-Cookie nicht heimlich
-mitschickt (sonst würde ein falscher API-Schlüssel durch ein altes Cookie akzeptiert). Getestet gegen einen Mock-Seerr, **nicht** gegen einen echten Seerr-Server.
+mitschickt (sonst würde eine falsche Anmeldung durch ein altes Cookie akzeptiert und ein Profil sähe das Seerr eines anderen). Getestet gegen einen Mock-Seerr, **nicht** gegen einen echten Seerr-Server.
 
 ## Probleme an Seerr melden
 
@@ -263,7 +263,7 @@ Ist Seerr verbunden, steht auf der Detailseite gleich in der Knopfleiste ein **W
 *Einstellungen > Startseite* (Datei `views/settings.js`, Regeln in `src/shared/home-rows.js`, gemeinsam für Hauptprozess und Oberfläche; Werte unter `settings.home`):
 
 - **Banner:** *Banner anzeigen* (aus: die Reihen beginnen gleich unter der Kopfleiste, im Banner laufen keine Trailer und nichts wird dafür geladen), *Banner wechselt automatisch*, *Folien im Banner* (3 bis 10, Standard 6) und *Trend-Filme im Banner* (0 bis 4, Standard 2).
-- **Reihen:** Jede Reihe (*Weiterschauen*, *Neu in <Bibliothek>* je Bibliothek, *Als Nächstes*, *Favoriten*, *Filme im Trend*; so ist auch die Standardreihenfolge: **Weiterschauen steht standardmäßig ganz oben**, `TOP_ROWS` in `src/shared/home-rows.js`) hat eine Nummer, einen Schalter und Pfeile nach oben und unten. Gespeichert werden nur die Wünsche (`order`, `hidden`): eine neue Bibliothek erscheint automatisch hinter den bisherigen,
+- **Reihen:** Jede Reihe (*Weiterschauen*, *Neu in <Bibliothek>* je Bibliothek, *Als Nächstes*, *Favoriten*, *Filme im Trend*; so ist auch die Standardreihenfolge: **Weiterschauen steht standardmäßig ganz oben**, `TOP_ROWS` in `src/shared/home-rows.js`) hat eine Nummer, einen Schalter und Pfeile nach oben und unten. Gespeichert werden nur die Wünsche (`order`, `hidden`), und zwar **je Profil** (Server und Benutzer, seit 1.2.4 wie in der Apple-App; Banner und Folien gelten für das Gerät): die Reihen bleiben beim Abmelden gespeichert, die bisherigen des Geräts gingen beim Update einmal an jedes gemerkte Profil. Eine neue Bibliothek erscheint automatisch hinter den bisherigen,
   eine gelöschte lässt die Einstellung wirkungslos stehen. Reihen ohne Inhalt (nichts angefangen, keine Favoriten) fehlen auch eingeschaltet. *Filme im Trend* teilt sich den Schalter mit `appearance.homeTrending`, damit der Knopf *Ausblenden* auf der Startseite und die Einstellung dasselbe sind.
 - **Alles ausgeblendet:** Sind alle Reihen und das Banner aus, zeigt die Startseite einen Hinweis mit Weg in die Einstellungen statt einer leeren Fläche. Auch der Hinweis, der nach *Ausblenden* der Trend-Reihe erscheint, führt mit *Startseite* in diese Einstellungen.
 - **Wirkt sofort** wie die übrigen Einstellungen (Seiten im Speicher werden verworfen). Eine von Hand veränderte `config.json` wird geprüft (`homeConfig`: Grenzen, Typen, doppelte und fremde Einträge). *Startseite zurücksetzen* stellt Reihenfolge, alles eingeschaltet und 6 Folien wieder her.
@@ -301,10 +301,10 @@ dann **fährt die Kamera durch das Logo hindurch**: es wächst über den Bildsch
 
 - **Wann:** nur beim Start der App, nicht bei jedem Neuaufbau (erneute Anmeldung, Sprachwechsel, F5). Sie beginnt, sobald die Einstellungen geladen sind; darunter baut sich die Oberfläche ganz normal auf (Anmeldung, Startseite, Banner und Trailer), unsichtbar bis zum Zoom. Ist das Fenster noch nicht zu sehen (Autostart minimiert), wartet sie, bis man es öffnet.
 - **Überspringen:** ein Klick oder eine Taste, der Vorspann blendet dann in 0,26 s aus (der Klick fällt nicht auf die Seite durch).
-- **Einstellungen > Erscheinungsbild:** *Startanimation* (Schalter, Standard an) mit Knopf **Vorschau**, der sie über der Einstellungsseite abspielt. *Animationen: Reduziert* spielt eine ruhige Fassung in 45 % der Zeit (ohne Ring, Lichtblitz und Zoom, die Oberfläche blendet nur ein), *Animationen: Aus* lässt sie ganz weg (die Vorschau meldet dann, dass sie Animationen braucht).
+- **Kein Schalter, keine Vorschau** (seit 1.2.4, wie in der Apple-App). Mit der Systemeinstellung *Bewegung reduzieren* läuft eine ruhige Fassung in 45 % der Zeit (ohne Ring, Lichtblitz und Zoom, die Oberfläche blendet nur ein).
 - **Hinweise warten:** Der Hinweis „Aktualisiert auf …“ und die Meldung über ein gefundenes Update erscheinen erst nach dem Vorspann (`afterSplash()`), sonst wären sie darunter unsichtbar abgelaufen.
 - **Leicht zu halten:** Nur das Logo zoomt (die Glanz-, Blitz- und Ringebene blenden vorher aus, hochskaliert wären sie riesige, teure Flächen). In der VM ohne Grafikkarte liegt der größte Bildabstand bei rund 35 ms.
-- **Szenarien:** `--shots` startet die App mit ausgeschalteter Startanimation (`main.js`), damit sie die anderen Läufe nicht verdeckt; `tools/shots/startup-anim.js` schaltet sie gezielt ein und prüft Ablauf, Überspringen, Stufen, Schalter, Vorschau und das Warten bis das Fenster sichtbar ist.
+- **Szenarien:** `--shots` meldet der Oberfläche `devNoSplash` (nur mit `JC_DEV=1`, `main.js`), damit die Startanimation die anderen Läufe nicht verdeckt; `tools/shots/startup-anim.js` schaltet sie mit `ctx.splash(true)` ein und prüft Ablauf, Überspringen, die ruhige Fassung (`ctx.reducedMotion`) und das Warten bis das Fenster sichtbar ist.
 
 ## Neu laden und Metadaten
 
@@ -512,8 +512,8 @@ ist er voll, geht es von selbst weiter (Segment überspringen bzw. nächste Folg
 - Ein Eintrag zählt **nur einmal** je Wiedergabe: wer nach dem Überspringen zurückspult, bekommt den Knopf ohne zweiten Countdown, und es wird nicht noch einmal automatisch übersprungen.
 - Die **nächste Folge** zählt nur mit *Nächste Folge automatisch*; sonst bleibt die Karte stehen und wartet auf den Klick auf *Jetzt*. Bei der Einstellung *Automatisch* (Intro/Abspann) wird wie bisher sofort übersprungen, die Knöpfe erscheinen dann gar nicht.
 - Technik: Die Sekunden gehen mit dem Eintrag `ui.autoSkip` (`{ sec, next }`, `getUi` in `main.js`, `skipCountdownSec` in `config.js`: ganze Zahl 0 bis 30) an die Steuerung. Gezählt wird in `player.js` pro Bild (`cdTick`: Wanduhr, höchstens 0,25 s je Bild, nur bei laufender Wiedergabe),
-  **nicht** mit einem CSS-Ablauf: bei *Animationen aus* liefe der sonst sofort durch. Die Füllung ist `.cd > i` in einer eigenen Hülle (Rundung und `overflow` dort, damit der unsichtbare Trefferstreifen des Knopfes nicht abgeschnitten wird).
-- Geprüft: `tools/shots/player-countdown.js` (34 Prüfungen mit dem mpv-Simulator: 6 s Standard, Füllstand, automatisches Springen, Klick, Pause, einmal je Eintrag, aus, Animationen aus, nächste Folge mit und ohne Autoplay), `test/episode-list.test.js` (`skipCountdownSec`).
+  **nicht** mit einem CSS-Ablauf: Länge und Auslösen hängen so nicht an der Bewegungseinstellung. Die Füllung ist `.cd > i` in einer eigenen Hülle (Rundung und `overflow` dort, damit der unsichtbare Trefferstreifen des Knopfes nicht abgeschnitten wird).
+- Geprüft: `tools/shots/player-countdown.js` (34 Prüfungen mit dem mpv-Simulator: 6 s Standard, Füllstand, automatisches Springen, Klick, Pause, einmal je Eintrag, aus, *Bewegung reduzieren*, nächste Folge mit und ohne Autoplay), `test/episode-list.test.js` (`skipCountdownSec`).
 
 ## Folgen und Staffeln im Player
 
@@ -601,7 +601,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | Szenario | prüft |
 | --- | --- |
 | `player.js` | Oberfläche des Players, Layout ohne Überlappung, Server-Meldungen, Intro überspringen, nächste Folge |
-| `player-countdown.js` | **Countdown an Überspringen / Nächste Folge** (34 Prüfungen, Simulator): 6 s Standard, Füllstand, springt von selbst, Klick, Pause hält an, einmal je Eintrag, aus, Animationen aus, nächste Folge mit und ohne Autoplay |
+| `player-countdown.js` | **Countdown an Überspringen / Nächste Folge** (34 Prüfungen, Simulator): 6 s Standard, Füllstand, springt von selbst, Klick, Pause hält an, einmal je Eintrag, aus, *Bewegung reduzieren*, nächste Folge mit und ohne Autoplay |
 | `web-mode.js` | **Oberfläche ohne Electron** (42 Prüfungen, eigenes Fenster ohne Vorlade-Datei, Mock-Server mit CORS): `window.jc` aus `src/web/jc-web.js`, Anmeldung und Fehler (401), Konfiguration in localStorage (Token kodiert), Neustart bleibt angemeldet, Startseite, Film, Serie, Suche, Einstellungen ohne Desktop-Bereiche, Bilder direkt vom Server, Wiedergabe-Haken (`JCHost.play`), Ereignisse der Hülle, gebauter Ordner `www`; **kompakte Ansicht** bei 390 px (Tab-Leiste unten, keine Überlappung, kein Scrollbalken, Poster über dem Titel, drei Spalten, kein seitlicher Überlauf, Anmeldekarte im Bild) und wieder 1280 px (Desktop-Layout wie zuvor), Aufnahmen `W-02` bis `W-08` |
 | `player-fullscreen.js` | **Vollbild im Player** (9 Prüfungen, Simulator, native Messung per GetWindowRect): im Fenster deckt das Overlay genau den Host, im Vollbild den ganzen Bildschirm mit mindestens einem Bildpunkt Reserve ringsum (gegen den Taskleistenstreifen unten), nach erneutem Angleichen unverändert, zurück im Fenster wieder ohne Rand |
 | `player-episodes.js` | **Folgen und Staffeln im Player** (27 Prüfungen, Simulator): Knopf nur bei Serien, Liste mit Staffel-Reitern, laufende Folge, Wechsel mit Server-Log, Taste E/Escape, Mausrad, Spoiler-Schutz, schmales Fenster |
@@ -623,7 +623,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
-| `seerr.js` | Seerr: Verbinden (Jellyfin-Konto, API-Schlüssel), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen, Konsole ohne Skriptfehler (Mock-Seerr) |
+| `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen, Konsole ohne Skriptfehler (Mock-Seerr) |
 | `seerr-issue.js` | **Problem melden** (31 Prüfungen, Mock-Seerr, Port 8897): **Warnschild** in der Knopfleiste (Lage, Größe, Beschriftung, öffnet das Fenster; fehlt ohne Seerr, ohne TMDB-Nummer und nach dem Trennen), Eintrag im Menü *Mehr* nur mit Seerr und TMDB-Nummer, vier Arten, Kommentar freiwillig, *Melden* erst nach der Wahl, Film, Serie und Folge (Staffel und Folge gehen mit), Ersatztext ohne Kommentar, Esc sendet nichts, Fehler im Fenster (403, Titel Seerr unbekannt) ohne Textverlust, gewählte Art klar markiert |
 | `compact-audit.js` | **Handy-Ansicht auf Abgeschnittenes absuchen** (Web-Fassung, 22 Seiten und Menüs in 412×891, 360×740 und 800×411): Text und Knöpfe außerhalb des Fensters oder von einem Rahmen mit `overflow: hidden` gekappt, Tab-Beschriftungen nur mit „…“, Seitenende unter der Tab-Leiste, Menüs, die herausragen, waagerechtes Scrollen; Aufnahmen bei 412 px |
 | `android-host.js` | **Hülle der Android-App ohne Handy** (23 Prüfungen, Mock-Server): Web-Bau mit `--host`, Nachbildung der **echten Capacitor-Brücke** (`nativePromise`, `PluginHeaders`, ohne `registerPlugin`; `CapacitorHttp`, `JellycloudPlayer`) per Debug-Protokoll eingeschleust, dazu ein Lauf mit der echten Laufzeit `@capacitor/core`, Diagnose-Zeile unter Einstellungen > Info; Hülle meldet Plattform/Version/Gerätename, Anmeldung und 401 über die „native“ Schicht, **Wiedergabe-Plan** (Direct Play, Token nur im Header, Startstelle aus „Weiterschauen“, Dauer, Titel, Geräteprofil ohne AC3/DTS), „Von vorn“, **Rückfall auf Transcode** ab der erreichten Stelle bei Decoder-Fehler, Fehlermeldung bei Serverfehler, Ereignisse (aktiv, geschlossen), Folgen-Titel, Links nur http(s) |
@@ -632,7 +632,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `discord.js` | **Discord Rich Presence** (49 Prüfungen, **Fake-Discord** auf eigener Pipe über `JC_DISCORD_PIPE`, Mock-Seerr, Port 9097): Einstellungen (nur Ziffern in der eigenen ID, Test mit falscher und richtiger ID, Status), **eingebaute Anwendung** (Feld nur optional, Einschalten genügt, Test ohne ID) und **eigener Name** (Feld, Servername, leer, auf 128 gekürzt), Anzeige für Film und Folge (Titel, Jahr und Genres, S1E2, Poster von TMDB über Seerr, Fortschritt, Knopf), Pause, Weiterspielen, Sprung, keine Flut bei normalem Weiterlaufen, Titel verbergen, Poster-Quellen (Server im Heimnetz = kein Bild), Ende (Schonfrist, dann weg), Neustart von Discord, Ausschalten; nichts Vertrauliches auf dem Draht |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Trend-Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, neue Bibliothek hinten, alles ausgeblendet, Schalter der Trend-Reihe, Überstehen eines Neustarts |
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |
-| `startup-anim.js` | **Startanimation**: Ablauf (Umriss, Dreieck, Schriftzug, Zoom, Oberfläche blendet ein), Zeit rund 2,7 s, Überspringen per Klick und Taste, Stufen *Aus* und *Reduziert*, Schalter und Vorschau in den Einstellungen, kein zweites Mal beim Neuaufbau, Warten bis das Fenster sichtbar ist, Hinweise erst danach, Bildabstände (Mock, Port 8497) |
+| `startup-anim.js` | **Startanimation**: Ablauf (Umriss, Dreieck, Schriftzug, Zoom, Oberfläche blendet ein), Zeit rund 2,7 s, Überspringen per Klick und Taste, ruhige Fassung bei *Bewegung reduzieren*, kein Schalter und keine Vorschau in den Einstellungen, kein zweites Mal beim Neuaufbau, Warten bis das Fenster sichtbar ist, Hinweise erst danach, Bildabstände (Mock, Port 8497) |
 | `home-trending.js` | Startseite: Reihe **Filme im Trend** (nur Filme, Reihenfolge, Stände, Anfragen und Details aus der Reihe, Zwischenspeicher), **Hinweis ohne Seerr** (einrichten, ausblenden, Schalter in den Einstellungen), Verbinden/Trennen baut die Startseite neu, Fehler und abgelaufene Anmeldung (Mock-Seerr, eigener Port 8197) |
 | `limits.js` | Bitratenlimit des Servers: nur über das Internet abfragen, Anzeige in den Einstellungen, Info/Qualitäts-Menü im Player (keine Einblendung beim Start), LAN ohne weitere Abfragen |
 | `autostart.js` | Minimierter Start mit `--autostart`, Einstellungen in der Entwicklung (Registry bleibt unberührt) |
@@ -690,7 +690,7 @@ Aus einer Durchsicht des Codes, jeweils mit Test (`test/` bzw. `tools/shots/revi
 - **Kopfleiste:** Jeder Neuaufbau (Anmeldung, Sprache, Strg+Umschalt+R, Seerr verbinden) ließ einen Zuhörer für `route` und die ganze alte Kopfleiste im Speicher zurück; sie werden jetzt abgeräumt.
 - **Suche:** Wird das Feld geleert, bevor die Antwort kommt, bleibt der Hinweis nicht mehr abgeblendet.
 - **Hover (0.0.49):** Knöpfe, Optionen, Reiter, Themenkacheln, Seitenleiste und die Knöpfe des Players hoben sich beim Zeigen um 1 bis 2 Bildpunkte an. Stand die Maus in der letzten Bildpunktzeile, lag sie danach außerhalb: der Hover fiel weg, das Element sank zurück, bekam ihn wieder und **zitterte**; ein Klick ganz am Rand ging
-  sogar **verloren**, weil das Drücken den Knopf verkleinert (im Test 3 von 6 Klicks). Jetzt hält ein unsichtbarer Streifen in Richtung der Bewegung die Trefferfläche unter der Maus (`::before` in `app.css` und `player.css`), das Aussehen ist gleich. Bei *Animationen aus* entfällt die Hebung. Der Knopf *Intro überspringen*
+  sogar **verloren**, weil das Drücken den Knopf verkleinert (im Test 3 von 6 Klicks). Jetzt hält ein unsichtbarer Streifen in Richtung der Bewegung die Trefferfläche unter der Maus (`::before` in `app.css` und `player.css`), das Aussehen ist gleich. Bei *Bewegung reduzieren* (System) entfällt die Hebung. Der Knopf *Intro überspringen*
   im Player hob sich nie an, weil seine Eingangsanimation (`both`) den Endwert festhielt (jetzt `backwards`). In Menüs wandert der Fokus mit der Maus: mit der Tastatur geöffnet leuchteten sonst der erste Eintrag und der unter der Maus zugleich. Nicht prüfbar mit simulierten Mausereignissen: ein Hover, der an der Ziehfläche der
   Titelzeile hängen bleiben könnte (bekanntes Verhalten von Electron bei `-webkit-app-region: drag`).
 - **Problem melden:** Schließt man das Fenster, während gesendet wird, und es scheitert, erscheint der Fehler als Hinweis (früher stand er im unsichtbaren Fenster).

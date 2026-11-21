@@ -80,37 +80,24 @@
   --glass: rgba(0, 0, 0, 0.74);
   --glass2: rgba(255, 255, 255, 0.07);
 }
-:root[data-theme='daylight'] {
-  color-scheme: light;
-  --ring: rgb(20 24 40 / 0.85);
-  --bg: #f1f2f7;
-  --surface: #ffffff;
-  --surface2: #e9ebf3;
-  --surface3: #d9dcea;
-  --line: rgba(20, 24, 40, 0.1);
-  --line2: rgba(20, 24, 40, 0.18);
-  --text: #171923;
-  --muted: #565c73;
-  --faint: #8087a0;
-  --danger-fg: #a81a38; /* dunkel auf hell: Kontrast mindestens 4,5 : 1 auf Weiss und auf Rot-Toenen */
-  --warn-fg: #7d5200;
-  --glass: rgba(246, 247, 252, 0.78);
-  --glass2: rgba(20, 24, 40, 0.06);
+:root[data-theme='midnightBlue'] {
+  /* Wie in der Apple-App (Theme.swift, ersetzt das helle Daylight): sehr dunkles, leicht blaeuliches Schwarzblau mit abgestuften Flaechen;
+     die Schrift ist die der dunklen Designs, einen Hauch ins Blaue gezogen (Kontrast zur Seite: Text 16:1, gedaempft 8:1) */
+  --bg: #0c1426;
+  --surface: #101b30;
+  --surface2: #1d2a40;
+  --surface3: #24334a;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.15);
+  --text: #f2f5fb;
+  --muted: #a3aec4;
+  --faint: #6f7b93;
+  --glass: rgba(12, 20, 38, 0.72);
+  --glass2: rgba(255, 255, 255, 0.07);
 }
+/* Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (motion.js setzt data-anim): kuerzer und ruhiger, nie ganz aus (wie in der Apple-App) */
 :root[data-anim='reduced'] {
   --dur: 0.45;
-}
-:root[data-anim='off'] {
-  --dur: 0;
-}
-:root[data-anim='off'] { transition: none; }
-:root[data-anim='off'] *,
-:root[data-anim='off'] *::before,
-:root[data-anim='off'] *::after {
-  animation-duration: 0s !important;
-  animation-delay: 0s !important;
-  transition-duration: 0s !important;
-  scroll-behavior: auto !important;
 }
 :root[data-blur='off'] {
   --glass: var(--surface);
@@ -194,7 +181,6 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .navrow { flex: 1; min-height: 0; display: flex; align-items: center; gap: 18px; padding: 0 var(--pad) 4px; }
 .topbar::before, .topbar::after { content: ''; position: absolute; inset: 0; pointer-events: none; transition: opacity var(--t-med) var(--ease); }
 .topbar::before { background: linear-gradient(rgba(0, 0, 0, 0.5), transparent); bottom: -28px; }
-:root[data-theme='daylight'] .topbar::before { background: linear-gradient(rgba(255, 255, 255, 0.55), transparent); }
 .topbar::after { opacity: 0; background: var(--glass); backdrop-filter: blur(26px) saturate(1.5); border-bottom: 1px solid var(--line); }
 .topbar.scrolled::before { opacity: 0; }
 .topbar.scrolled::after { opacity: 1; }
@@ -239,7 +225,6 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .btn.primary:hover { background: var(--accent); filter: brightness(1.08); box-shadow: 0 14px 32px -10px rgb(var(--accent-rgb) / 0.9); }
 .btn.glass { background: var(--glass2); border-color: var(--line); backdrop-filter: blur(16px) saturate(1.3); }
 .btn.glass:hover { background: rgb(255 255 255 / 0.13); border-color: var(--line2); }
-:root[data-theme='daylight'] .btn.glass:hover { background: rgb(20 24 40 / 0.1); }
 .btn.danger { background: rgb(255 77 109 / 0.14); color: var(--danger-fg); border-color: rgb(255 77 109 / 0.3); }
 .btn.danger:hover { background: rgb(255 77 109 / 0.24); }
 .btn.sm { height: 34px; padding: 0 12px; font-size: 13px; gap: 6px; }
@@ -259,8 +244,8 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .theme-tile::before { content: ''; position: absolute; inset: 0 0 -4px; }
 .snav::before { content: ''; position: absolute; inset: 0 0 0 -3px; }
 .row-head .more::before { content: ''; position: absolute; inset: 0 0 0 -4px; }
-/* Animationen "aus": auch die kleine Hebung beim Zeigen entfaellt (die Uebergaenge sind dann ohnehin aus, sie spraenge sonst von einem Bild zum anderen) */
-:root[data-anim='off'] :is(.btn, .opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile, .snav, .row-head .more):hover { transform: none; }
+/* Systemeinstellung "Bewegung reduzieren" (motion.js): die kleine Hebung beim Zeigen entfaellt, unter der Maus bewegt sich nichts */
+:root[data-anim='reduced'] :is(.btn, .opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile, .snav, .row-head .more):hover { transform: none; }
 .link-btn { background: none; border: 0; padding: 4px 0; color: var(--accent-fg, var(--accent)); font-weight: 600; cursor: pointer; }
 .link-btn.center { display: block; margin: 8px auto 0; }
 .link-btn:hover { text-decoration: underline; }
@@ -619,7 +604,6 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .upd-buttons:empty { display: none; }
 /* Update-Hinweise (Punkt am Zahnrad, Versionshinweis unter dem Konto) sind gruen, unabhaengig von der Akzentfarbe */
 :root { --ok: #34d399; --ok-text: #86efbf; }
-:root[data-theme='daylight'] { --ok: #16a34a; --ok-text: #0f6b34; }
 .tool.has-update { position: relative; }
 .tool.has-update::after { content: ''; position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 32%, transparent); pointer-events: none; }
 .navrow-end { position: relative; }
@@ -628,8 +612,6 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .update-note::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
 .update-note:hover { background: color-mix(in srgb, var(--ok) 34%, rgb(8 14 12 / 0.66)); transform: translateY(-1px); }
 .update-note:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
-:root[data-theme='daylight'] .update-note { background: color-mix(in srgb, var(--ok) 18%, rgb(255 255 255 / 0.82)); box-shadow: 0 8px 22px -12px rgb(20 30 60 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.9); }
-:root[data-theme='daylight'] .update-note:hover { background: color-mix(in srgb, var(--ok) 28%, rgb(255 255 255 / 0.82)); }
 .update-note[data-status='downloading']::before { animation: upd-pulse calc(1.4s * var(--dur, 1)) ease-in-out infinite; }
 @keyframes upd-pulse { 50% { opacity: 0.35; } }
 kbd { display: inline-block; padding: 3px 9px; border-radius: 7px; background: var(--surface2); border: 1px solid var(--line2); border-bottom-width: 2px; font: 700 12px Consolas, monospace; }
@@ -700,7 +682,6 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
    (mehrschichtiges Milchglas, helle Lichtkante oben, starke Unschaerfe + Saettigung)
    ========================================================================== */
 :root { --lg-fill: rgb(26 28 44 / 0.42); --lg-edge: rgb(255 255 255 / 0.2); --lg-edge-top: rgb(255 255 255 / 0.55); --lg-sheen: rgb(255 255 255 / 0.3); --lg-text: #f3f4fa; --lg-muted: rgb(255 255 255 / 0.62); --lg-hover: rgb(255 255 255 / 0.15); }
-:root[data-theme='daylight'] { --lg-fill: rgb(255 255 255 / 0.55); --lg-edge: rgb(255 255 255 / 0.85); --lg-edge-top: rgb(255 255 255 / 1); --lg-sheen: rgb(255 255 255 / 0.9); --lg-text: #171923; --lg-muted: rgb(23 25 35 / 0.6); --lg-hover: rgb(20 24 40 / 0.08); }
 :root[data-blur='off'] { --lg-fill: color-mix(in srgb, var(--surface2) 97%, transparent); }
 .menu, .toast {
   background:
@@ -811,12 +792,10 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .brand-mark > svg { width: 100%; height: 100%; } /* das Logo fuellt seine Flaeche (wie in der Startanimation gross und mit kraeftigem Umriss) */
 /* Schriftzug wie in der Startanimation (.sp-word): Grossbuchstaben, kraeftig, weit gesperrt, weiss mit leichtem Schein; der Abstand hinter dem letzten Buchstaben wird zurueckgenommen */
 .brand-name { font: 700 13px var(--font-display); letter-spacing: 0.32em; text-transform: uppercase; margin-right: -0.32em; color: #fff; text-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.5); }
-:root[data-theme='daylight'] .brand-name { color: var(--text); text-shadow: none; }
 
 /* Logo = nur die Wolke, ohne Kachelhintergrund (wie das App-Icon), mit dem Leuchten der Startanimation: weisser Umriss, helle Kante und ein weicher Schein in der Akzentfarbe (wie .sp-glow) */
 .brand-mark, .brand-mark.sm, .brand-mark.lg, .login-card .brand-mark { background: none; box-shadow: none; border-radius: 0; color: #fff; filter: drop-shadow(0 0 2px rgb(255 255 255 / 0.8)) drop-shadow(0 0 7px rgb(var(--accent-rgb) / 0.95)) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.5)); transition: filter var(--t-med) var(--ease); }
 .brand:hover .brand-mark { filter: drop-shadow(0 0 2.5px rgb(255 255 255 / 0.95)) drop-shadow(0 0 9px rgb(var(--accent-rgb)) ) drop-shadow(0 0 22px rgb(var(--accent-rgb) / 0.65)); }
-:root[data-theme='daylight'] .brand-mark, :root[data-theme='daylight'] .brand-mark.sm, :root[data-theme='daylight'] .brand-mark.lg, :root[data-theme='daylight'] .login-card .brand-mark { color: var(--text); filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.35)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.25)); }
 .brand-mark.sm { width: 32px; height: 32px; }
 .brand-mark.lg, .login-card .brand-mark { width: 72px; height: 72px; }
 
@@ -837,7 +816,6 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 
 /* Icons in Glas-Knoepfen: dezente Tiefe wie bei Apple */
 .btn .ico svg, .tool .ico svg, .arrow .ico svg, .opt .ico svg, .menu-item .ico svg, .snav .ico svg { filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.28)); }
-:root[data-theme='daylight'] .btn .ico svg, :root[data-theme='daylight'] .tool .ico svg { filter: drop-shadow(0 1px 0 rgb(255 255 255 / 0.6)); }
 
 /* ==========================================================================
    Apple-TV-Stil: neutrale ruhige Flaechen, grosse Bildflaechen, Navigation mittig,
@@ -1201,7 +1179,6 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
    Der Grund ist immer dunkel, egal welches Theme: so wirkt das Logo wie ein Vorspann, und die Oberflaeche kommt dahinter hervor.
    ========================================================================== */
 #splash { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; overflow: hidden; color: #fff; cursor: default; user-select: none; background: radial-gradient(ellipse 70% 60% at 50% 46%, #11131f 0%, #09090e 60%, #050507 100%); animation: sp-bg-out calc(720ms * var(--dur)) ease-in calc(1980ms * var(--dur)) forwards; }
-#splash.preview { animation: sp-bg-in calc(260ms * var(--dur)) ease-out backwards, sp-bg-out calc(720ms * var(--dur)) ease-in calc(1980ms * var(--dur)) forwards; }
 #splash.skip { animation: sp-skip 260ms ease-out forwards !important; }
 @keyframes sp-bg-in { from { opacity: 0; } }
 @keyframes sp-bg-out { to { opacity: 0; } }
@@ -1242,7 +1219,6 @@ html.splash-calm.splash-reveal #app { animation-name: sp-app-fade; }
 .sp-word span { display: inline-block; opacity: 0; animation: sp-letter calc(700ms * var(--dur)) var(--ease) calc((1000ms + var(--i) * 52ms) * var(--dur)) both; }
 @keyframes sp-letter { from { opacity: 0; transform: translateY(0.5em); filter: blur(8px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @keyframes sp-word-out { to { opacity: 0; transform: translateY(10px) scale(1.06); } }
-.ctl-pair { display: flex; align-items: center; gap: 14px; } /* Einstellungen: Knopf (Vorschau) neben dem Schalter */
 
 /* ==========================================================================
    Kompakte Ansicht (Handy): gilt nur, wenn compact.js <html data-compact="on"> setzt, also nie im Windows-Programm (dort ist data-platform "desktop").

@@ -7,7 +7,6 @@ import { glowSection } from './glow-settings.js';
 import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
-import { playSplash } from '../splash.js';
 
 // Bereiche der Einstellungen (Icon fuer die Seitenleiste)
 const SECTIONS = [
@@ -46,11 +45,6 @@ function setting(label, desc, control, { wide = false } = {}) {
   return h('div', { class: `setting${wide ? ' wide' : ''}` }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), desc ? h('div', { class: 'setting-desc' }, desc) : null), h('div', { class: 'setting-control' }, control));
 }
 
-/** Vorschau der Startanimation (laeuft ueber der Einstellungsseite; bei Animationen "aus" gibt es nichts zu sehen, dann ein Hinweis). */
-function previewSplash() {
-  if (state.settings.appearance.animations === 'off') toast(t('set.startAnimationOff'));
-  else playSplash(state.settings.appearance, { preview: true });
-}
 
 const group = (title, ...rows) => h('div', { class: 'settings-block' }, title ? h('h3', { class: 'group-title' }, title) : null, h('div', { class: 'settings-group' }, rows));
 
@@ -234,31 +228,9 @@ export function settingsView({ section }) {
       group(
         null,
         setting(t('set.posterSize'), t('set.posterSizeDesc'), slider({ min: 120, max: 260, step: 4, value: app().posterSize, format: (v) => `${v}px`, onInput: (v) => setAppearance({ posterSize: v }) })),
-        setting(t('set.radius'), t('set.radiusDesc'), slider({ min: 0, max: 28, step: 1, value: app().radius, format: (v) => `${v}px`, onInput: (v) => setAppearance({ radius: v }) })),
-        setting(
-          t('set.animations'),
-          t('set.animationsDesc'),
-          segmented(
-            [
-              { value: 'full', label: t('set.animFull') },
-              { value: 'reduced', label: t('set.animReduced') },
-              { value: 'off', label: t('set.animOff') }
-            ],
-            app().animations,
-            (v) => setAppearance({ animations: v })
-          )
-        ),
+        // Eckenradius (fest 18 px), Animationsstufe und Startanimation sind nicht mehr einstellbar (wie in der Apple-App, Entscheidung E7):
+        // Bewegung nimmt allein die Systemeinstellung "Bewegung reduzieren" zurueck (motion.js), die Startanimation laeuft dann ruhig
         setting(t('set.blur'), t('set.blurDesc'), toggle(app().blur, (v) => setAppearance({ blur: v }), t('set.blur'))),
-        setting(
-          t('set.startAnimation'),
-          t('set.startAnimationDesc'),
-          h(
-            'div',
-            { class: 'ctl-pair' },
-            h('button', { class: 'btn glass sm', type: 'button', onclick: previewSplash }, icon('play', 14), h('span', null, t('set.startAnimationPreview'))),
-            toggle(app().startAnimation !== false, (v) => setAppearance({ startAnimation: v }), t('set.startAnimation'))
-          )
-        ),
         setting(t('set.ambient'), t('set.ambientDesc'), toggle(app().ambient, (v) => setAppearance({ ambient: v }), t('set.ambient'))),
         setting(t('set.cardTitles'), t('set.cardTitlesDesc'), toggle(app().cardTitles, (v) => setAppearance({ cardTitles: v }), t('set.cardTitles'))),
         setting(
@@ -851,7 +823,9 @@ export function settingsView({ section }) {
       const out = h('button', { class: 'btn danger', type: 'button' }, icon('logout', 18), h('span', null, t('seerr.disconnect')));
       out.addEventListener('click', async () => {
         try {
-          state.seerr = (await window.jc.seerrDisconnect()).seerr;
+          const next = await window.jc.seerrDisconnect();
+          state.seerr = next.seerr;
+          state.seerrAddress = next.seerrAddress;
           invalidate(); // die Startseite im Speicher zeigt noch die Reihe "Filme im Trend"
           toast(t('seerr.disconnected'));
           refresh();
@@ -861,27 +835,22 @@ export function settingsView({ section }) {
       });
       return h('div', { class: 'settings-stack' }, h('div', { class: 'settings-group' }, h('div', { class: 'account-card' }, h('div', { class: 'avatar-lg' }, icon('plus', 28)), h('div', null, h('div', { class: 'setting-label' }, t('seerr.connected')), h('div', { class: 'setting-desc' }, t('seerr.statusLine', { url: info.url, user: info.userName })))), h('div', { class: 'btn-row' }, out)));
     }
-    let mode = 'jellyfin';
+    // Seerr gilt je Profil und nur mit dem Jellyfin-Konto (wie in der Apple-App): Benutzer des Profils vorbelegt (aenderbar), Adresse aus der letzten Verbindung
     const err = h('div', { class: 'form-error', role: 'alert' });
     const url = h('input', { class: 'field', type: 'text', placeholder: 'seerr.example.com', autocomplete: 'off', spellcheck: 'false', 'aria-label': t('seerr.url') });
+    url.value = state.seerrAddress ?? '';
     const user = h('input', { class: 'field', type: 'text', placeholder: t('login.user'), autocomplete: 'off', spellcheck: 'false', 'aria-label': t('login.user') });
     user.value = activeServer()?.userName ?? '';
     const pass = h('input', { class: 'field', type: 'password', placeholder: t('login.password'), autocomplete: 'off', 'aria-label': t('login.password') });
-    const key = h('input', { class: 'field', type: 'password', placeholder: t('seerr.apiKey'), autocomplete: 'off', spellcheck: 'false', 'aria-label': t('seerr.apiKey') });
-    const userRow = setting(t('login.user'), null, user);
-    const passRow = setting(t('login.password'), t('seerr.passwordNote'), pass);
-    const keyRow = setting(t('seerr.apiKey'), t('seerr.apiKeyDesc'), key);
-    const paintMode = () => {
-      userRow.hidden = passRow.hidden = mode !== 'jellyfin';
-      keyRow.hidden = mode !== 'apikey';
-    };
-    paintMode();
     const connect = h('button', { class: 'btn primary', type: 'button' }, icon('link', 18), h('span', null, t('seerr.connect')));
     const submit = async () => {
+      if (connect.disabled) return; // Enter waehrend einer laufenden Anmeldung: nicht doppelt anmelden
       err.textContent = '';
       connect.disabled = true;
       try {
-        state.seerr = (await window.jc.seerrConnect({ url: url.value, mode, username: user.value, password: pass.value, apiKey: key.value })).seerr;
+        const next = await window.jc.seerrConnect({ url: url.value, username: user.value, password: pass.value });
+        state.seerr = next.seerr;
+        state.seerrAddress = next.seerrAddress;
         invalidate(); // die Startseite im Speicher zeigt noch den Hinweis zur Einrichtung
         toast(t('seerr.connected'));
         refresh();
@@ -892,7 +861,7 @@ export function settingsView({ section }) {
       }
     };
     connect.addEventListener('click', submit);
-    for (const input of [url, user, pass, key]) input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
+    for (const input of [url, user, pass]) input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
     return h(
       'div',
       { class: 'settings-stack' },
@@ -900,19 +869,13 @@ export function settingsView({ section }) {
       group(
         t('seerr.grpConnection'),
         setting(t('seerr.url'), t('seerr.urlDesc'), url),
-        setting(t('seerr.mode'), null, segmented([{ value: 'jellyfin', label: t('seerr.modeJellyfin') }, { value: 'apikey', label: t('seerr.modeKey') }], mode, (v) => {
-          mode = v;
-          paintMode();
-        })),
-        userRow,
-        passRow,
-        keyRow,
+        setting(t('login.user'), t('seerr.userDesc'), user),
+        setting(t('login.password'), t('seerr.passwordNote'), pass),
         h('div', { class: 'btn-row' }, connect),
         err
       )
     );
   }
-
   // ---------- Discord Rich Presence ----------
   function discordPanel() {
     const dc = () => state.settings.discord ?? {};

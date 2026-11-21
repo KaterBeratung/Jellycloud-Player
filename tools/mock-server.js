@@ -734,8 +734,10 @@ async function handleSeerr(req, res, p, q, method) {
   if (sub === '/status') return json(200, { version: '2.7.0-mock', commitTag: 'mock', updateAvailable: false });
   if (sub === '/auth/jellyfin' && method === 'POST') {
     const b = await readBody(req);
-    if (b.username === 'demo' && b.password === 'demo') {
-      return json(200, { id: 1, displayName: 'Demo', jellyfinUsername: 'demo', permissions: seerrPermissions() }, { 'set-cookie': `connect.sid=${SEERR.sid}; Path=/; HttpOnly` });
+    // "demo" (das Konto des Testbenutzers) und "demo2" (ein zweites Jellyfin-Konto, etwa fuer ein anderes Profil; gleiche Sitzung, anderer Name)
+    if ((b.username === 'demo' || b.username === 'demo2') && b.password === 'demo') {
+      const second = b.username === 'demo2';
+      return json(200, { id: second ? 2 : 1, displayName: second ? 'Demo Zwei' : 'Demo', jellyfinUserId: second ? 'jf-demo2' : (SEERR.identity ?? USER.Id), jellyfinUsername: b.username, permissions: seerrPermissions() }, { 'set-cookie': `connect.sid=${SEERR.sid}; Path=/; HttpOnly` });
     }
     return json(401, { message: 'Invalid credentials' });
   }

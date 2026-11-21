@@ -6,8 +6,8 @@ import { blurhashColor } from './blurhash.js';
 import { vivid } from './color.js';
 import { state } from './state.js';
 
-// Anteil der Farbe am Seitenhintergrund je Theme in Prozent: AMOLED bleibt fast schwarz, Daylight nur ein Hauch
-const AMOUNT = { midnight: 13, graphite: 12, amoled: 7, daylight: 9 };
+// Anteil der Farbe am Seitenhintergrund je Theme in Prozent: AMOLED bleibt fast schwarz
+const AMOUNT = { midnight: 13, graphite: 12, amoled: 7, midnightBlue: 12 };
 
 function paint(rgb) {
   const root = document.documentElement;

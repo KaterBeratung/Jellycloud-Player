@@ -61,6 +61,8 @@ export function loginView({ onDone, onCancel }) {
   if (recent) panel.append(recent);
   if (onCancel) panel.append(h('button', { class: 'link-btn center', type: 'button', onclick: onCancel }, t('action.cancel')));
 
+  /** Fehler der Anmeldung als Satz: falsches Passwort, Grenze von vier Profilen (der Server hat die neue Sitzung schon wieder abgemeldet), sonst die Meldung. */
+  const loginError = (e) => (e.code === 'PROFILE_LIMIT' ? t('login.profileLimit', { n: state.maxProfiles ?? 4 }) : e.status === 401 ? t('login.badCredentials') : e.message);
   function showError(msg) {
     err.textContent = msg;
     panel.classList.remove('shake');
@@ -82,7 +84,7 @@ export function loginView({ onDone, onCancel }) {
       await window.jc.login({ url: url.value, username: user.value, password: pass.value });
       onDone();
     } catch (e) {
-      showError(e.status === 401 ? t('login.badCredentials') : e.message);
+      showError(loginError(e));
     } finally {
       busy(false);
     }
@@ -90,6 +92,7 @@ export function loginView({ onDone, onCancel }) {
 
   qcBtn.addEventListener('click', async () => {
     err.textContent = '';
+    let closeQc = null;
     if (!url.value.trim()) return showError(t('login.needServer'));
     busy(true);
     try {
@@ -111,6 +114,7 @@ export function loginView({ onDone, onCancel }) {
         form.hidden = false;
         recent?.removeAttribute('hidden');
       };
+      closeQc = cancelQc;
       stopQc = () => {
         alive = false;
       };
@@ -124,7 +128,8 @@ export function loginView({ onDone, onCancel }) {
         }
       }
     } catch (e) {
-      showError(e.message);
+      closeQc?.(); // abgelehnt (z. B. Profilgrenze) oder Fehler beim Abfragen: zurueck zum Formular, sonst bliebe der Code stehen
+      showError(loginError(e));
     } finally {
       busy(false);
     }

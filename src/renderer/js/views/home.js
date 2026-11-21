@@ -29,7 +29,7 @@ const TREND_WAIT_MS = 1500; // so lange wartet der Aufbau des Banners hoechstens
  */
 let trendCache = null; // { key, at, list: Promise }
 function loadTrending() {
-  const key = `${state.seerr?.url}|${state.seerr?.userName}`;
+  const key = `${state.activeServerId}|${state.seerr?.url}|${state.seerr?.userName}`; // Seerr gilt je Profil
   if (trendCache && trendCache.key === key && Date.now() - trendCache.at < TREND_TTL_MS) return trendCache.list;
   const entry = { key, at: Date.now(), list: window.jc.seerrTrending() };
   trendCache = entry;

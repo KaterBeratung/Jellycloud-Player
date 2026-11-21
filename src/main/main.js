@@ -38,6 +38,8 @@ const audioProbe = new AudioOutputProbe();
 let quitting = false;
 /** Wahr, sobald die IPC-Handler stehen. Vorher darf kein Fenster entstehen: die Oberflaeche bekaeme auf "state:get" keine Antwort und zeigt "Start fehlgeschlagen". */
 let booted = false;
+/** Nur in den Szenarien (JC_DEV=1, --shots): die Oberflaeche spielt keine Startanimation (Zustand devNoSplash). */
+let devNoSplash = DEV && process.argv.some((a) => a.startsWith('--shots='));
 
 const netFetch = (url, init) => net.fetch(url, init);
 
@@ -381,7 +383,9 @@ async function startUp() {
       autostartSupported: autostartSupported(app),
       update: updater?.state ?? null,
       discordBuiltIn: !!presence?.defaultClientId, // Discord-Anwendung eingebaut: niemand braucht eine eigene Application-ID
-      justUpdated: process.argv.includes('--updated') // der Installer hat die App nach einem Update gestartet
+      justUpdated: process.argv.includes('--updated'), // der Installer hat die App nach einem Update gestartet
+      // Nur in den Szenarien (JC_DEV=1, --shots): ohne Startanimation (sie verdeckt die Oberflaeche und schluckt Klicks); startup-anim.js schaltet sie per ctx.splash wieder ein
+      ...(devNoSplash ? { devNoSplash: true } : {})
     }),
     onSettings: (patch, settings) => {
       if (patch === null) setAutostart(app, settings.general.autostart); // Standardwerte (Autostart: aus)
@@ -479,8 +483,6 @@ async function startUp() {
   registerIpc();
   booted = true;
   if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
-  // Die Szenarien (--shots) laufen ohne Startanimation (sie verdeckt die Oberflaeche und schluckt Klicks); wer sie testet, schaltet sie selbst wieder ein (startup-anim.js)
-  if (DEV && process.argv.some((a) => a.startsWith('--shots='))) config.updateSettings({ appearance: { startAnimation: false } });
   createMainWindow();
   // Ausgabegeraet im Hintergrund erkennen, damit der Start der ersten Wiedergabe nicht darauf warten muss.
   if (!fake) setTimeout(() => audioProbe.refresh(), 1200).unref?.();
@@ -499,6 +501,15 @@ async function startUp() {
         updater,
         presence,
         wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+        /** Startanimation fuer die naechsten Starts (Neu laden) ein- oder ausschalten; die Szenarien beginnen ohne (devNoSplash) */
+        splash: (on) => {
+          devNoSplash = !on;
+        },
+        /** Systemeinstellung "Bewegung reduzieren" nachstellen (prefers-reduced-motion) fuer ein Fenster (Standard: das Hauptfenster); motion.js folgt sofort */
+        reducedMotion: async (on, wc = mainWin.webContents) => {
+          if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+          await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: on ? 'reduce' : 'no-preference' }] });
+        },
         run: (js) => mainWin.webContents.executeJavaScript(js),
         capture: async (file, win = mainWin) => {
           fs.mkdirSync(path.dirname(file), { recursive: true });

@@ -19,15 +19,13 @@ const DEFAULT_UPDATE_SOURCE = 'https://github.com/KaterBeratung/Jellycloud-Playe
 const DEFAULT_SETTINGS = {
   language: 'auto', // 'auto' | 'de' | 'en'
   appearance: {
-    theme: 'midnight', // midnight | graphite | amoled | daylight
+    theme: 'midnight', // midnight | graphite | amoled | midnightBlue (nur dunkle Designs wie in der Apple-App; ein gespeichertes "daylight" wird midnightBlue)
     accent: '#f5f5f7', // neutrales Silberweiss wie bei Apple TV; frei waehlbar (Weiss/Grau/Schwarz passen sich dem Theme an)
     posterSize: 176, // Breite einer Poster-Karte in px
-    radius: 18, // Eckenradius in px
-    animations: 'full', // full | reduced | off
+    // Eckenradius fest 18 px und keine Animationsstufe mehr (Entscheidung E7, wie in der Apple-App): Bewegung nimmt allein die Systemeinstellung zurueck
     blur: true, // Glas-Effekte (Backdrop-Blur)
     heroAutoplay: true, // Hero-Banner wechselt automatisch
     ambient: true, // Hintergrund nimmt dezent die Farbe des gezeigten Banners/Titels auf (wie Apple TV)
-    startAnimation: true, // beim Start der App eine kurze Animation mit dem Logo (wie bei Netflix); entfaellt bei Animationen "aus", Klick oder Taste ueberspringt sie
     homeTrending: true, // Startseite: Reihe "Filme im Trend" (aus Seerr; ohne Verbindung steht dort ein Hinweis zur Einrichtung) und bis zu zwei gut bewertete davon im Banner
     cardTitles: true // Titel unter den Postern
   },
@@ -154,6 +152,30 @@ function deepMerge(base, patch) {
  * @typedef {{ encode(token: string): string, decode(stored: string): string|null }} ConfigCodec
  * @typedef {{ uuid(): string, hashId(text: string): string }} ConfigEnv
  */
+/** Nur dunkle Designs (wie in der Apple-App). */
+const THEMES = ['midnight', 'graphite', 'amoled', 'midnightBlue'];
+/** Hoechstens vier Profile je Geraet. */
+const MAX_PROFILES = 4;
+const cleanLabel = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40) : '');
+/** Ein gespeichertes Profil tolerant: eigener Name und Seerr-Sitzung nur, wenn sie lesbar sind. */
+function readProfile(s) {
+  const out = { ...s, label: cleanLabel(s.label) };
+  const z = s.seerr;
+  if (z && typeof z === 'object' && typeof z.url === 'string' && z.url && typeof z.secret === 'string' && z.secret) out.seerr = { url: z.url, userName: String(z.userName ?? ''), jellyfinUserId: typeof z.jellyfinUserId === 'string' ? z.jellyfinUserId : '', secret: z.secret };
+  else delete out.seerr;
+  return out;
+}
+/** Reihen je Profil tolerant: ein unlesbarer Eintrag faellt allein weg. */
+function readRowsMap(raw) {
+  const out = {};
+  if (!isPlainObject(raw)) return out;
+  for (const [id, r] of Object.entries(raw)) {
+    if (!isPlainObject(r) || id === '__proto__') continue;
+    const c = HomeRows.homeConfig({ order: r.order, hidden: r.hidden });
+    if (c.order.length || c.hidden.length) out[id] = { order: c.order, hidden: c.hidden };
+  }
+  return out;
+}
 class ConfigCore {
   /**
    * @param {ConfigIo} io
@@ -165,11 +187,13 @@ class ConfigCore {
     this.codec = codec;
     this.env = env;
     this.data = {
-      version: 9,
+      version: 10,
       deviceId: env.uuid(),
       activeServerId: null,
       servers: [],
-      settings: structuredClone(DEFAULT_SETTINGS)
+      settings: structuredClone(DEFAULT_SETTINGS),
+      homeRowsByProfile: {},
+      homeRowsAdopted: false
     };
     this._load();
   }
@@ -184,14 +208,12 @@ class ConfigCore {
       if (Array.isArray(raw.servers)) this.data.servers = raw.servers.filter((s) => s && s.id && s.url);
       if (typeof raw.activeServerId === 'string') this.data.activeServerId = raw.activeServerId;
       if (raw.window && typeof raw.window === 'object') this.data.window = raw.window;
-      if (raw.seerr && typeof raw.seerr === 'object' && raw.seerr.url && raw.seerr.secret) this.data.seerr = raw.seerr;
       this.data.settings = deepMerge(DEFAULT_SETTINGS, raw.settings);
       this.data.settings.home = HomeRows.homeConfig(this.data.settings.home); // Grenzen und Listen pruefen (eine von Hand bearbeitete Datei darf nichts zerlegen)
       this.data.settings.glow = Glow.normalize(raw.settings?.glow); // Ambient Glow tolerant lesen (Unlesbares faellt einzeln weg)
-      // Version 2 (Apple-TV-Stil): der alte Standard-Eckenradius 14 wird einmalig auf den neuen Standard gehoben. Bewusst gewaehlte andere Werte bleiben.
+      // (Version 2 hob den alten Eckenradius 14 an; seit Version 10 gibt es keinen Eckenradius mehr.)
       const ver = raw.version ?? 1;
       const look = this.data.settings.appearance;
-      if (ver < 2 && look.radius === 14) look.radius = DEFAULT_SETTINGS.appearance.radius;
       // Version 3: der alte Standard-Akzent (Koenigsblau) wurde durch ein neutrales Silberweiss ersetzt. Eigene Farben bleiben.
       if (ver < 3 && String(look.accent).toLowerCase() === '#0b2dbf') look.accent = DEFAULT_SETTINGS.appearance.accent;
       // Version 4: die Trailer-Standards wurden angehoben (Start nach 8 statt 2 s, Ausblenden nach 20 statt 15 s). Alte Standardwerte ziehen mit, eigene bleiben.
@@ -214,6 +236,27 @@ class ConfigCore {
       delete gen.updateCustom;
       // Tags (4K, HDR, Atmos ...) haben keinen Schalter mehr (wie in der Apple-App, Entscheidung E7): ein gespeicherter Wert faellt weg
       delete look.showBadges;
+      // Version 10 (Angleichung an die Apple-App): nur dunkle Designs (das helle "daylight" wird Midnight Blue), keine Animationsstufe (Bewegung nimmt
+      // allein die Systemeinstellung "Bewegung reduzieren" zurueck), kein Eckenradius, kein Schalter fuer die Startanimation (Entscheidung E7).
+      if (look.theme === 'daylight') look.theme = 'midnightBlue';
+      if (!THEMES.includes(look.theme)) look.theme = DEFAULT_SETTINGS.appearance.theme;
+      delete look.animations;
+      delete look.radius;
+      delete look.startAnimation;
+      // Profile: eigener Name (nur auf diesem Geraet) und Seerr je Profil; tolerant gelesen
+      this.data.servers = this.data.servers.map((s) => readProfile(s));
+      // Reihen der Startseite je Profil (bleiben auch nach dem Abmelden); die Reihen des Geraets gehen einmal an die gemerkten Profile (_adoptHomeRows)
+      this.data.homeRowsByProfile = readRowsMap(raw.homeRowsByProfile);
+      this.data.homeRowsAdopted = raw.homeRowsAdopted === true;
+      if (typeof raw.seerrAddress === 'string' && raw.seerrAddress) this.data.seerrAddress = raw.seerrAddress.slice(0, 300);
+      // Seerr bis Version 9: eine Verbindung fuer das ganze Geraet. Sie geht an das aktive Profil, wenn der Benutzername passt (Jellyfin-Konto); sonst wird
+      // nur die Adresse vorbelegt. Verbindungen mit API-Schluessel verfallen (Entscheidung E12): einmal mit dem Jellyfin-Konto neu anmelden.
+      if (ver < 10 && raw.seerr && typeof raw.seerr === 'object' && typeof raw.seerr.url === 'string' && raw.seerr.url) {
+        const active = this.data.servers.find((s) => s.id === this.data.activeServerId);
+        const same = active && raw.seerr.mode !== 'apikey' && typeof raw.seerr.secret === 'string' && raw.seerr.secret && String(raw.seerr.userName ?? '').trim().toLowerCase() === String(active.userName ?? '').trim().toLowerCase();
+        if (same) active.seerr = { url: raw.seerr.url, userName: String(raw.seerr.userName), jellyfinUserId: '', secret: raw.seerr.secret };
+        else this.data.seerrAddress = raw.seerr.url.slice(0, 300);
+      }
     } catch (e) {
       // Erste Ausfuehrung (keine Datei) oder defekte Datei: Standardwerte verwenden. Eine vorhandene, aber unlesbare Datei wird gesichert, bevor die Standardwerte sie ueberschreiben:
       // darin stehen Server, Anmeldungen und Einstellungen, und von Hand liesse sich daraus noch etwas retten.
@@ -225,6 +268,8 @@ class ConfigCore {
         }
       }
     }
+    this.data.version = 10;
+    this._adoptHomeRows();
     this._save();
   }
 
@@ -254,6 +299,9 @@ class ConfigCore {
     return this.data.settings;
   }
 
+  get maxProfiles() {
+    return MAX_PROFILES;
+  }
 
   /** Zuletzt gespeicherte Fensterposition/-groesse ({x, y, width, height, maximized}) oder null. */
   get windowState() {
@@ -266,67 +314,147 @@ class ConfigCore {
     this._save();
   }
 
-  /** Setzt alle Einstellungen auf die Standardwerte (Server und Anmeldungen bleiben erhalten). */
+  /** Setzt alle Einstellungen auf die Standardwerte (Server und Anmeldungen bleiben erhalten); die Reihen der Startseite des aktiven Profils auch. */
   resetSettings() {
     this.data.settings = structuredClone(DEFAULT_SETTINGS);
+    if (this.data.homeRowsAdopted && this.data.activeServerId) delete this.data.homeRowsByProfile[this.data.activeServerId];
     this._save();
-    return this.data.settings;
+    return this.publicState().settings;
   }
 
+  /**
+   * Aendert Einstellungen. Reihenfolge und ausgeblendete Reihen der Startseite (home.order, home.hidden) gehoeren dem aktiven Profil (seit Version 10);
+   * Banner und Folien gelten fuer das Geraet. Ohne Profil (abgemeldet) bleiben die Reihen beim Geraet.
+   */
   updateSettings(patch) {
-    this.data.settings = deepMerge(this.data.settings, patch);
-    if (patch && typeof patch === 'object' && 'home' in patch) this.data.settings.home = HomeRows.homeConfig(this.data.settings.home);
+    let p = patch;
+    if (p && typeof p === 'object' && p.home && typeof p.home === 'object' && this.data.homeRowsAdopted && this.data.activeServerId && ('order' in p.home || 'hidden' in p.home)) {
+      const cur = this.homeRows();
+      this.setHomeRows({ order: 'order' in p.home ? p.home.order : cur.order, hidden: 'hidden' in p.home ? p.home.hidden : cur.hidden }, this.data.activeServerId, { save: false });
+      const { order, hidden, ...rest } = p.home;
+      p = { ...p, home: rest };
+    }
+    this.data.settings = deepMerge(this.data.settings, p);
+    if (p && typeof p === 'object' && 'home' in p) this.data.settings.home = HomeRows.homeConfig(this.data.settings.home);
     // Ambient Glow: die Oberflaeche schickt die ganze Einstellung (src/shared/glow.js set.*); sie ersetzt die alte, damit Bereiche auch wegfallen koennen
-    if (patch && typeof patch === 'object' && 'glow' in patch) this.data.settings.glow = Glow.normalize(patch.glow);
+    if (p && typeof p === 'object' && 'glow' in p) this.data.settings.glow = Glow.normalize(p.glow);
     this._save();
-    return this.data.settings;
+    return this.publicState().settings;
   }
 
-  /** Zustand fuer die Oberflaeche, ohne Tokens. */
+  /** Zustand fuer die Oberflaeche, ohne Tokens. Die Einstellungen tragen die Reihen der Startseite des aktiven Profils. */
   publicState() {
+    const active = this.data.servers.find((s) => s.id === this.data.activeServerId);
+    const rows = this.homeRows();
     return {
       deviceId: this.data.deviceId,
       activeServerId: this.data.activeServerId,
-      servers: this.data.servers.map(({ id, url, name, userId, userName }) => ({ id, url, name, userId, userName })),
-      // Seerr ohne Zugangsdaten: nur was die Oberflaeche zum Anzeigen braucht
-      seerr: this.data.seerr ? { url: this.data.seerr.url, mode: this.data.seerr.mode, userName: this.data.seerr.userName } : null,
-      settings: this.data.settings
+      servers: this.data.servers.map(({ id, url, name, userId, userName, label }) => ({ id, url, name, userId, userName, label: label || '' })),
+      maxProfiles: MAX_PROFILES,
+      // Seerr des aktiven Profils ohne Zugangsdaten; seerrAddress: Adresse zum Vorbelegen (eigene oder aus der Zeit vor Version 10)
+      seerr: active?.seerr ? { url: active.seerr.url, userName: active.seerr.userName } : null,
+      seerrAddress: active?.seerr?.url ?? this.data.seerrAddress ?? null,
+      settings: { ...this.data.settings, home: { ...this.data.settings.home, order: rows.order, hidden: rows.hidden } }
     };
   }
 
-  /** Seerr-Verbindung (fuer Anfragen). secret = Session-Cookie bzw. API-Schluessel, verschluesselt wie die Jellyfin-Token. */
-  saveSeerr({ url, mode, userName, secret }) {
-    this.data.seerr = { url, mode, userName, secret: this._encode(secret) };
+  // ---------- Reihen der Startseite je Profil ----------
+  /** Reihen eines Profils: vor der Uebernahme die des Geraets, danach die eigenen (ein neues Profil und "kein Profil" beginnen mit der Standardfolge). */
+  homeRows(id = this.data.activeServerId) {
+    if (!this.data.homeRowsAdopted) return { order: [...this.data.settings.home.order], hidden: [...this.data.settings.home.hidden] };
+    const map = this.data.homeRowsByProfile;
+    const r = id && Object.prototype.hasOwnProperty.call(map, id) ? map[id] : null;
+    return r ? { order: [...r.order], hidden: [...r.hidden] } : { order: [], hidden: [] };
+  }
+
+  setHomeRows(rows, id = this.data.activeServerId, { save = true } = {}) {
+    if (!id) return;
+    const clean = HomeRows.homeConfig({ order: rows?.order, hidden: rows?.hidden });
+    if (!clean.order.length && !clean.hidden.length) delete this.data.homeRowsByProfile[id];
+    else this.data.homeRowsByProfile[id] = { order: clean.order, hidden: clean.hidden };
+    if (save) this._save();
+  }
+
+  /**
+   * Einmalig: die Reihen des Geraets (bis Version 9) werden die jedes gemerkten Profils. Ohne gemerktes Profil wartet die Uebernahme, sonst gingen
+   * die Reihen verloren; ohne eigene Reihen gibt es nichts zu uebernehmen. Die Felder des Geraets bleiben gespeichert, wie sie waren.
+   */
+  _adoptHomeRows() {
+    if (this.data.homeRowsAdopted) return;
+    const device = { order: this.data.settings.home.order, hidden: this.data.settings.home.hidden };
+    const has = device.order.length || device.hidden.length;
+    if (!has) {
+      this.data.homeRowsAdopted = true;
+      return;
+    }
+    if (!this.data.servers.length) return;
+    for (const s of this.data.servers) this.data.homeRowsByProfile[s.id] = { order: [...device.order], hidden: [...device.hidden] };
+    this.data.homeRowsAdopted = true;
+  }
+
+  // ---------- Profile ----------
+  /** Kennung eines Profils (Server und Benutzer). */
+  profileId(url, userId) {
+    return this.env.hashId(`${url}|${userId}`);
+  }
+
+  /** Hoechstens vier Profile (wie in der Apple-App): ein schon gemerktes darf sich immer neu anmelden; ueber der Grenze kommt nur keines dazu. */
+  mayAddProfile(id) {
+    return this.data.servers.some((s) => s.id === id) || this.data.servers.length < MAX_PROFILES;
+  }
+
+  /** Eigener Name eines Profils (nur auf diesem Geraet; leer: der Name des Benutzers). */
+  setProfileLabel(id, label) {
+    const s = this.data.servers.find((x) => x.id === id);
+    if (!s) return false;
+    s.label = cleanLabel(label);
+    this._save();
+    return true;
+  }
+
+  // ---------- Seerr je Profil (seit Version 10; nur mit dem Jellyfin-Konto, kein API-Schluessel) ----------
+  /** Seerr des aktiven Profils. secret = Sitzungs-Cookie, verschluesselt wie die Jellyfin-Token. */
+  saveSeerr({ url, userName, jellyfinUserId = '', secret }) {
+    const s = this.data.servers.find((x) => x.id === this.data.activeServerId);
+    if (!s) throw Object.assign(new Error('Kein Profil angemeldet'), { code: 'NO_PROFILE' });
+    s.seerr = { url, userName: String(userName ?? ''), jellyfinUserId: String(jellyfinUserId ?? ''), secret: this._encode(secret) };
     this._save();
   }
 
-  /** @returns {{url:string, mode:'jellyfin'|'apikey', userName:string, secret:string}|null} null, wenn nicht verbunden oder nicht entschluesselbar */
-  getSeerr() {
-    const s = this.data.seerr;
+  /** @returns {{url:string, userName:string, jellyfinUserId:string, secret:string}|null} null, wenn nicht verbunden oder nicht entschluesselbar */
+  getSeerr(id = this.data.activeServerId) {
+    const s = this.data.servers.find((x) => x.id === id)?.seerr;
     if (!s) return null;
     const secret = this._decode(s.secret);
-    return secret ? { url: s.url, mode: s.mode, userName: s.userName, secret } : null;
+    return secret ? { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId || '', secret } : null;
   }
 
   clearSeerr() {
-    delete this.data.seerr;
+    const s = this.data.servers.find((x) => x.id === this.data.activeServerId);
+    if (s?.seerr) {
+      this.data.seerrAddress = s.seerr.url; // zum erneuten Anmelden vorbelegt
+      delete s.seerr;
+    }
     this._save();
   }
 
   getServer(id = this.data.activeServerId) {
     const s = this.data.servers.find((x) => x.id === id);
     if (!s) return null;
-    return { id: s.id, url: s.url, name: s.name, userId: s.userId, userName: s.userName, token: this._decode(s.token) };
+    return { id: s.id, url: s.url, name: s.name, userId: s.userId, userName: s.userName, label: s.label || '', token: this._decode(s.token) };
   }
 
-  /** Legt einen Server/Nutzer an oder aktualisiert ihn und macht ihn aktiv. */
+  /** Legt ein Profil (Server und Benutzer) an oder aktualisiert es und macht es aktiv; eigener Name und Seerr bleiben. Ueber der Grenze: Fehler PROFILE_LIMIT. */
   saveServer({ url, name, userId, userName, token }) {
-    const id = this.env.hashId(`${url}|${userId}`);
-    const entry = { id, url, name, userId, userName, token: this._encode(token) };
+    const id = this.profileId(url, userId);
     const i = this.data.servers.findIndex((s) => s.id === id);
+    if (i < 0 && !this.mayAddProfile(id)) throw Object.assign(new Error(`Höchstens ${MAX_PROFILES} Profile`), { code: 'PROFILE_LIMIT' });
+    const prev = i >= 0 ? this.data.servers[i] : {};
+    const entry = { id, url, name, userId, userName, token: this._encode(token), label: prev.label || '', ...(prev.seerr ? { seerr: prev.seerr } : {}) };
     if (i >= 0) this.data.servers[i] = entry;
     else this.data.servers.push(entry);
     this.data.activeServerId = id;
+    this._adoptHomeRows(); // das erste Profil nach einem Start ohne Profil bekommt die Reihen des Geraets
     this._save();
     return id;
   }
@@ -338,12 +466,12 @@ class ConfigCore {
     return true;
   }
 
+  /** Entfernt ein Profil samt seiner Seerr-Sitzung; seine Reihen der Startseite bleiben (bei erneuter Anmeldung wieder da). */
   removeServer(id) {
     this.data.servers = this.data.servers.filter((s) => s.id !== id);
     if (this.data.activeServerId === id) this.data.activeServerId = this.data.servers[0]?.id ?? null;
     this._save();
   }
 }
-
-return { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, deepMerge, skipCountdownSec };
+return { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec };
 });

@@ -20,8 +20,6 @@
   color-scheme: dark;
 }
 :root[data-anim='reduced'] { --dur: 0.45; }
-:root[data-anim='off'] { --dur: 0; }
-:root[data-anim='off'] *, :root[data-anim='off'] *::before, :root[data-anim='off'] *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
 :root[data-blur='off'] { --glass: rgb(20 22 32 / 0.96); }
 
 *, *::before, *::after { box-sizing: border-box; }

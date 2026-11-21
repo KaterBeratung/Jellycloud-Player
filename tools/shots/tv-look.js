@@ -49,17 +49,17 @@ module.exports = async (ctx) => {
   const rest = await ctx.run(`(() => { const t = document.querySelector('.rows .card .thumb'); return { transform: getComputedStyle(t).transform, ry: t.style.getPropertyValue('--ry') }; })()`);
   check('Nach dem Verlassen ist die Karte wieder gerade', rest.ry === '' && (rest.transform === 'none' || /^matrix\(1, 0, 0, 1, 0, 0\)$/.test(rest.transform)), JSON.stringify(rest));
 
-  // Animationen aus: keine Neigung
-  await ctx.run(`document.documentElement.dataset.anim = 'off'`);
+  // System "Bewegung reduzieren" (eine eigene Animationsstufe gibt es nicht mehr): halbe Neigung an derselben Stelle
+  await ctx.reducedMotion(true);
   wc.sendInputEvent(at(0.5, 0.5));
-  await ctx.wait(100);
-  wc.sendInputEvent(at(0.9, 0.9));
-  await ctx.wait(400);
-  const off = await ctx.run(`document.querySelector('.rows .card .thumb').style.getPropertyValue('--ry')`);
-  check('Mit ausgeschalteten Animationen keine Neigung', off === '', `--ry="${off}"`);
+  await ctx.wait(120);
+  wc.sendInputEvent(at(0.85, 0.2));
+  await ctx.wait(600);
+  const calm = await ctx.run(`({ anim: document.documentElement.dataset.anim, ry: document.querySelector('.rows .card .thumb').style.getPropertyValue('--ry') })`);
+  check('Bewegung reduzieren: die Karte neigt sich nur halb so weit', calm.anim === 'reduced' && Math.abs(parseFloat(calm.ry) * 2 - parseFloat(hov.ry)) < 0.6, `${JSON.stringify(calm)}, voll ${hov.ry}`);
+  await ctx.reducedMotion(false);
 
   // Nur Aufnahmen (keine Pruefung): Reihe mit Pfeil im Titel und Detailseite
-  await ctx.run(`document.documentElement.dataset.anim = 'full'`);
   wc.sendInputEvent({ type: 'mouseMove', x: 5, y: 400 });
   await ctx.run(`document.querySelectorAll('.row-title')[0]?.scrollIntoView({ block: 'start' })`);
   await ctx.wait(900);

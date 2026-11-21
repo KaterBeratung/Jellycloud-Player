@@ -1,8 +1,8 @@
 // Hover-Pruefung (JC_DEV=1): fuhrt die Maus mit echten Eingabeereignissen auf den Rand bedienbarer Elemente und misst, ob der Hover-Zustand stabil bleibt.
 // Fehlerbild "Flackern": Hebt sich ein Element beim Zeigen (transform: translate...) von der Maus weg, verliert es den Hover, faellt zurueck, bekommt ihn wieder ... (Zittern am Rand).
-// Dazu: Zeiger (cursor) bedienbarer Elemente und das Verhalten bei Animationen "aus". Mock-Server auf eigenem Port 9197.
+// Dazu: Zeiger (cursor) bedienbarer Elemente und das Verhalten bei "Bewegung reduzieren" (System). Mock-Server auf eigenem Port 9197.
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/hover-audit.js
-const { server, items, SEERR, MOVIES_VIEW } = require('../mock-server');
+const { server, items, MOVIES_VIEW } = require('../mock-server');
 
 module.exports = async (ctx) => {
   let pass = 0;
@@ -21,7 +21,7 @@ module.exports = async (ctx) => {
   ctx.win.setContentSize(1440, 900);
   await ctx.run(`window.jc.login({url:'http://127.0.0.1:${PORT}', username:'demo', password:'demo'}).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
   await ctx.wait(2500);
-  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', mode: 'apikey', apiKey: ${JSON.stringify(SEERR.apiKey)} }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+  await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', username: 'demo', password: 'demo' }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
   await ctx.wait(1800);
 
   // Kein Trailer: sein fremder Rahmen (YouTube) kann Mausereignisse an sich ziehen und die Messung der folgenden Seiten verfaelschen
@@ -164,9 +164,9 @@ module.exports = async (ctx) => {
   await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`); // ein Klick kann ein Fenster geoeffnet haben (Problem melden)
   await ctx.wait(500);
 
-  // Animationen "aus": keine Hebung beim Zeigen
-  await ctx.run(`window.jc.setSettings({ appearance: { animations: 'off' } }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
-  await ctx.wait(2500);
+  // System "Bewegung reduzieren" (eine eigene Animationsstufe gibt es nicht mehr): keine Hebung beim Zeigen
+  await ctx.reducedMotion(true);
+  await ctx.wait(300);
   await ctx.run(`location.hash = '#/item/${movie.Id}'`);
   await ctx.wait(2200);
   const centre = await ctx.run(`(() => { const el = document.querySelector('.detail-actions .btn.icon'); const r = el.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
@@ -177,9 +177,9 @@ module.exports = async (ctx) => {
   move(centre[0], centre[1]);
   await ctx.wait(400);
   const hovered = await ctx.run(`(() => { const el = document.querySelector('.detail-actions .btn.icon:hover'); return el ? { transform: getComputedStyle(el).transform, anim: document.documentElement.dataset.anim } : { none: [...document.querySelectorAll(':hover')].map((e) => e.tagName + '.' + e.className).join(' > ').slice(0, 160), anim: document.documentElement.dataset.anim }; })()`);
-  check('Animationen "aus": der Knopf hebt sich beim Zeigen nicht', hovered.transform === 'none' && hovered.anim === 'off', JSON.stringify(hovered));
-  await ctx.run(`window.jc.setSettings({ appearance: { animations: 'full' } }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
-  await ctx.wait(1500);
+  check('Bewegung reduzieren: der Knopf hebt sich beim Zeigen nicht', hovered.transform === 'none' && hovered.anim === 'reduced', JSON.stringify(hovered));
+  await ctx.reducedMotion(false);
+  await ctx.wait(300);
   check('Kein Element flackert am Rand (Hover bleibt stabil, wenn sich das Element beim Zeigen bewegt)', flickers.length === 0, `${flickers.length} Treffer`);
   for (const f of flickers) console.log(`  FLACKERN ${f}`);
   check('Alle bedienbaren Elemente zeigen den Zeiger (cursor: pointer)', cursors.length === 0, `${cursors.length} ohne`);
@@ -318,7 +318,7 @@ module.exports = async (ctx) => {
   };
   const lowContrast = [];
   let measured = 0;
-  for (const theme of ['midnight', 'graphite', 'amoled', 'daylight']) {
+  for (const theme of ['midnight', 'graphite', 'amoled', 'midnightBlue']) {
     ctx.config.updateSettings({ appearance: { theme } });
     await ctx.run(`document.dispatchEvent(new CustomEvent('relogin'))`);
     await ctx.wait(2300);

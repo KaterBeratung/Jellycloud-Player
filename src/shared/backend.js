@@ -38,9 +38,10 @@
     const newClient = (o = {}) => new JellyfinClient({ deviceId: config.deviceId, clientVersion: appVersion(), ...(deviceName ? { deviceName } : {}), fetch, ...o });
 
     // ---------- Seerr ----------
+    /** Seerr des aktiven Profils (seit Version 10 je Profil, nur mit der Sitzung des Jellyfin-Kontos). */
     function buildSeerr() {
       const s = config.getSeerr();
-      seerr = s ? new SeerrClient({ baseUrl: s.url, ...(s.mode === 'apikey' ? { apiKey: s.secret } : { cookie: s.secret }), fetch }) : null;
+      seerr = s ? new SeerrClient({ baseUrl: s.url, cookie: s.secret, fetch }) : null;
       return !!seerr;
     }
 
@@ -95,6 +96,7 @@
       client = server?.token ? newClient({ baseUrl: server.url, token: server.token, userId: server.userId }) : null;
       resetLimits();
       if (client) refreshLimits().catch(() => {});
+      buildSeerr(); // jedes Profil hat sein eigenes Seerr
       return !!client;
     }
 
@@ -108,10 +110,18 @@
       };
     }
 
-    /** Nach erfolgreicher Anmeldung: Konto merken, Faehigkeiten melden, Bitratengrenze holen. */
-    function adopt(c, probed, auth) {
+    /**
+     * Nach erfolgreicher Anmeldung: Konto merken, Faehigkeiten melden, Bitratengrenze holen. Hoechstens vier Profile (wie in der Apple-App): ein neues
+     * ueber der Grenze wird abgelehnt und seine eben erhaltene Sitzung am Server wieder abgemeldet (sonst bliebe sie dort verwaist); ein gemerktes darf immer.
+     */
+    async function adopt(c, probed, auth) {
+      if (!config.mayAddProfile(config.profileId(probed.url, auth.userId))) {
+        await c.logout().catch(() => {});
+        throw Object.assign(new JellyfinError(`Höchstens ${config.maxProfiles} Profile`), { code: 'PROFILE_LIMIT' });
+      }
       config.saveServer({ url: probed.url, name: probed.name, userId: auth.userId, userName: auth.userName, token: auth.token });
       client = c;
+      buildSeerr();
       client.postCapabilities();
       resetLimits();
       refreshLimits().catch(() => {});
@@ -144,7 +154,7 @@
         const probed = await probe(url);
         const c = newClient({ baseUrl: probed.url });
         const auth = await c.authenticateByName(String(username ?? ''), String(password ?? ''));
-        adopt(c, probed, auth);
+        await adopt(c, probed, auth);
         return publicState();
       },
 
@@ -161,7 +171,7 @@
         const r = await c.quickConnectCheck(secret);
         if (!r?.Authenticated) return { done: false };
         const auth = await c.authenticateWithQuickConnect(secret);
-        adopt(c, { url, name }, auth);
+        await adopt(c, { url, name }, auth);
         return { done: true, state: publicState() };
       },
 
@@ -172,6 +182,7 @@
         client = null;
         resetLimits();
         if (config.data.activeServerId) activateServer(config.data.activeServerId);
+        else buildSeerr(); // ohne Profil auch kein Seerr
         return publicState();
       },
 
@@ -214,25 +225,18 @@
       },
 
       // ---------- Seerr (Anfragen) ----------
-      seerrConnect: ({ url, mode, username, password, apiKey }) =>
+      /** Seerr fuer das aktive Profil anmelden: nur mit dem Jellyfin-Konto (kein API-Schluessel, Entscheidung E12); gespeichert wird nur die Sitzung. */
+      seerrConnect: ({ url, username, password }) =>
         seerrCall(async () => {
+          const owner = config.data.activeServerId;
+          if (!owner) throw new SeerrError('Zuerst bei Jellyfin anmelden');
           const probed = await probeSeerr(url, fetch);
-          let secret;
-          let userName;
-          if (mode === 'apikey') {
-            const key = String(apiKey ?? '').trim();
-            if (!key) throw new SeerrError('API-Schluessel fehlt');
-            const me = await new SeerrClient({ baseUrl: probed.url, apiKey: key, fetch }).me().catch((e) => {
-              throw e.status === 401 || e.status === 403 ? new SeerrError('Der API-Schluessel wurde abgelehnt', { status: 403 }) : e;
-            });
-            secret = key;
-            userName = me?.displayName ?? me?.username ?? 'API';
-          } else {
-            const r = await loginWithJellyfin(probed.url, String(username ?? ''), String(password ?? ''), fetch);
-            secret = r.cookie;
-            userName = r.user?.displayName ?? r.user?.jellyfinUsername ?? String(username ?? '');
-          }
-          config.saveSeerr({ url: probed.url, mode: mode === 'apikey' ? 'apikey' : 'jellyfin', userName, secret });
+          const r = await loginWithJellyfin(probed.url, String(username ?? ''), String(password ?? ''), fetch);
+          // Wurde waehrend der Anmeldung das Profil gewechselt, gehoert die Sitzung keinem: sonst landete sie beim falschen Profil
+          if (config.data.activeServerId !== owner) throw new SeerrError('Das Profil wurde inzwischen gewechselt. Bitte noch einmal verbinden.');
+          const userName = r.user?.displayName ?? r.user?.jellyfinUsername ?? String(username ?? '');
+          const jellyfinUserId = typeof r.user?.jellyfinUserId === 'string' ? r.user.jellyfinUserId : '';
+          config.saveSeerr({ url: probed.url, userName, jellyfinUserId, secret: r.cookie });
           buildSeerr();
           return publicState();
         }),

@@ -205,11 +205,11 @@ test('Details-Normalisierung: kaputte Eintraege ergeben null, Typen und Laengen 
   assert.ok(!('unbekannt' in d));
 });
 
-test('API-Schluessel statt Anmeldung; falscher Schluessel -> 403', async () => {
-  const ok = new SeerrClient({ baseUrl: base, apiKey: SEERR.apiKey });
-  assert.equal((await ok.me()).displayName, 'Schluessel-Konto');
-  await assert.rejects(() => new SeerrClient({ baseUrl: base, apiKey: 'falsch' }).me(), (e) => e.status === 403);
-  await assert.rejects(() => new SeerrClient({ baseUrl: base }).search('mock'), (e) => e.status === 403, 'ohne Zugang');
+test('Kein API-Schluessel mehr (Entscheidung E12): der Baustein nimmt keinen an und schickt nie X-Api-Key; ohne Sitzung kein Zugang', async () => {
+  const c = new SeerrClient({ baseUrl: base, apiKey: SEERR.apiKey });
+  assert.equal(c.apiKey, undefined);
+  assert.ok(!('X-Api-Key' in c.headers()));
+  await assert.rejects(() => c.search('mock'), (e) => e.status === 403, 'ein Schluessel oeffnet nichts');
 });
 
 test('Anfragen: Film ohne Staffeln, Serie komplett; Antwort mit Status', async () => {
@@ -245,12 +245,10 @@ test('Kein Cookie-Speicher des Browser-Stacks: alle Anfragen gehen mit credentia
   await probeSeerr('http://seerr.test:5055', spy);
   await loginWithJellyfin('http://seerr.test:5055', 'u', 'p', spy);
   await new SeerrClient({ baseUrl: 'http://seerr.test:5055', cookie: 'abc', fetch: spy }).search('x');
-  await new SeerrClient({ baseUrl: 'http://seerr.test:5055', apiKey: 'k', fetch: spy }).search('x');
-  assert.equal(seen.length, 4);
+  assert.equal(seen.length, 3);
   assert.ok(seen.every((s) => s.credentials === 'omit'), JSON.stringify(seen));
   assert.equal(seen[2].cookie, 'connect.sid=abc');
-  assert.equal(seen[3].key, 'k');
-  assert.equal(seen[3].cookie, null, 'mit API-Schluessel kein Cookie');
+  assert.ok(seen.every((s) => s.key === null), 'nie ein API-Schluessel');
 });
 
 test('Poster: nur bekannte Groessen und harmlose Dateinamen werden zu einer TMDB-Adresse', () => {
@@ -268,12 +266,13 @@ test('Zugangsdaten werden verschluesselt gespeichert, die Oberflaeche bekommt si
   const c = new ConfigStore(dir, safe);
   assert.equal(c.getSeerr(), null);
   assert.equal(c.publicState().seerr, null);
-  c.saveSeerr({ url: 'http://seerr:5055', mode: 'apikey', userName: 'Demo', secret: 'GEHEIMER-SCHLUESSEL' });
-  assert.deepEqual(c.getSeerr(), { url: 'http://seerr:5055', mode: 'apikey', userName: 'Demo', secret: 'GEHEIMER-SCHLUESSEL' });
-  assert.ok(!fs.readFileSync(path.join(dir, 'config.json'), 'utf8').includes('GEHEIMER-SCHLUESSEL'), 'nicht im Klartext auf der Platte');
-  assert.deepEqual(c.publicState().seerr, { url: 'http://seerr:5055', mode: 'apikey', userName: 'Demo' }, 'ohne Geheimnis');
-  assert.ok(!JSON.stringify(c.publicState()).includes('GEHEIMER'));
-  assert.deepEqual(new ConfigStore(dir, safe).getSeerr().secret, 'GEHEIMER-SCHLUESSEL', 'bleibt nach einem Neustart');
+  c.saveServer({ url: 'http://jf', name: 'JF', userId: 'u1', userName: 'Demo', token: 't' }); // Seerr gehoert seit Version 10 zum Profil
+  c.saveSeerr({ url: 'http://seerr:5055', userName: 'Demo', jellyfinUserId: 'u1', secret: 'GEHEIME-SITZUNG' });
+  assert.deepEqual(c.getSeerr(), { url: 'http://seerr:5055', userName: 'Demo', jellyfinUserId: 'u1', secret: 'GEHEIME-SITZUNG' });
+  assert.ok(!fs.readFileSync(path.join(dir, 'config.json'), 'utf8').includes('GEHEIME-SITZUNG'), 'nicht im Klartext auf der Platte');
+  assert.deepEqual(c.publicState().seerr, { url: 'http://seerr:5055', userName: 'Demo' }, 'ohne Geheimnis');
+  assert.ok(!JSON.stringify(c.publicState()).includes('GEHEIM'));
+  assert.deepEqual(new ConfigStore(dir, safe).getSeerr().secret, 'GEHEIME-SITZUNG', 'bleibt nach einem Neustart');
   c.clearSeerr();
   assert.equal(new ConfigStore(dir, safe).getSeerr(), null);
   fs.rmSync(dir, { recursive: true, force: true });

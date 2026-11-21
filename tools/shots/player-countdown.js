@@ -1,6 +1,6 @@
 // Countdown an "Intro ueberspringen" und "Naechste Folge" (wie bei Netflix), mit dem mpv-Simulator (JC_DEV=1, JC_FAKE_MPV=1):
 // der Knopf fuellt sich von links nach rechts, ist er voll, geht es von selbst weiter. Pause und Puffern halten ihn an, ein Klick loest es sofort aus,
-// ein Eintrag zaehlt nur einmal (zurueckspulen = Knopf ohne zweiten Countdown), 0 = aus, die naechste Folge nur mit automatischem Abspielen, "Animationen aus" zaehlt trotzdem.
+// ein Eintrag zaehlt nur einmal (zurueckspulen = Knopf ohne zweiten Countdown), 0 = aus, die naechste Folge nur mit automatischem Abspielen, mit "Bewegung reduzieren" (System) zaehlt er gleich lang.
 const path = require('node:path');
 const { server, items } = require('../mock-server');
 
@@ -107,16 +107,17 @@ module.exports = async (ctx) => {
   check('Aus: kein Countdown, kein Sprung von selbst', (await counting('.skip')) === false && player.state.position < 40 && (await skipShown()) === true, `${player.state.position?.toFixed(1)} s`);
   await stop();
 
-  // ---------- 5) "Animationen aus": der Countdown zaehlt trotzdem (kein sofortiger Ablauf) ----------
-  cfg({ skipCountdown: 3 }, { animations: 'off' });
-  check('Wiedergabe mit "Animationen aus"', await play(25));
+  // ---------- 5) System "Bewegung reduzieren" (eine eigene Animationsstufe gibt es nicht mehr): der Countdown zaehlt trotzdem gleich lang ----------
+  cfg({ skipCountdown: 3 });
+  check('Wiedergabe mit "Bewegung reduzieren"', await play(25));
+  await ctx.reducedMotion(true, player.overlay.webContents);
+  check('Das Overlay folgt der Systemeinstellung (data-anim reduced)', await waitFor(async () => (await ev(`document.documentElement.dataset.anim`)) === 'reduced', 2000));
   const tOff = Date.now();
-  check('Knopf zaehlt auch ohne Animationen', await waitFor(async () => (await skipShown()) && (await counting('.skip'))));
+  check('Knopf zaehlt auch mit reduzierter Bewegung', await waitFor(async () => (await skipShown()) && (await counting('.skip'))));
   await ctx.wait(700);
-  check('Animationen aus: nach 0,7 s noch nicht ausgeloest (der Ablauf ist kein CSS-Uebergang)', player.state.position < 40 && (await skipShown()) === true, `${player.state.position?.toFixed(1)} s`);
+  check('Reduziert: nach 0,7 s noch nicht ausgeloest (der Ablauf ist kein CSS-Uebergang)', player.state.position < 40 && (await skipShown()) === true, `${player.state.position?.toFixed(1)} s`);
   check('...und nach rund 3 s springt es', (await waitFor(() => player.state.position >= 84, 6500)) && (Date.now() - tOff) / 1000 > 2.4, `${((Date.now() - tOff) / 1000).toFixed(1)} s`);
   await stop();
-  cfg({}, { animations: 'full' });
 
   // ---------- 6) Naechste Folge: Karte am Ende, Knopf "Jetzt" zaehlt, danach startet die naechste Folge ----------
   check('Wiedergabe kurz vor dem Ende (5372 s, 28 s Rest)', await play(5372));

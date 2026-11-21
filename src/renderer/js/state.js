@@ -15,7 +15,9 @@ export const state = {
   update: null, // Stand der Selbst-Aktualisierung (Hauptprozess, updater.js): status, version, notes, size, received, error ...
   justUpdated: false, // die App wurde eben vom Installer nach einem Update gestartet
   discordBuiltIn: false, // die Discord-Anwendung fuer Rich Presence ist eingebaut: niemand braucht eine eigene Application-ID (Hauptprozess, discord-presence.js)
-  seerr: null, // verbundenes Seerr ({ url, mode, userName }), nie mit Zugangsdaten
+  seerr: null, // Seerr des aktiven Profils ({ url, userName }), nie mit Zugangsdaten
+  seerrAddress: null, // Seerr-Adresse zum Vorbelegen (letzte Verbindung des Profils oder aus der Zeit vor Version 10)
+  maxProfiles: 4, // hoechstens so viele Profile je Geraet (wie in der Apple-App)
   audioOut: null // erkanntes Ausgabegeraet und gewaehlte Kanaele (Hauptprozess, audio-output.js)
 };
 
