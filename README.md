@@ -530,6 +530,34 @@ npm test                 # Einheiten- und Integrationstests (Konfiguration, Dire
 npm run mock             # lokaler Mock-Jellyfin-Server auf http://127.0.0.1:8097 (Benutzer demo / Passwort demo)
 ```
 
+Ohne `node`/`npm` im PATH (Windows-VM) laufen beide über das mitgelieferte Electron: `tools\test-unit.ps1` (alle oder einzelne `test\*.test.js`,
+Zusammenfassung und fehlgeschlagene Fälle) und `tools\test-shots.ps1 -Names a,b` bzw. `-All` (Szenarien nacheinander, je mit eigenem Benutzerordner und Zeitlimit;
+Ergebnis ok, FEHLER oder ZEITLIMIT aus Exit-Code, `FAIL`-Zeilen und „Szenario fehlgeschlagen“). Mit `-Root` prüfen beide einen anderen Stand, etwa eine Kopie.
+
+### Testserver (`tools/mock-server.js`)
+
+Jellyfin und ein Mock-Seerr (`/api/v1`) laufen auf **einem** Port. Die Szenarien steuern ihn im Prozess (`state`, `SEERR`, `setAdmin`, `resetSeerr`).
+Dazu gibt es dieselben HTTP-Schalter wie beim Testserver der Apple-App (`Tools/mock_server.py`), alle ohne Anmeldung, GET oder POST, Zeiten in Sekunden:
+
+| Schalter | Wirkung |
+|---|---|
+| `/__debug/state` | Protokoll (letzte 60 Einträge), Gesehen, Positionen, Störungen, Quick Connect, gestellte Sitzungen, Seerr-Zähler (`apiRequests`, `listRequests`, `sessionRequests`, `logouts`, `tmdbRequests`: muss 0 bleiben) |
+| `/__debug/reset` (`?all=1`, `?seerr=1`) | Protokoll leeren, Sitzung gültig, Quick-Connect-Schalter aus; `all`: Gesehen, Favoriten, Positionen wie beim Start; `seerr`: Anfragen, Stände, Rechte, Sitzung, Kontingent, Zähler von Seerr wie beim Start |
+| `/__debug/delay?lists=<s>\|hold&images=<s>&plan=<s>&reports=<s>&auth=<s>&requests=<s>\|hold` | Listen (Start, Bibliothek; `hold` hält sie fest, bis der Test sie freigibt, höchstens 120 s), Bilder, Wiedergabe-Planung, Ende der Wiedergabe, Anmeldung, Liste der Seerr-Anfragen verzögern |
+| `/__debug/fault?lists=<400-599\|invalid\|empty\|drop\|off>&images=<…>&count=<n>`, `?clear=1` | Die nächsten n Antworten (ohne `count` alle) scheitern mit Status, unlesbarem JSON, leerer Antwort oder abgebrochener Verbindung; `clear` schaltet Störungen und Verzögerungen ab |
+| `/__debug/expire` | Sitzung abgelaufen (401) bis zur nächsten Anmeldung |
+| `/__debug/quickconnect?hold=1\|0&gone=1\|0&disabled=1\|0` | Bestätigung zurückhalten, Code abgelaufen (404), Quick Connect am Server aus; `POST /QuickConnect/Authorize?code=&userId=` bestätigt den Code von einem anderen Gerät (wie Jellyfin: 401 aus, 404 unbekannt oder älter als zehn Minuten, 500 schon bestätigt) |
+| `/__debug/session?device=&item=&at=<s>&user=other&control=0&idle=<s>&client=`, `?clear=1` | Wiedergabe auf einem anderen Gerät desselben Kontos; `GET /Sessions` nennt sie, `POST /Sessions/<Id>/Playing/Stop` merkt sich die Stelle |
+| Seerr: `/__debug/mode?set=ok\|down\|expired` | 503 bei jeder Anfrage bzw. alle bisherigen Sitzungen ungültig (erst eine neue Anmeldung gilt) |
+| Seerr: `/__debug/permissions?set=<Bits>`, `/__debug/identity?jellyfin=<Kennung>` | Rechte des Benutzers (ohne Wert: `MOCK_SEERR_PERMISSIONS`, sonst 1072 = anfragen, verwalten, 4K) und die Jellyfin-Kennung, die `/auth/me` nennt |
+| Seerr: `/__debug/request?id=&status=`, `/__debug/requests?count=&open=`, `/__debug/season?id=&season=`, `/__debug/media?tmdb=&status=[&type=tv]` | Stand einer Anfrage, viele Anfragen (die ältesten `open` warten), eine Staffel geliefert, Stand eines Titels (5 verfügbar, 6 gesperrt, 7 gelöscht) |
+
+Mock-Seerr kann außerdem: `GET /request` mit `take`, `skip`, `filter`, `sort`, `requestedBy` und `pageInfo`, `POST /request/<Id>/approve|decline|retry`,
+`DELETE /request/<Id>` (verwalten = Rechte 2 oder 16, wie Seerr), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
+`/person/<Id>/combined_credits`, `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
+gibt es in der Mediathek; `MOCK_SEERR_OLD=1` oder `SEERR.old` wie ein älteres Seerr gemischt), `/auth/logout`. Jellyfin: `GET /Playback/BitrateTest?Size=`
+(`MOCK_BITRATE_MBPS` bremst). Die Fälle stehen in `test/mock-server.test.js`.
+
 Die UI-Szenarien (Screenshots, Layout-Prüfung auf Überlappungen, Wiedergabe mit simuliertem mpv) laufen mit
 `JC_DEV=1`, siehe `tools/shots/`:
 

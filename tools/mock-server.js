@@ -110,11 +110,78 @@ function serveVideo(req, res) {
   }
 }
 
-// delays: kuenstliche Antwortzeiten in ms (Tests fuer langsame Server): { stopped, playbackInfo, items }
+// delays: kuenstliche Antwortzeiten in ms (Tests fuer langsame Server): { stopped, playbackInfo, items }; dazu wie beim Apple-Testserver
+//   lists (alle Listen: /Items, Neu, Weiterschauen, Als Naechstes), images, auth (Anmeldung mit Passwort), gesetzt ueber POST /__debug/delay in Sekunden
 // bytes: gesendete JSON-Antworten (items = Listen von /Items), fuer Leistungsmessungen
 // limits: Verbindungsart und Bitratengrenzen wie bei einem echten Server (bit/s): local = Client liegt im LAN (dann gilt keine Grenze),
 // user/server = Fern-Grenze der Benutzer-Richtlinie bzw. serverweit, serverForbidden = /System/Configuration nur fuer Administratoren, endpointMissing = /System/Endpoint fehlt
-const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false }, admin: false };
+// faults: gestellte Fehler je Art (lists, images): { how: '500'|'invalid'|'empty'|'drop', left: Zahl oder null = bis abgeschaltet } (POST /__debug/fault)
+// expired: Sitzung abgelaufen, jede angemeldete Anfrage bekommt 401 bis zur naechsten Anmeldung (POST /__debug/expire)
+// qc: Quick Connect wie beim Apple-Testserver (POST /__debug/quickconnect): hold = Bestaetigung zurueckhalten, gone = Code abgelaufen (404),
+//   disabled = am Server aus, authorized = von einem anderen Geraet bestaetigt (POST /QuickConnect/Authorize), started = Zeit von Initiate
+// remote: gestellte Wiedergaben anderer Geraete (POST /__debug/session), fuer "Auf diesem Geraet fortsetzen"
+const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0, lists: 0, images: 0, auth: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false }, admin: false, faults: {}, expired: false, qc: { hold: false, gone: false, disabled: false, authorized: false, started: 0 }, remote: [] };
+
+/** Tor fuer "festhalten, bis der Test freigibt" (delay=hold): wait() wartet, solange es zu ist, hoechstens 120 s. */
+function makeGate() {
+  let open = true;
+  const waiters = [];
+  return {
+    get held() {
+      return !open;
+    },
+    hold() {
+      open = false;
+    },
+    release() {
+      open = true;
+      for (const w of waiters.splice(0)) w();
+    },
+    wait(ms = 120000) {
+      if (open) return Promise.resolve();
+      return new Promise((resolve) => {
+        const t = setTimeout(resolve, ms);
+        t.unref?.();
+        waiters.push(() => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
+    }
+  };
+}
+const listGate = makeGate();
+const sleep = (ms) => (ms ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+/** Naechster gestellter Fehler dieser Art (lists, images) oder null; zaehlt "count" herunter. */
+function takeFault(kind) {
+  const f = state.faults[kind];
+  if (!f) return null;
+  if (f.left != null) {
+    f.left--;
+    if (f.left <= 0) delete state.faults[kind];
+  }
+  return f.how;
+}
+/** Antwortet mit dem gestellten Fehler: HTTP-Status, unlesbares JSON, leere Antwort oder abgebrochene Verbindung. */
+function sendFault(how, req, res) {
+  state.log.push({ at: `fault ${how} ${req.url}` });
+  if (how === 'drop') return req.socket.destroy();
+  if (how === 'invalid') return send(res, 200, '{"Items": [', 'application/json');
+  if (how === 'empty') return send(res, 200, '', 'application/json');
+  return send(res, Number(how), { Message: `Mock: gestellter Fehler ${how}` });
+}
+/** Vorspann jeder Liste (Start, Bibliothek): festhalten, verzoegern, gestellter Fehler. Wahr, wenn die Anfrage damit beantwortet ist. */
+async function listPrelude(req, res) {
+  await listGate.wait();
+  await sleep(state.delays.lists);
+  const how = takeFault('lists');
+  if (how) {
+    sendFault(how, req, res);
+    return true;
+  }
+  return false;
+}
 
 /** Daten fuer die Verwaltung (state.admin = true schaltet sie frei, sonst antwortet der Mock mit 403): Aufgaben, Sitzungen, Protokoll, Benutzer. */
 function freshAdminData() {
@@ -365,6 +432,7 @@ const readBody = (req) =>
   });
 
 function authed(req) {
+  if (state.expired) return false; // POST /__debug/expire: Sitzung abgelaufen bis zur naechsten Anmeldung
   const h = req.headers.authorization ?? '';
   return h.includes(`Token="${TOKEN}"`) || req.headers['x-emby-token'] === TOKEN;
 }
@@ -423,7 +491,18 @@ const SEERR = {
   apiKey: 'mock-seerr-key',
   expired: false, // true: jede Anfrage bekommt 401 (Sitzung abgelaufen)
   statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 7]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt
+  // Anfragen: { id, status (1 wartet, 2 genehmigt, 3 abgelehnt, 4 gescheitert, 5 abgeschlossen), mediaType, mediaId, seasons, readySeasons,
+  // deleted, modifiedBy, requestedBy, createdAt, updatedAt, media }; GET /request liefert sie wie Seerr (neueste zuerst, take/skip/filter/sort)
   requests: [],
+  // Steuerung wie beim Apple-Testserver (Tools/mock_server.py, Seerr-Port); hier auf demselben Port unter /__debug/...
+  permissions: null, // Rechte des Benutzers zur Laufzeit (POST /__debug/permissions?set=<Bits>); null: MOCK_SEERR_PERMISSIONS, sonst 1072
+  mode: 'ok', // 'down': jede Anfrage endet mit 503 (POST /__debug/mode?set=ok|down|expired; expired macht alle Sitzungen ungueltig)
+  old: !!process.env.MOCK_SEERR_OLD, // aelteres Seerr: /discover/trending uebergeht mediaType und timeWindow und liefert gemischt
+  identity: null, // Jellyfin-Kennung, die /auth/me nennt (POST /__debug/identity?jellyfin=...); null: die des Testbenutzers
+  media: new Map(), // gestellter Stand eines Titels ("movie:<tmdb>" -> Stand), geht allem vor (POST /__debug/media?tmdb=&status=&type=)
+  requestDelay: 0, // ms, Antwortzeit der Liste der Anfragen (POST /__debug/delay?requests=<s>|hold)
+  quota: { movie: { limit: 0, days: 7, used: 0 }, tv: { limit: 0, days: 7, used: 0 } }, // Kontingent (limit 0 = unbegrenzt), GET /user/<id>/quota
+  counters: { apiRequests: 0, listRequests: 0, tmdbRequests: 0, sessionRequests: 0, logouts: 0, trendRequests: 0 },
   // Probleme melden (POST /issue): Seerr kennt Titel unter einer eigenen Nummer (mediaInfo.id der Detailabfrage); nur diese Titel lassen sich melden (sonst 404 wie bei Seerr).
   mediaIds: new Map([['movie:4242', 42], ['tv:1399', 13]]),
   issues: [],
@@ -461,17 +540,17 @@ const SEERR = {
       genres: [{ id: 1, name: 'Science Fiction' }, { id: 2, name: 'Action' }],
       credits: {
         cast: [
-          { name: 'Mock Actor Eins', character: 'Neo', profilePath: '/mockprofile001.jpg' },
-          { name: 'Mock Actor Zwei', character: 'Trinity', profilePath: null },
-          { name: 'Mock Actor Drei', character: 'Morpheus', profilePath: '/mockprofile003.jpg' }
+          { id: 9101, name: 'Mock Actor Eins', character: 'Neo', profilePath: '/mockprofile001.jpg' },
+          { id: 9102, name: 'Mock Actor Zwei', character: 'Trinity', profilePath: null },
+          { id: 9103, name: 'Mock Actor Drei', character: 'Morpheus', profilePath: '/mockprofile003.jpg' }
         ],
-        crew: [{ name: 'Mock Regisseurin', job: 'Director' }, { name: 'Mock Kamera', job: 'Director of Photography' }]
+        crew: [{ id: 9104, name: 'Mock Regisseurin', job: 'Director', department: 'Directing' }, { id: 9105, name: 'Mock Kamera', job: 'Director of Photography', department: 'Camera' }]
       }
     },
     'tv:1399': {
       tagline: 'Der Winter naht.', episodeRunTime: [57], voteAverage: 8.4, numberOfSeasons: 8, numberOfEpisodes: 73, status: 'Ended', backdropPath: '/mockbackdrop002.jpg',
       createdBy: [{ name: 'Mock Erfinder' }, { name: 'Mock Erfinderin' }], genres: [{ id: 3, name: 'Drama' }],
-      credits: { cast: [{ name: 'Mock Darsteller', character: 'Held', profilePath: '/mockprofile101.jpg' }], crew: [] }
+      credits: { cast: [{ id: 9106, name: 'Mock Darsteller', character: 'Held', profilePath: '/mockprofile101.jpg' }], crew: [] }
     },
     'movie:5151': { overview: 'Wartet schon auf Freigabe.', runtime: 90, genres: [], credits: { cast: [], crew: [] } },
     // Trailer aus den "relatedVideos" (Banner der Startseite): erst ein Teaser, dann der Trailer (der Trailer gewinnt), dazu ein Eintrag mit kaputtem Schluessel
@@ -482,6 +561,164 @@ const SEERR = {
   }
 };
 
+// Personen (GET /person/<id>, /person/<id>/combined_credits): die Besetzung der Detailseiten und "Mock Person" aus Suche und Trends
+SEERR.people = new Map(
+  [
+    [777, 'Mock Person', 'Acting', [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Agentin' }, { id: 1399, mediaType: 'tv', name: 'Mock Thrones', firstAirDate: '2011-04-17', posterPath: '/mockposter0002.jpg', character: 'Ritterin' }, { id: 4242, mediaType: 'movie', title: 'Mock Arrival', releaseDate: '2016-11-10', posterPath: '/mockposter0003.jpg', character: 'Linguistin' }], [{ id: 7001, mediaType: 'movie', title: 'Trend Film Eins', releaseDate: '2026-02-01', posterPath: '/trendposter0001.jpg', job: 'Producer', department: 'Production' }]],
+    [9101, 'Mock Actor Eins', 'Acting', [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Neo' }], []],
+    [9102, 'Mock Actor Zwei', 'Acting', [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Trinity' }], []],
+    [9103, 'Mock Actor Drei', 'Acting', [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Morpheus' }], []],
+    [9104, 'Mock Regisseurin', 'Directing', [], [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', job: 'Director', department: 'Directing' }]],
+    [9105, 'Mock Kamera', 'Camera', [], [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', job: 'Director of Photography', department: 'Camera' }]],
+    [9106, 'Mock Darsteller', 'Acting', [{ id: 1399, mediaType: 'tv', name: 'Mock Thrones', firstAirDate: '2011-04-17', posterPath: '/mockposter0002.jpg', character: 'Held' }], []]
+  ].map(([id, name, dept, cast, crew]) => [id, { id, name, knownForDepartment: dept, biography: `${name} ist eine Testperson des Mock-Seerr.`, birthday: '1980-05-01', deathday: null, placeOfBirth: 'Mockstadt', profilePath: id === 777 ? '/mockperson0001.jpg' : null, cast, crew }])
+);
+
+// Trendlisten je Art (aktuelles Seerr: /discover/trending?mediaType=movie|tv&timeWindow=day|week, 20 je Seite): Grundlage der Top 10.
+// Die ersten Titel gibt es auch in der Mediathek (4242 = Paper Moons, 1399 = Starfall Station); "week" liefert eine andere Reihenfolge.
+{
+  const known = (type, id) => SEERR.trending.find((r) => r.mediaType === type && r.id === id) ?? SEERR.catalog.find((r) => r.mediaType === type && r.id === id);
+  const extra = (type, n) =>
+    Array.from({ length: n }, (_, i) =>
+      type === 'movie'
+        ? { id: 8101 + i, mediaType: 'movie', title: `Top Film ${i + 1}`, releaseDate: `2025-${String((i % 12) + 1).padStart(2, '0')}-01`, posterPath: `/topposter${8101 + i}.jpg`, voteAverage: 7 + (i % 3) / 2, backdropPath: `/topbackdrop${8101 + i}.jpg` }
+        : { id: 8201 + i, mediaType: 'tv', name: `Top Serie ${i + 1}`, firstAirDate: `2024-${String((i % 12) + 1).padStart(2, '0')}-01`, posterPath: `/topposter${8201 + i}.jpg`, voteAverage: 7.5, backdropPath: `/topbackdrop${8201 + i}.jpg` }
+    );
+  const movie = [...[4242, 7001, 7003, 603, 7002, 5151, 2468, 7004].map((id) => known('movie', id)), ...extra('movie', 6)];
+  const tv = [known('tv', 1399), ...extra('tv', 11)];
+  const week = (list) => [...list.slice(3), ...list.slice(0, 3)];
+  SEERR.trendLists = { movie: { day: movie, week: week(movie) }, tv: { day: tv, week: week(tv) } };
+}
+
+const seerrPermissions = () => SEERR.permissions ?? (Number(process.env.MOCK_SEERR_PERMISSIONS) || 1072); // 1072 = anfragen (32) + verwalten (16) + 4K (1024)
+const SEERR_SID = SEERR.sid;
+const SEERR_INITIAL = { statuses: [...SEERR.statuses], quota: JSON.stringify(SEERR.quota) };
+
+/**
+ * Stand eines Titels wie bei Seerr 3.5.1 aus seinen Anfragen: gestellter Stand (SEERR.media) geht vor; ab 4 (teilweise da, da, gesperrt,
+ * geloescht) gilt der feste Stand; sonst die letzte lebende Anfrage (nicht entfernt, nicht abgelehnt): wartet 2, genehmigt 3, gescheitert 3,
+ * abgeschlossen 5; ohne Anfrage der feste Stand (SEERR.statuses, undefined = unbekannt).
+ */
+function seerrMediaStatus(type, id) {
+  const key = `${type}:${id}`;
+  if (SEERR.media.has(key)) return SEERR.media.get(key);
+  const base = SEERR.statuses.get(key);
+  const live = SEERR.requests.filter((r) => r.mediaType === type && r.mediaId === id && !r.deleted && r.status !== 3);
+  if (!live.length || base >= 4) return base;
+  return { 1: 2, 2: 3, 4: 3, 5: 5 }[live[live.length - 1].status] ?? base;
+}
+const withMediaInfo = (r) => {
+  const st = seerrMediaStatus(r.mediaType, r.id);
+  return st ? { ...r, mediaInfo: { status: st } } : { ...r };
+};
+const seerrUserName = (id) => (id === 1 ? 'Demo' : 'ben');
+/** Eine Anfrage, wie Seerr sie in GET /request und als Antwort auf POST /request liefert. */
+function seerrRequestDto(r) {
+  return {
+    id: r.id,
+    status: r.status,
+    is4k: false,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    type: r.mediaType,
+    media: { id: r.media.id, tmdbId: r.mediaId, mediaType: r.mediaType, status: seerrMediaStatus(r.mediaType, r.mediaId) ?? 1, status4k: 1 },
+    seasons: (Array.isArray(r.seasons) ? r.seasons : []).map((n) => ({ seasonNumber: n, status: r.readySeasons.includes(n) ? 5 : r.status })),
+    modifiedBy: r.modifiedBy ? { id: r.modifiedBy, displayName: seerrUserName(r.modifiedBy) } : null,
+    requestedBy: { id: r.requestedBy, displayName: seerrUserName(r.requestedBy) }
+  };
+}
+/** Neue Anfrage im Testserver (POST /request und /__debug/requests); Zeitstempel steigen je Anfrage um eine Minute. */
+function addSeerrRequest({ mediaType, mediaId, seasons, status = 1, requestedBy = 1 }) {
+  const id = SEERR.requests.length + 1;
+  const at = new Date(Date.UTC(2026, 10, 16, 12, 0) + id * 60000).toISOString();
+  const r = { id, status, mediaType, mediaId, seasons: seasons ?? null, readySeasons: [], deleted: false, modifiedBy: null, requestedBy, createdAt: at, updatedAt: at, media: { id: mediaId, tmdbId: mediaId, mediaType, status: 2 } };
+  SEERR.requests.push(r);
+  return r;
+}
+/** Anfrage geaendert: updatedAt nach allen bisherigen Zeitstempeln (Sortierung "zuletzt geaendert"). */
+function touchSeerrRequest(r) {
+  const latest = Math.max(...SEERR.requests.map((x) => Date.parse(x.updatedAt)));
+  r.updatedAt = new Date(latest + 1000).toISOString();
+}
+// Filter der Liste wie bei Seerr (GET /request?filter=...): Stand der Anfrage bzw. des Titels
+const REQUEST_FILTERS = {
+  all: () => true,
+  pending: (r) => r.status === 1,
+  approved: (r) => r.status === 2,
+  declined: (r) => r.status === 3,
+  failed: (r) => r.status === 4,
+  completed: (r) => r.status === 5,
+  processing: (r, ms) => r.status === 2 && ms === 3,
+  available: (r, ms) => ms === 5 || ms === 4,
+  unavailable: (r, ms) => r.status === 2 && ms !== 5 && ms !== 4,
+  deleted: (r, ms) => ms === 7
+};
+
+/** Seerr wie beim Start (POST /__debug/reset?seerr=1): Anfragen, Staende, Zaehler, Ausfall, Rechte, Sitzung, Kontingent. */
+function resetSeerr() {
+  SEERR.requests.length = 0;
+  SEERR.statuses = new Map(SEERR_INITIAL.statuses);
+  SEERR.media.clear();
+  SEERR.mode = 'ok';
+  SEERR.expired = false;
+  SEERR.permissions = null;
+  SEERR.identity = null;
+  SEERR.sid = SEERR_SID;
+  SEERR.requestDelay = 0;
+  SEERR.quota = JSON.parse(SEERR_INITIAL.quota);
+  for (const k of Object.keys(SEERR.counters)) SEERR.counters[k] = 0;
+  seerrGate.release();
+}
+const seerrGate = makeGate();
+
+/** Steuerung der Seerr-Seite (Namen wie beim Apple-Testserver); null, wenn der Pfad keine Seerr-Steuerung ist. */
+function seerrDebug(p, q) {
+  const int = (k) => (/^\d+$/.test(q.get(k) ?? '') ? Number(q.get(k)) : null);
+  if (p === '/__debug/mode') {
+    const want = ['ok', 'down', 'expired'].includes(q.get('set')) ? q.get('set') : 'ok';
+    if (want === 'expired') SEERR.sid = `mock-seerr-sid-${Date.now().toString(36)}`; // alle bisherigen Sitzungen ungueltig, erst eine neue Anmeldung gilt
+    SEERR.mode = want === 'down' ? 'down' : 'ok';
+    return [200, { mode: SEERR.mode }];
+  }
+  if (p === '/__debug/permissions') {
+    SEERR.permissions = int('set');
+    return [200, { permissions: seerrPermissions() }];
+  }
+  if (p === '/__debug/identity') {
+    SEERR.identity = q.get('jellyfin') || null;
+    return [200, { jellyfinUserId: SEERR.identity ?? USER.Id }];
+  }
+  if (p === '/__debug/request') {
+    const r = SEERR.requests[(int('id') ?? 0) - 1];
+    if (!r || int('status') == null) return [400, { message: 'id und status angeben' }];
+    r.status = int('status');
+    touchSeerrRequest(r);
+    return [200, { id: r.id, status: r.status }];
+  }
+  if (p === '/__debug/requests') {
+    const n = Math.max(0, Math.min(2000, int('count') ?? 0));
+    const k = Math.max(0, Math.min(n, int('open') ?? 0));
+    const first = SEERR.requests.length;
+    for (let i = 0; i < n; i++) addSeerrRequest({ mediaType: 'movie', mediaId: 90001 + first + i, status: i < k ? 1 : 5 });
+    return [200, { requests: SEERR.requests.length }];
+  }
+  if (p === '/__debug/season') {
+    const r = SEERR.requests[(int('id') ?? 0) - 1];
+    if (!r || int('season') == null) return [400, { message: 'id und season angeben' }];
+    if (!r.readySeasons.includes(int('season'))) r.readySeasons.push(int('season'));
+    if (Array.isArray(r.seasons) && r.seasons.length && r.seasons.every((s) => r.readySeasons.includes(s))) r.status = 5;
+    return [200, { id: r.id, status: r.status, readySeasons: r.readySeasons }];
+  }
+  if (p === '/__debug/media') {
+    if (int('tmdb') == null) return [400, { message: 'tmdb angeben' }];
+    const key = `${q.get('type') === 'tv' ? 'tv' : 'movie'}:${int('tmdb')}`;
+    if (int('status') != null) SEERR.media.set(key, int('status'));
+    else SEERR.media.delete(key);
+    return [200, { media: Object.fromEntries(SEERR.media) }];
+  }
+  return null;
+}
+
 async function handleSeerr(req, res, p, q, method) {
   const sub = p.slice('/api/v1'.length);
   const json = (status, body, headers = {}) => {
@@ -489,38 +726,64 @@ async function handleSeerr(req, res, p, q, method) {
     res.end(JSON.stringify(body));
   };
   state.log.push({ at: `seerr:${method} ${sub}` });
+  SEERR.counters.apiRequests++;
+  const cookie = req.headers.cookie ?? '';
+  const sessionOk = cookie.includes(`connect.sid=${SEERR.sid}`);
+  if (sessionOk && sub !== '/auth/logout') SEERR.counters.sessionRequests++;
+  if (SEERR.mode === 'down') return json(503, { message: 'Service Unavailable' });
   if (sub === '/status') return json(200, { version: '2.7.0-mock', commitTag: 'mock', updateAvailable: false });
   if (sub === '/auth/jellyfin' && method === 'POST') {
     const b = await readBody(req);
     if (b.username === 'demo' && b.password === 'demo') {
-      return json(200, { id: 1, displayName: 'Demo', jellyfinUsername: 'demo', permissions: 32 }, { 'set-cookie': `connect.sid=${SEERR.sid}; Path=/; HttpOnly` });
+      return json(200, { id: 1, displayName: 'Demo', jellyfinUsername: 'demo', permissions: seerrPermissions() }, { 'set-cookie': `connect.sid=${SEERR.sid}; Path=/; HttpOnly` });
     }
     return json(401, { message: 'Invalid credentials' });
   }
   if (SEERR.expired) return json(401, { message: 'Unauthorized' });
-  const authed = req.headers['x-api-key'] === SEERR.apiKey || (req.headers.cookie ?? '').includes(`connect.sid=${SEERR.sid}`);
-  if (!authed) return json(403, { message: 'You do not have permission to access this endpoint' });
-  if (sub === '/auth/me') return json(200, { id: 1, displayName: req.headers['x-api-key'] ? 'Schluessel-Konto' : 'Demo', permissions: 32 });
+  const viaKey = req.headers['x-api-key'] === SEERR.apiKey;
+  const authed = viaKey || sessionOk;
+  // Eine Sitzung, die /__debug/mode?set=expired ungueltig gemacht hat, ist abgelaufen (401); ohne jede Anmeldung 403 wie bisher
+  if (!authed) return /connect\.sid=mock-seerr-sid/.test(cookie) ? json(401, { message: 'Unauthorized' }) : json(403, { message: 'You do not have permission to access this endpoint' });
+  if (sub === '/auth/logout' && method === 'POST') {
+    SEERR.counters.logouts++;
+    return json(200, { status: 'ok' });
+  }
+  if (sub === '/auth/me') return json(200, { id: 1, displayName: viaKey ? 'Schluessel-Konto' : 'Demo', jellyfinUserId: SEERR.identity ?? USER.Id, jellyfinUsername: USER.Name, permissions: seerrPermissions() });
+  let um;
+  if ((um = /^\/user\/(\d+)\/quota$/.exec(sub)) && method === 'GET') {
+    const part = (k) => {
+      const qq = SEERR.quota[k];
+      return { days: qq.days, limit: qq.limit, used: qq.used, remaining: qq.limit ? Math.max(0, qq.limit - qq.used) : undefined, restricted: !!qq.limit && qq.used >= qq.limit };
+    };
+    return json(200, { movie: part('movie'), tv: part('tv') });
+  }
   if (sub === '/search') {
     const term = (q.get('query') ?? '').toLowerCase();
-    const results = SEERR.catalog
-      .filter((r) => (r.title ?? r.name ?? '').toLowerCase().includes(term))
-      .map((r) => {
-        const st = SEERR.statuses.get(`${r.mediaType}:${r.id}`);
-        return st ? { ...r, mediaInfo: { status: st } } : { ...r };
-      });
+    const results = SEERR.catalog.filter((r) => (r.title ?? r.name ?? '').toLowerCase().includes(term)).map(withMediaInfo);
     return json(200, { page: 1, totalPages: 1, totalResults: results.length, results });
   }
   if (sub === '/discover/trending' && method === 'GET') {
+    SEERR.counters.trendRequests++;
     if (SEERR.trendingDelay) await new Promise((r) => setTimeout(r, SEERR.trendingDelay));
     if (SEERR.trendingError) return json(500, { message: 'Mock: Trends nicht verfuegbar' });
-    const per = 4;
     const page = Math.max(1, Number(q.get('page')) || 1);
-    const results = SEERR.trending.slice((page - 1) * per, page * per).map((r) => {
-      const st = SEERR.statuses.get(`${r.mediaType}:${r.id}`);
-      return st ? { ...r, mediaInfo: { status: st } } : { ...r };
-    });
+    const kind = q.get('mediaType');
+    // Aktuelles Seerr nimmt mediaType (movie|tv) und timeWindow (day|week) entgegen; aelteres (SEERR.old, MOCK_SEERR_OLD) uebergeht beides
+    if ((kind === 'movie' || kind === 'tv') && !SEERR.old) {
+      const full = SEERR.trendLists[kind][q.get('timeWindow') === 'week' ? 'week' : 'day'];
+      const results = full.slice((page - 1) * 20, page * 20).map(withMediaInfo);
+      return json(200, { page, totalPages: Math.max(1, Math.ceil(full.length / 20)), totalResults: full.length, results });
+    }
+    const per = 4;
+    const results = SEERR.trending.slice((page - 1) * per, page * per).map(withMediaInfo);
     return json(200, { page, totalPages: Math.ceil(SEERR.trending.length / per), totalResults: SEERR.trending.length, results });
+  }
+  if ((um = /^\/person\/(\d+)(\/combined_credits)?$/.exec(sub)) && method === 'GET') {
+    const person = SEERR.people.get(Number(um[1]));
+    if (!person) return json(404, { message: 'Unable to retrieve person.' });
+    const { cast, crew, ...info } = person;
+    if (!um[2]) return json(200, info);
+    return json(200, { id: person.id, cast: cast.map(withMediaInfo), crew: crew.map(withMediaInfo) });
   }
   const dm = /^\/(movie|tv)\/(\d+)$/.exec(sub);
   if (dm && method === 'GET') {
@@ -528,7 +791,8 @@ async function handleSeerr(req, res, p, q, method) {
     if (!entry) return json(404, { message: 'Not found' });
     if (entry.id === 9999) return json(500, { message: 'Mock: Details nicht verfuegbar' });
     const key = `${entry.mediaType}:${entry.id}`;
-    const mediaInfo = SEERR.mediaIds.has(key) ? { id: SEERR.mediaIds.get(key), status: SEERR.statuses.get(key) ?? 1 } : SEERR.statuses.has(key) ? { status: SEERR.statuses.get(key) } : null;
+    const st = seerrMediaStatus(entry.mediaType, entry.id);
+    const mediaInfo = SEERR.mediaIds.has(key) ? { id: SEERR.mediaIds.get(key), status: st ?? 1 } : st ? { status: st } : null;
     return json(200, { ...entry, ...(SEERR.details[key] ?? {}), ...(mediaInfo ? { mediaInfo } : {}) });
   }
   if (sub === '/issue' && method === 'POST') {
@@ -547,14 +811,190 @@ async function handleSeerr(req, res, p, q, method) {
     state.log.push({ at: 'seerr:request-body', ...b });
     if (!['movie', 'tv'].includes(b.mediaType) || !Number.isFinite(b.mediaId)) return json(400, { message: 'Invalid request body' });
     if (b.mediaId === 9999) return json(403, { message: 'Quota exceeded' });
-    if (SEERR.statuses.has(`${b.mediaType}:${b.mediaId}`)) return json(409, { message: 'Request for this media already exists' });
-    SEERR.statuses.set(`${b.mediaType}:${b.mediaId}`, 2);
-    const created = { id: SEERR.requests.length + 1, status: 1, media: { id: b.mediaId, tmdbId: b.mediaId, mediaType: b.mediaType, status: 2 } };
-    SEERR.requests.push(created);
-    return json(201, created);
+    const st = seerrMediaStatus(b.mediaType, b.mediaId);
+    // Wie Seerr: gesperrte Titel (6) nicht anfragbar; wartende, bearbeitete und vorhandene schon angefragt (409); geloeschte (7) wieder anfragbar
+    if (st === 6) return json(403, { message: 'This media is blocklisted.' });
+    if ([2, 3, 5].includes(st)) return json(409, { message: 'Request for this media already exists' });
+    const kindQuota = SEERR.quota[b.mediaType];
+    if (kindQuota.limit && kindQuota.used >= kindQuota.limit) return json(403, { message: 'Quota exceeded' });
+    if (kindQuota.limit) kindQuota.used++;
+    const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons: b.mediaType === 'tv' ? (Array.isArray(b.seasons) ? b.seasons : b.seasons === 'all' ? 'all' : null) : null });
+    return json(201, seerrRequestDto(created));
   }
-  if (sub === '/request') return json(200, { pageInfo: { pages: 1, pageSize: 20, results: SEERR.requests.length, page: 1 }, results: SEERR.requests });
+  if (sub === '/request' && method === 'GET') {
+    SEERR.counters.listRequests++;
+    await seerrGate.wait(); // festgehalten bis zur Freigabe (POST /__debug/delay?requests=<s> oder /__debug/reset?seerr=1)
+    await sleep(SEERR.requestDelay);
+    const filter = REQUEST_FILTERS[q.get('filter') ?? 'all'] ?? REQUEST_FILTERS.all;
+    const by = Number(q.get('requestedBy')) || null;
+    const sortKey = q.get('sort') === 'modified' ? 'updatedAt' : 'createdAt';
+    const list = SEERR.requests
+      .filter((r) => !r.deleted && (!by || r.requestedBy === by) && filter(r, seerrMediaStatus(r.mediaType, r.mediaId)))
+      .sort((a, b) => (a[sortKey] < b[sortKey] ? 1 : a[sortKey] > b[sortKey] ? -1 : b.id - a.id))
+      .map(seerrRequestDto);
+    const take = Math.max(1, Number(q.get('take')) || 10); // wie Seerr: ohne Angabe 10
+    const skip = Math.max(0, Number(q.get('skip')) || 0);
+    return json(200, { pageInfo: { pages: Math.ceil(list.length / take), pageSize: take, results: list.length, page: Math.floor(skip / take) + 1 }, results: list.slice(skip, skip + take) });
+  }
+  if ((um = /^\/request\/(\d+)(?:\/(approve|decline|retry))?$/.exec(sub)) && (method === 'POST' || method === 'DELETE')) {
+    const r = SEERR.requests[Number(um[1]) - 1];
+    if (!r || r.deleted) return json(404, { message: 'Request not found.' });
+    const manage = (seerrPermissions() & (2 | 16)) !== 0; // Administrator oder Anfragen verwalten
+    if (method === 'DELETE') {
+      if (!manage && r.status !== 1) return json(401, { message: 'You do not have permission to delete this request.' });
+      r.deleted = true;
+      res.writeHead(204);
+      return res.end();
+    }
+    if (!um[2]) return json(404, { message: 'Unknown action.' });
+    if (!manage) return json(403, { message: 'You do not have permission to do this.' });
+    r.status = { approve: 2, decline: 3, retry: 2 }[um[2]];
+    touchSeerrRequest(r);
+    // Wer entschieden hat (modifiedBy): der Benutzer der Sitzung (1) oder, im Test, ein anderer Verwalter aus der Kopfzeile X-Mock-Actor
+    if (um[2] !== 'retry') r.modifiedBy = /^\d+$/.test(req.headers['x-mock-actor'] ?? '') ? Number(req.headers['x-mock-actor']) : 1;
+    return json(200, seerrRequestDto(r));
+  }
   return json(404, { message: `Mock-Seerr: ${method} ${sub} nicht implementiert` });
+}
+
+// ---------- Steuerung fuer Tests (/__debug/...), Namen und Bedeutung wie beim Apple-Testserver ----------
+// Anfangsstand von Gesehen, Favoriten und Positionen fuer /__debug/reset?all=1
+const INITIAL = { played: new Set(state.played), fav: new Set(state.fav), progress: new Map(state.progress) };
+const remoteTicks = (r) => Math.round((r.at + (Date.now() - r.since) / 1000) * TICKS);
+/** Gestellte Sitzungen anderer Geraete in der Form von GET /Sessions. */
+function remoteSessions() {
+  return state.remote.map((r) => {
+    const it = items.get(r.item) ?? {};
+    const playing = Object.fromEntries(['Id', 'Name', 'Type', 'SeriesName', 'SeriesId', 'IndexNumber', 'ParentIndexNumber', 'RunTimeTicks'].filter((k) => k in it).map((k) => [k, it[k]]));
+    return {
+      Id: r.id,
+      UserId: r.user,
+      UserName: 'demo',
+      Client: r.client,
+      DeviceName: r.device,
+      DeviceId: `dev-${r.id}`,
+      LastActivityDate: new Date(Date.now() - r.idle * 1000).toISOString(),
+      SupportsRemoteControl: r.control,
+      SupportsMediaControl: r.control,
+      NowPlayingItem: Object.keys(playing).length ? playing : null,
+      PlayState: { PositionTicks: remoteTicks(r), IsPaused: false, PlayMethod: 'DirectPlay' }
+    };
+  });
+}
+
+/**
+ * Steuerung der Tests: liefert [Status, Antwort]. Zeiten in Sekunden wie beim Apple-Testserver.
+ *   GET  /__debug/state                       Protokoll (letzte 60), Gesehen, Positionen, Stoerungen, Quick Connect, Sitzungen, Seerr-Zaehler
+ *   POST /__debug/reset[?all=1][&seerr=1]     Protokoll leeren, Sitzung gueltig, Quick Connect aus; all: Gesehen/Favoriten/Positionen; seerr: Seerr wie beim Start
+ *   POST /__debug/delay?lists=<s>|hold&images=<s>&plan=<s>&reports=<s>&auth=<s>&requests=<s>|hold
+ *        lists: alle Listen (hold: festhalten bis zur Freigabe, hoechstens 120 s), plan: PlaybackInfo, reports: Ende der Wiedergabe (/Stopped),
+ *        auth: Anmeldung mit Passwort (hoechstens 30 s), requests: Liste der Seerr-Anfragen (hoechstens 30 s; hold wie bei lists)
+ *   POST /__debug/fault?lists=<400-599|invalid|empty|drop|off>&images=<...>&count=<n>   naechste n Antworten (ohne count alle) scheitern
+ *   POST /__debug/fault?clear=1               alle Stoerungen, Verzoegerungen von Listen/Bildern/Anmeldung und Quick-Connect-Schalter aus
+ *   POST /__debug/expire                      Sitzung abgelaufen (401) bis zur naechsten Anmeldung
+ *   POST /__debug/quickconnect?hold=1|0&gone=1|0&disabled=1|0
+ *   POST /__debug/session?device=&item=&at=<s>&user=other&control=0&idle=<s>&client=   bzw. ?clear=1
+ *   Seerr: /__debug/mode?set=ok|down|expired, /__debug/permissions?set=<Bits>, /__debug/identity?jellyfin=<Kennung>,
+ *          /__debug/request?id=&status=, /__debug/requests?count=&open=, /__debug/season?id=&season=, /__debug/media?tmdb=&status=[&type=tv]
+ */
+function debugControl(p, q) {
+  const seerr = seerrDebug(p, q);
+  if (seerr) return seerr;
+  const secs = (v, max = Infinity) => {
+    const n = Number(v || 0);
+    if (!Number.isFinite(n) || n < 0) throw new Error(`keine Sekundenangabe: ${v}`);
+    return Math.round(Math.min(n, max) * 1000);
+  };
+  if (p === '/__debug/state') {
+    return [200, {
+      log: state.log.slice(-60),
+      played: [...state.played],
+      fav: [...state.fav],
+      progress: Object.fromEntries(state.progress),
+      expired: state.expired,
+      qc: { ...state.qc },
+      faults: Object.fromEntries(Object.entries(state.faults).map(([k, v]) => [k, v.how])),
+      delays: { ...state.delays },
+      listsHeld: listGate.held,
+      sessions: remoteSessions(),
+      seerr: { mode: SEERR.mode, permissions: seerrPermissions(), requestsHeld: seerrGate.held, requests: SEERR.requests.filter((r) => !r.deleted).map(seerrRequestDto), issues: SEERR.issues, ...SEERR.counters }
+    }];
+  }
+  if (p === '/__debug/reset') {
+    state.log.length = 0;
+    state.expired = false;
+    Object.assign(state.qc, { hold: false, gone: false, disabled: false, authorized: false });
+    if (q.get('all')) {
+      state.played = new Set(INITIAL.played);
+      state.fav = new Set(INITIAL.fav);
+      state.progress = new Map(INITIAL.progress);
+      state.remote.length = 0;
+    }
+    if (q.get('seerr')) resetSeerr();
+    return [200, { ok: true }];
+  }
+  if (p === '/__debug/delay') {
+    try {
+      if (q.has('reports')) state.delays.stopped = secs(q.get('reports'));
+      if (q.has('plan')) state.delays.playbackInfo = secs(q.get('plan'));
+      if (q.has('images')) state.delays.images = secs(q.get('images'));
+      if (q.has('auth')) state.delays.auth = secs(q.get('auth'), 30);
+      if (q.has('lists')) {
+        if (q.get('lists') === 'hold') listGate.hold();
+        else {
+          state.delays.lists = secs(q.get('lists'));
+          listGate.release();
+        }
+      }
+      if (q.has('requests')) {
+        if (q.get('requests') === 'hold') seerrGate.hold();
+        else {
+          SEERR.requestDelay = secs(q.get('requests'), 30);
+          seerrGate.release();
+        }
+      }
+    } catch (e) {
+      return [400, { error: `${e.message}; lists, images, plan, reports, auth, requests: je <Sekunden>, lists und requests auch hold` }];
+    }
+    return [200, { ok: true, delays: { ...state.delays }, listsHeld: listGate.held, requests: SEERR.requestDelay, requestsHeld: seerrGate.held }];
+  }
+  if (p === '/__debug/fault') {
+    if (q.get('clear')) {
+      state.faults = {};
+      Object.assign(state.delays, { lists: 0, images: 0, auth: 0 });
+      Object.assign(state.qc, { hold: false, gone: false, disabled: false, authorized: false });
+      listGate.release();
+      return [200, { ok: true, faults: {} }];
+    }
+    const count = /^\d+$/.test(q.get('count') ?? '') ? Number(q.get('count')) : null;
+    for (const kind of ['lists', 'images']) {
+      const how = q.get(kind);
+      if (how == null) continue;
+      if (how === 'off' || count === 0) delete state.faults[kind];
+      else if (['invalid', 'empty', 'drop'].includes(how) || (/^\d{3}$/.test(how) && Number(how) >= 400 && Number(how) <= 599)) state.faults[kind] = { how, left: count };
+      else return [400, { error: 'lists/images: <HTTP-Status 400-599>, invalid, empty, drop oder off' }];
+    }
+    return [200, { ok: true, faults: Object.fromEntries(Object.entries(state.faults).map(([k, v]) => [k, v.how])) }];
+  }
+  if (p === '/__debug/expire') {
+    state.expired = true;
+    return [200, { ok: true }];
+  }
+  if (p === '/__debug/quickconnect') {
+    for (const k of ['hold', 'gone', 'disabled']) if (q.has(k)) state.qc[k] = q.get(k) === '1';
+    return [200, { ok: true, hold: state.qc.hold, gone: state.qc.gone, disabled: state.qc.disabled, authorized: state.qc.authorized }];
+  }
+  if (p === '/__debug/session') {
+    if (q.get('clear')) {
+      state.remote.length = 0;
+      return [200, { ok: true, sessions: 0 }];
+    }
+    const item = q.get('item') || [...items.values()].find((i) => i.Type === 'Movie')?.Id;
+    if (!items.has(item)) return [400, { error: 'item: Id eines Eintrags' }];
+    state.remote.push({ id: `remote${state.remote.length + 1}`, device: q.get('device') || 'Wohnzimmer Apple TV', item, at: Number(q.get('at')) || 600, since: Date.now(), user: q.get('user') === 'other' ? 'someone-else' : USER.Id, control: q.get('control') !== '0', idle: Number(q.get('idle')) || 0, client: q.get('client') || 'Jellycloud' });
+    return [200, { ok: true, sessions: state.remote.length, item }];
+  }
+  return [404, { error: `Mock: ${p} ist keine Steuerung` }];
 }
 
 const server = http.createServer(async (req, res) => {
@@ -573,24 +1013,52 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  // Steuerung fuer Tests (ohne Anmeldung, Namen wie beim Apple-Testserver Tools/mock_server.py; GET oder POST)
+  if (p.startsWith('/__debug/')) {
+    const [status, body] = debugControl(p, q);
+    return send(res, status, body);
+  }
   if (p.startsWith('/api/v1/')) return handleSeerr(req, res, p, q, method);
+  // Die App spricht TMDB nie direkt an (Vorgabe: Top 10 und Bilder nur ueber Seerr); jede Anfrage an die TMDB-API wird gezaehlt (tmdbRequests, muss 0 bleiben)
+  if (p.startsWith('/3/')) {
+    SEERR.counters.tmdbRequests++;
+    return send(res, 410, { status_message: 'TMDB-API im Testserver nicht vorhanden' });
+  }
 
   // Oeffentlich
   if (p === '/System/Info/Public') return send(res, 200, { ServerName: 'Mock Jellyfin', Version: '10.10.3', Id: SERVER_ID, ProductName: 'Jellyfin Server' });
-  if (p === '/QuickConnect/Enabled') return send(res, 200, true);
+  if (p === '/QuickConnect/Enabled') return send(res, 200, !state.qc.disabled);
   if (p === '/QuickConnect/Initiate' && method === 'POST') {
+    if (state.qc.disabled) return send(res, 401, 'Quick connect is disabled');
     state.qcPolls = 0;
+    state.qc.started = Date.now();
+    state.qc.authorized = false;
     return send(res, 200, { Secret: 'mock-secret', Code: '482913', Authenticated: false });
   }
-  if (p === '/QuickConnect/Connect') return send(res, 200, { Authenticated: ++state.qcPolls >= 2, Secret: 'mock-secret' });
-  if (p === '/Users/AuthenticateWithQuickConnect' && method === 'POST') return send(res, 200, authResult());
+  if (p === '/QuickConnect/Connect') {
+    if (state.qc.gone) return send(res, 404, { title: 'Not Found' });
+    // bestaetigt von einem anderen Geraet (Authorize) oder, ohne hold, von selbst bei der zweiten Abfrage
+    const polls = ++state.qcPolls;
+    return send(res, 200, { Authenticated: state.qc.authorized || (!state.qc.hold && polls >= 2), Secret: 'mock-secret' });
+  }
+  if (p === '/Users/AuthenticateWithQuickConnect' && method === 'POST') {
+    state.expired = false;
+    return send(res, 200, authResult());
+  }
   if (p === '/Users/AuthenticateByName' && method === 'POST') {
     const b = await readBody(req);
-    if (b.Username === 'demo' && b.Pw === 'demo') return send(res, 200, authResult());
+    await sleep(state.delays.auth);
+    if (b.Username === 'demo' && b.Pw === 'demo') {
+      state.expired = false;
+      return send(res, 200, authResult());
+    }
     return send(res, 401, { Message: 'Invalid username or password' });
   }
   // Bilder sind bei Jellyfin ohne Anmeldung abrufbar
   if ((m = /^\/Items\/([0-9a-f]+)\/Images\/(\w+)/.exec(p))) {
+    await sleep(state.delays.images);
+    const how = takeFault('images');
+    if (how) return sendFault(how, req, res);
     const item = items.get(m[1]);
     if (!item) return send(res, 404, '');
     return send(res, 200, imageSvg(item, m[2]), 'image/svg+xml');
@@ -605,6 +1073,38 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (!authed(req)) return send(res, 401, { Message: 'Unauthorized' });
+
+  // Ein anderes Geraet bestaetigt den Code, wie Jellyfin (QuickConnectController): angemeldet noetig; ausgeschaltet 401; Code unbekannt oder
+  // aelter als zehn Minuten "Unable to find request" (404); schon bestaetigt "Request is already authorized" (500); sonst true
+  if (p === '/QuickConnect/Authorize' && method === 'POST') {
+    state.log.push({ at: 'QuickConnect/Authorize', userId: q.get('userId') }); // der Code selbst wird nicht protokolliert
+    if (state.qc.disabled) return send(res, 401, 'Quick connect is disabled');
+    const known = state.qc.started && Date.now() - state.qc.started <= 600000 && !state.qc.gone;
+    if (!known || q.get('code') !== '482913') return send(res, 404, 'Unable to find request');
+    if (state.qc.authorized) return send(res, 500, 'Request is already authorized');
+    state.qc.authorized = true;
+    return send(res, 200, true);
+  }
+  // Bandbreitenmessung wie Jellyfin (GET /Playback/BitrateTest?Size=<Bytes>); MOCK_BITRATE_MBPS bremst wie eine langsame Leitung
+  if (p === '/Playback/BitrateTest' && method === 'GET') {
+    const size = Math.max(0, Math.min(Number(q.get('Size')) || 0, 100_000_000));
+    state.log.push({ at: 'BitrateTest', size });
+    const mbps = Number(process.env.MOCK_BITRATE_MBPS) || 0;
+    if (mbps) await sleep(Math.round((size * 8) / (mbps * 1000)));
+    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': size, 'cache-control': 'no-store' });
+    return res.end(Buffer.alloc(size));
+  }
+  // "Auf diesem Geraet fortsetzen": Sitzungen anderer Geraete desselben Kontos (gestellt mit /__debug/session). Ohne Verwaltungsrechte nur diese,
+  // mit Verwaltung wie bisher die Sitzungsliste der Verwaltung; der Stopp merkt sich die Stelle am Eintrag und beendet die Sitzung.
+  if (p === '/Sessions' && method === 'GET' && !state.admin && state.remote.length) return send(res, 200, remoteSessions());
+  if ((m = /^\/Sessions\/([\w-]+)\/Playing\/Stop$/.exec(p)) && method === 'POST' && state.remote.some((r) => r.id === m[1])) {
+    const r = state.remote.find((x) => x.id === m[1]);
+    state.remote.splice(state.remote.indexOf(r), 1);
+    const ticks = remoteTicks(r);
+    state.progress.set(r.item, ticks);
+    state.log.push({ at: 'RemoteStop', SessionId: r.id, ItemId: r.item, PositionTicks: ticks });
+    return send(res, 204, '');
+  }
 
   if (p === '/System/Endpoint') {
     state.log.push({ at: '/System/Endpoint' });
@@ -622,21 +1122,25 @@ const server = http.createServer(async (req, res) => {
   }
   if (p === '/UserViews' || /^\/Users\/[0-9a-f]+\/Views$/.test(p)) return send(res, 200, { Items: [MOVIES_VIEW, SHOWS_VIEW], TotalRecordCount: 2 });
   if (p === '/Items' && method === 'GET') {
+    if (await listPrelude(req, res)) return;
     if (state.delays.items) await new Promise((r) => setTimeout(r, state.delays.items));
     const body = JSON.stringify(listItems(q));
     state.bytes.items += Buffer.byteLength(body);
     return send(res, 200, body);
   }
   if (p === '/Items/Latest') {
+    if (await listPrelude(req, res)) return;
     const parent = q.get('parentId');
     const list = (children.get(parent) ?? []).map((i) => items.get(i)).sort((a, b) => (a.DateCreated < b.DateCreated ? 1 : -1)).slice(0, Number(q.get('limit') ?? 20));
     return send(res, 200, list.map((i) => limitImages(decorate(i), q)));
   }
   if (p === '/UserItems/Resume' || /\/Items\/Resume$/.test(p)) {
+    if (await listPrelude(req, res)) return;
     const list = [...state.progress.entries()].filter(([id, v]) => v > 0 && !state.played.has(id)).map(([id]) => items.get(id)).filter(Boolean);
     return send(res, 200, { Items: list.map((i) => limitImages(decorate(i), q)), TotalRecordCount: list.length });
   }
   if (p === '/Shows/NextUp') {
+    if (await listPrelude(req, res)) return;
     const sid = q.get('seriesId');
     const eps = [...items.values()].filter((i) => i.Type === 'Episode' && (!sid || i.SeriesId === sid) && !state.played.has(i.Id));
     const bySeries = new Map();
@@ -873,4 +1377,4 @@ function setAdmin(on) {
   state.adminData = on ? freshAdminData() : null;
 }
 
-module.exports = { server, TOKEN, USER, PORT, state, items, children, add, MOVIES_VIEW, SHOWS_VIEW, addMovies, SEERR, effectiveRemoteLimit, setAdmin };
+module.exports = { server, TOKEN, USER, PORT, state, items, children, add, MOVIES_VIEW, SHOWS_VIEW, addMovies, SEERR, effectiveRemoteLimit, setAdmin, resetSeerr };
