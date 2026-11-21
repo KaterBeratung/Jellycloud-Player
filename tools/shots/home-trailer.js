@@ -67,7 +67,7 @@ module.exports = async (ctx) => {
   check('Banner: die Logos kommen aus der Abfrage der Neuzugaenge (Bilder der Art Logo, nicht nur Hintergrund und Poster)', await ctx.run(`[...document.querySelectorAll('.hero-logo')].every((i) => /\\/Logo\\?/.test(i.getAttribute('src') ?? ''))`));
   const rowTitles = await ctx.run(`[...document.querySelectorAll('.rows .row .row-head h2')].map((h) => h.textContent.trim())`);
   // Ganz unten steht die Reihe "Filme im Trend" (hier ohne Seerr der Hinweis zur Einrichtung), siehe home-trending.js
-  check('Reihen: Weiterschauen ganz oben, danach die Neuzugaenge (Filme, Serien), Als Naechstes, Favoriten, ganz unten Filme im Trend', rowTitles.join('|') === 'Weiterschauen|Neu in Filme|Neu in Serien|Als Nächstes|Favoriten|Filme im Trend', JSON.stringify(rowTitles));
+  check('Reihen wie in der Apple-App: Weiterschauen und Als Naechstes ganz oben, danach die Neuzugaenge (Filme, Serien), Favoriten, ganz unten Filme im Trend', rowTitles.join('|') === 'Weiterschauen|Als Nächstes|Neu in Filme|Neu in Serien|Favoriten|Filme im Trend', JSON.stringify(rowTitles));
   const counts = await ctx.run(`[...document.querySelectorAll('.rows .row')].filter((r) => /^Neu in /.test(r.querySelector('.row-head h2')?.textContent.trim() ?? '')).slice(0, 2).map((r) => r.querySelectorAll('.card').length)`);
   check('Reihen: die Neuzugaenge zeigen bis zu 30 Eintraege (mehr als vorher 20)', counts[0] > 20 && counts[0] <= 30, JSON.stringify(counts));
   check('Aus: kein Trailer im Banner', await ctx.run(`!document.querySelector('.hero .trailer')`));

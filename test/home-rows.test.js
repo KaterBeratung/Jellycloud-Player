@@ -32,32 +32,46 @@ test('homeConfig: Grenzen, Typen, doppelte und fremde Eintraege werden bereinigt
   assert.equal(HR.homeConfig({ order: many }).order.length, 100, 'Liste ist begrenzt');
 });
 
-test('defaultOrder: Weiterschauen ganz oben, dann die Neuzugaenge je Bibliothek, dann die uebrigen festen Reihen', () => {
-  assert.deepEqual(HR.defaultOrder(['a', 'b']), ['continue', 'latest:a', 'latest:b', 'nextUp', 'favorites', 'trending']);
-  assert.deepEqual(HR.defaultOrder([]), ['continue', 'nextUp', 'favorites', 'trending']);
-  assert.equal(HR.defaultOrder(['a'])[0], 'continue', 'Weiterschauen steht standardmaessig an erster Stelle');
-  assert.deepEqual(HR.TOP_ROWS, ['continue']);
-  assert.equal(new Set(HR.defaultOrder(['a', 'b'])).size, 6, 'keine Reihe doppelt');
+test('defaultOrder wie in der Apple-App: Weiterschauen und Als Naechstes ganz oben, dann die Top 10, dann Neu in ... je Bibliothek, Favoriten, Filme im Trend', () => {
+  assert.deepEqual(HR.defaultOrder(['a', 'b']), ['continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'trending']);
+  assert.deepEqual(HR.defaultOrder([]), ['continue', 'nextUp', 'top10Movies', 'top10Series', 'favorites', 'trending']);
+  assert.deepEqual(HR.defaultOrder(undefined), HR.defaultOrder([]));
+  assert.deepEqual(HR.TOP_ROWS, ['continue', 'nextUp'], 'die naechste Folge gehoert direkt unter Weiterschauen');
+  assert.deepEqual(HR.RANKING_ROWS, ['top10Movies', 'top10Series']);
+  assert.deepEqual([...HR.SEERR_ROWS].sort(), ['top10Movies', 'top10Series', 'trending'], 'nur diese gibt es allein mit Seerr');
+  assert.equal(new Set(HR.defaultOrder(['a', 'b'])).size, 8, 'keine Reihe doppelt');
 });
 
-test('arrangeRows: eigene Reihenfolge zuerst, Neues und Unbekanntes sortiert sich sinnvoll ein, Ausgeblendetes fehlt', () => {
+test('arrangeRows: eigene Reihenfolge zuerst; eine Reihe, die darin fehlt, steht hinter ihrem Vorgaenger der Standardfolge; Ausgeblendetes fehlt', () => {
   const present = HR.defaultOrder(['a', 'b']);
   assert.deepEqual(HR.arrangeRows(present, [], []), present, 'ohne Wuensche bleibt es die Standardreihenfolge');
-  assert.deepEqual(HR.arrangeRows(present, ['favorites', 'continue'], []).slice(0, 3), ['favorites', 'continue', 'latest:a'], 'gewuenschte zuerst, Rest dahinter in Standardreihenfolge');
-  assert.deepEqual(HR.arrangeRows(present, [], ['continue', 'trending']), ['latest:a', 'latest:b', 'nextUp', 'favorites']);
-  // geloeschte Bibliothek in der Liste: ohne Wirkung; neue Bibliothek c erscheint dahinter (an ihrer Standardstelle unter den Rest)
-  const out = HR.arrangeRows(HR.defaultOrder(['a', 'c']), ['latest:gone', 'latest:a', 'trending'], []);
-  assert.deepEqual(out, ['latest:a', 'trending', 'continue', 'latest:c', 'nextUp', 'favorites']);
+  // Favoriten nach oben geschoben: alles andere bleibt in seiner Folge, hinter dem jeweiligen Vorgaenger
+  assert.deepEqual(HR.arrangeRows(present, ['favorites', 'continue'], []), ['favorites', 'trending', 'continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b']);
+  assert.deepEqual(HR.arrangeRows(present, [], ['continue', 'trending']), ['nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites']);
   assert.deepEqual(HR.arrangeRows([], ['continue'], []), [], 'nichts vorhanden');
   assert.deepEqual(HR.arrangeRows(present, ['continue', 'continue'], []).filter((x) => x === 'continue').length, 1, 'doppelte Eintraege erzeugen keine doppelte Reihe');
   assert.equal(HR.arrangeRows(present, [], present).length, 0, 'alles ausgeblendet');
 });
 
-test('arrangeAll zeigt auch ausgeblendete Reihen (fuer die Einstellungsliste)', () => {
-  const present = HR.defaultOrder(['a']);
-  assert.deepEqual(HR.arrangeAll(present, ['nextUp']), ['nextUp', 'continue', 'latest:a', 'favorites', 'trending']);
+test('Eine neue Reihe (neue Bibliothek) steht hinter der Reihe, hinter der sie in der Standardfolge stuende, nicht am Ende (N7)', () => {
+  // Der Nutzer hat geordnet: Neu in a ganz oben, dann Weiterschauen, Als Naechstes, Favoriten, Trend. Jetzt kommt Bibliothek c dazu.
+  const order = ['latest:a', 'continue', 'nextUp', 'favorites', 'trending'];
+  const present = ['continue', 'nextUp', 'latest:a', 'latest:c', 'favorites', 'trending'];
+  assert.deepEqual(HR.arrangeAll(present, order), ['latest:a', 'latest:c', 'continue', 'nextUp', 'favorites', 'trending'], 'c steht gleich hinter a (bis 1.2.4: ganz unten)');
+  // Ohne Vorgaenger mit Platz (die neue Reihe steht in der Standardfolge ganz vorn): ganz vorn
+  assert.deepEqual(HR.arrangeAll(['continue', 'latest:a'], ['latest:a']), ['continue', 'latest:a']);
+  // Geloeschte Bibliothek in der Liste: ohne Wirkung
+  assert.deepEqual(HR.arrangeAll(['continue', 'latest:a'], ['latest:gone', 'latest:a', 'continue']), ['latest:a', 'continue']);
+  // Gegenprobe zur Regel bis 1.2.4 ("Rest ans Ende"): sie ergibt hier etwas anderes
+  const old = (p, o) => [...o.filter((id) => p.includes(id)), ...p.filter((id) => !o.includes(id))];
+  assert.notDeepEqual(old(present, order), HR.arrangeAll(present, order));
 });
 
+test('arrangeAll zeigt auch ausgeblendete Reihen (fuer die Einstellungsliste)', () => {
+  const present = ['continue', 'nextUp', 'latest:a', 'favorites', 'trending'];
+  assert.deepEqual(HR.arrangeAll(present, ['nextUp']), ['continue', 'nextUp', 'latest:a', 'favorites', 'trending'], 'Weiterschauen hat keinen Vorgaenger: ganz vorn');
+  assert.deepEqual(HR.arrangeAll(present, ['trending', 'continue']), ['trending', 'continue', 'nextUp', 'latest:a', 'favorites']);
+});
 test('moveRow: um einen Platz verschieben, am Rand bleibt es stehen, Unbekanntes aendert nichts', () => {
   const l = ['a', 'b', 'c'];
   assert.deepEqual(HR.moveRow(l, 'b', -1), ['b', 'a', 'c']);

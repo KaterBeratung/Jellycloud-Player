@@ -15,7 +15,8 @@ import { canReportIssue, openIssueDialog } from './issue-dialog.js';
 const Media = window.JCMedia;
 const Tags = window.JCMediaTags; // Tags der Datei in der Reihenfolge der Detailseite (src/shared/media-tags.js)
 
-const epLabel = (it) => `${it.ParentIndexNumber != null ? `S${it.ParentIndexNumber}:` : ''}E${it.IndexNumber ?? '?'}`;
+const Format = window.JCFormat; // Schreibweisen der Angabenzeilen (src/shared/format.js)
+const epLabel = (it) => Format.episodeNumbers(it); // "S1 · E3"
 
 function streamLabel(s) {
   const parts = [];
@@ -169,7 +170,7 @@ export function detailView({ id, query }) {
       l.addEventListener('error', () => l.replaceWith(h('h1', { class: 'detail-title' }, item.Name)));
       info.append(l);
     } else {
-      info.append(h('h1', { class: 'detail-title' }, isEpisode ? `${epLabel(item)} · ${item.Name}` : item.Name));
+      info.append(h('h1', { class: 'detail-title' }, isEpisode ? Format.episodeLabel(item) : item.Name));
     }
     if (item.Taglines?.[0] && !isEpisode) info.append(h('p', { class: 'tagline' }, item.Taglines[0]));
 
@@ -179,7 +180,7 @@ export function detailView({ id, query }) {
     if (item.OfficialRating) addMeta(h('span', { class: 'rating-box' }, item.OfficialRating));
     if (item.RunTimeTicks) addMeta(h('span', null, fmtDuration(ticksToSec(item.RunTimeTicks))));
     if (isSeries && item.Status) addMeta(h('span', null, item.Status === 'Continuing' ? t('detail.continuing') : t('detail.ended')));
-    if (item.CommunityRating) addMeta(h('span', { class: 'score' }, icon('star', 14), item.CommunityRating.toFixed(1)));
+    if (Format.score(item.CommunityRating)) addMeta(h('span', { class: 'score' }, icon('star', 14), Format.score(item.CommunityRating)));
     if (item.CriticRating) addMeta(h('span', { class: 'score critic', title: t('detail.critic') }, `${Math.round(item.CriticRating)}%`));
     if (item.RunTimeTicks && !isSeries) addMeta(h('span', { class: 'muted' }, t('detail.endsAt', { time: endsAt(ticksToSec(item.RunTimeTicks - (canResume ? pos : 0))) })));
     info.append(meta);

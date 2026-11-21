@@ -1,22 +1,24 @@
 /* Gemeinsames Modul: Tags fuer Bildqualitaet, Tonformat, Technik und Wiedergabe. Reine Regeln ohne Oberflaeche: welche Tags ein Titel
    bekommt, in welcher Reihenfolge, und die fest gerechneten Farben jedes Tags. Gezeichnet wird in src/renderer/js/tags.js.
-   Laeuft als CommonJS (Tests) und als klassisches Skript (window.JCMediaTags); braucht src/shared/media.js und src/shared/accent.js.
+   Laeuft als CommonJS (Tests) und als klassisches Skript (window.JCMediaTags); braucht src/shared/media.js, src/shared/accent.js und
+   src/shared/seerr-state.js (Staende bei Seerr werden ebenfalls als Tag gezeichnet).
    Vorlage: Jellycloud/Core/MediaTags.swift und Jellycloud/Design/MediaTagView.swift der Apple-App (Build 86 bis 93).
 
    Grundsaetze wie in der Apple-App: nur anzeigen, was der Server ausdruecklich nennt (Atmos und DTS:X nur mit Nachweis, siehe
    JCMedia.premiumAudio); nichts doppelt (4K einmal, neben einem bestimmten HDR-Format kein allgemeines "HDR", ein Premium-Ton-Tag
    ersetzt den Namen seines Codecs); Tags haben feste Farben, unabhaengig von Akzentfarbe, Design und Einstellungen. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./media'), require('./accent'));
-  else root.JCMediaTags = factory(root.JCMedia, root.JCAccent);
-})(typeof self !== 'undefined' ? self : this, function (Media, Accent) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./media'), require('./accent'), require('./seerr-state'));
+  else root.JCMediaTags = factory(root.JCMedia, root.JCAccent, root.JCSeerrState);
+})(typeof self !== 'undefined' ? self : this, function (Media, Accent, SeerrState) {
   'use strict';
 
-  /** Gruppe einer Art: Premium-Bild, Premium-Ton, Wiedergabe, gewoehnliche Angabe. */
+  /** Gruppe einer Art: Premium-Bild, Premium-Ton, Wiedergabe, Stand bei Seerr, gewoehnliche Angabe. */
   var GROUP = {
     uhd: 'premiumVideo', dolbyVision: 'premiumVideo', hdr10Plus: 'premiumVideo', hdr10: 'premiumVideo', hdr: 'premiumVideo', hlg: 'premiumVideo',
     atmos: 'premiumAudio', dtsX: 'premiumAudio', trueHD: 'premiumAudio', dtsHDMA: 'premiumAudio', flac: 'premiumAudio', lpcm: 'premiumAudio',
     directPlay: 'playback', directStream: 'playback', transcode: 'playback',
+    seerrAvailable: 'status', seerrPartial: 'status', seerrRequested: 'status', seerrApproved: 'status', seerrProcessing: 'status', seerrDeclined: 'status', seerrFailed: 'status',
     neutral: 'neutral'
   };
 
@@ -41,6 +43,17 @@
     directStream: { start: '#1d4ed8', end: '#60a5fa' }, // Dunkelblau -> Hellblau
     transcode: { start: '#ffb020', end: '#f25c05' } // Bernstein -> kraeftiges Orange
   };
+
+  /**
+   * Staende bei Seerr haben keine eigene Palette: sie nehmen die Farbpaare der Wiedergabe- und HDR-Tags nach ihrer Bedeutung (wie
+   * MediaTagStyle der Apple-App). Gruen: da; Tuerkis -> Blau: teilweise da; Blau: angefragt, genehmigt; Orange: in Arbeit; Orange -> Rot:
+   * abgelehnt, gescheitert. Welcher Stand welche Art bekommt, steht allein in seerr-state.js (TAG_KIND).
+   */
+  var SEERR_STYLE = {
+    seerrAvailable: 'directPlay', seerrPartial: 'hlg', seerrRequested: 'directStream', seerrApproved: 'directStream',
+    seerrProcessing: 'transcode', seerrDeclined: 'hdr10Plus', seerrFailed: 'hdr10Plus'
+  };
+  var styleOf = function (kind) { return STYLES[kind] || STYLES[SEERR_STYLE[kind]] || null; };
 
   /** Feste Staerken fuer alle hervorgehobenen Tags (keine Einstellung). */
   var STRENGTH = {
@@ -89,7 +102,7 @@
    * outlineEnd), Schrift (ink), Schein (glowStart, glowEnd, glowBoost). null fuer gewoehnliche Angaben.
    */
   function paint(kind) {
-    var s = STYLES[kind];
+    var s = styleOf(kind);
     if (!s) return null;
     if (!paintCache[kind]) {
       paintCache[kind] = {
@@ -249,6 +262,25 @@
     return premium(src).concat(hd);
   }
 
+  // ---------- Staende bei Seerr ----------
+  /** Das Tag zu einem Stand bei Seerr (seerr-state.js STATES): Bezeichnung und Art kommen allein von dort. */
+  function seerr(state, lang) {
+    return tag(SeerrState.TAG_KIND[state], SeerrState.label(state, lang), SeerrState.shortLabel(state, lang));
+  }
+
+  /** Stand eines Titels (Plakate in Suche und Trends, seine Seite mit dem Stand seiner neuesten Anfrage); null fuer Titel ohne Stand. */
+  function seerrAvailability(mediaStatus, request, lang) {
+    var s = SeerrState.titleState(mediaStatus, request);
+    return s ? seerr(s, lang) : null;
+  }
+
+  /** Stand einer Anfrage. Ohne Stand neutral: "Abgeschlossen" fuer eine erledigte, deren Titel nicht mehr da ist, sonst "Unbekannt". */
+  function seerrRequest(r, lang) {
+    var s = SeerrState.requestOf(r);
+    if (s) return seerr(s, lang);
+    return neutral(SeerrState.label(Number(r && r.status) === SeerrState.SEERR_REQUEST.COMPLETED ? 'completed' : 'unknown', lang));
+  }
+
   /** Die Datenstroeme eines Eintrags fuer seine Karte (erste MediaSource oder MediaStreams des Eintrags). */
   function streamsOfItem(item) {
     var s = item && item.MediaSources && item.MediaSources[0];
@@ -256,9 +288,10 @@
   }
 
   return {
-    GROUP: GROUP, STYLES: STYLES, STRENGTH: STRENGTH, SIZES: SIZES,
+    GROUP: GROUP, STYLES: STYLES, SEERR_STYLE: SEERR_STYLE, STRENGTH: STRENGTH, SIZES: SIZES,
     paint: paint, emphasis: emphasis, surfaceOver: surfaceOver, contrast: contrast, mix: mix, toned: toned, luminance: luminance,
     resolution: resolution, hdr: hdr, premiumAudio: premiumAudio, audioCodecName: audioCodecName, channels: channels,
-    premium: premium, technical: technical, playback: playback, source: source, card: card, streamsOfItem: streamsOfItem, defaultAudio: defaultAudio
+    premium: premium, technical: technical, playback: playback, source: source, card: card, streamsOfItem: streamsOfItem, defaultAudio: defaultAudio,
+    seerr: seerr, seerrAvailability: seerrAvailability, seerrRequest: seerrRequest
   };
 });

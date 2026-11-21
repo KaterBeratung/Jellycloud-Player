@@ -443,7 +443,7 @@ function paintSkip() {
   const d = S.duration;
   const nearEnd = d && S.next && d - pos < 30 && d - pos > 0;
   nextCard.hidden = !nearEnd;
-  if (nearEnd) nextCard.querySelector('.n').textContent = `${S.next.label ?? ''} ${S.next.title ?? ''}`.trim();
+  if (nearEnd) nextCard.querySelector('.n').textContent = [S.next.label, S.next.title].filter(Boolean).join(' · '); // "S1 · E2 · Titel" (format.js im Hauptprozess)
   nextBtn.hidden = !S.next;
   // Countdown: je Segment (Art + Anfang) bzw. je naechster Folge einmal; die naechste Folge nur, wenn sie automatisch abgespielt wird
   cdSync(cdSkip, showSkip ? `${seg.type}:${seg.start}` : null);

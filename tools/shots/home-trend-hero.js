@@ -73,7 +73,7 @@ module.exports = async (ctx) => {
       overview: e.querySelector('.hero-overview')?.textContent ?? '',
       actions: [...e.querySelectorAll('.hero-actions > .btn:not([hidden])')].map((b) => b.textContent.trim()),
       href: e.querySelector('.hero-actions a.btn')?.getAttribute('href') ?? '',
-      tag: e.querySelector('.hero-meta .rating-box')?.textContent ?? ''
+      tag: e.querySelector('.hero-meta .hero-stand')?.textContent ?? ''
     }))`);
   const titles = (s) => s.map((x) => x.title);
   const trendOf = (s) => s.filter((x) => x.label === 'Im Trend');
@@ -146,7 +146,7 @@ module.exports = async (ctx) => {
   await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   check('...Esc schliesst es', await waitFor(`!document.querySelector('.rq .rq-title')`, 3000));
   await ctx.run(`[...${S3}.querySelectorAll('.hero-actions .btn')].find((b) => b.textContent.includes('Anfragen')).click()`);
-  check('"Anfragen" im Banner: die Folie zeigt "Angefragt", der Knopf ist weg, Hinweis "wurde angefragt"', (await waitFor(`${S3}.querySelector('.hero-meta .rating-box')?.textContent === 'Angefragt' && ![...${S3}.querySelectorAll('.hero-actions .btn:not([hidden])')].some((b) => b.textContent.includes('Anfragen'))`, 5000)) && /wurde angefragt/.test(await ctx.run(`[...document.querySelectorAll('.toast')].map((t) => t.innerText).join(' | ')`)));
+  check('"Anfragen" im Banner: die Folie zeigt "Angefragt", der Knopf ist weg, Hinweis "wurde angefragt"', (await waitFor(`${S3}.querySelector('.hero-meta .hero-stand')?.textContent === 'Angefragt' && ![...${S3}.querySelectorAll('.hero-actions .btn:not([hidden])')].some((b) => b.textContent.includes('Anfragen'))`, 5000)) && /wurde angefragt/.test(await ctx.run(`[...document.querySelectorAll('.toast')].map((t) => t.innerText).join(' | ')`)));
   check('Der Server bekam genau diese eine Anfrage (Film 7001)', JSON.stringify(state.log.filter((l) => l.at === 'seerr:request-body').map(({ at, ...x }) => x)) === JSON.stringify([{ mediaType: 'movie', mediaId: 7001 }]));
   check('Dieselbe Anfrage zeigt auch die Karte in der Reihe als "Angefragt" (gleiche Daten)', await ctx.run(`[...document.querySelectorAll('.home .trend-row .req-card')].find((c) => c.querySelector('.l1').textContent === 'Trend Film Eins').querySelector('.req-status:not([hidden])')?.textContent === 'Angefragt'`));
   // Folien zeigen und aufnehmen

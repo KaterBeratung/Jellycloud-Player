@@ -179,3 +179,50 @@ test('Tag-Staerke: ueberall voll, Wiedergabe-Tags nur auf der Seite ruhiger, 4K 
   assert.deepEqual(Tags.emphasis('hdr10', 'page'), { glow: 0.6, outline: 0.95 }, 'Formate der Datei leuchten auch auf der Seite voll');
   assert.ok(Math.abs(Tags.emphasis('uhd', 'image').glow - 0.78) < 1e-9);
 });
+// ---------- Farben: verschieden je Format, Seerr ohne eigene Palette (P4; MediaTagTests der Apple-App) ----------
+const styleKey = (kind) => {
+  const s = Tags.STYLES[kind] ?? Tags.STYLES[Tags.SEERR_STYLE[kind]];
+  return s ? `${s.start}|${s.end}` : null;
+};
+const hueOf = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (!d) return 0;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+};
+
+test('Tags verschiedener Formate sehen verschieden aus; gleichwertige HDR-Formate teilen ihre Farben', () => {
+  const kinds = Object.keys(Tags.GROUP).filter((k) => k !== 'neutral' && k !== 'hdr' && Tags.GROUP[k] !== 'status');
+  assert.equal(new Set(kinds.map(styleKey)).size, kinds.length, kinds.join(', '));
+  assert.equal(styleKey('hdr'), styleKey('hdr10'), 'beide Bernstein -> Goldorange');
+});
+
+test('Seerr-Zustaende nutzen nur vorhandene Farbpaare und sind hervorgehoben wie die uebrigen Tags', () => {
+  const formats = new Set(Object.keys(Tags.GROUP).filter((k) => Tags.GROUP[k] !== 'status').map(styleKey).filter(Boolean));
+  const status = Object.keys(Tags.GROUP).filter((k) => Tags.GROUP[k] === 'status');
+  assert.equal(status.length, 7);
+  for (const k of status) {
+    assert.ok(formats.has(styleKey(k)), k);
+    assert.ok(Tags.paint(k), `${k} wird gezeichnet`);
+  }
+  const SeerrState = require('../src/shared/seerr-state');
+  for (const s of SeerrState.STATES) assert.equal(Tags.seerr(s).highlighted, true, s);
+  assert.equal(styleKey('seerrAvailable'), styleKey('directPlay'), 'gruen: da');
+  assert.equal(styleKey('seerrRequested'), styleKey('directStream'), 'blau: angefragt');
+  assert.equal(styleKey('seerrProcessing'), styleKey('transcode'), 'orange: in Arbeit');
+  assert.equal(Tags.seerrAvailability(5).text, 'Verfügbar');
+  assert.equal(Tags.seerrAvailability(1), null);
+  const page = Tags.emphasis('seerrAvailable', 'page');
+  assert.deepEqual(page, Tags.emphasis('dolbyVision', 'page'), 'auf der Seite voll (nicht so ruhig wie die Wiedergabe-Tags)');
+});
+
+test('Wiedergabe bleibt eindeutig: Direct Play gruen, Direct Stream blau, Transcoding orange', () => {
+  for (const [kind, lo, hi] of [['directPlay', 140, 175], ['directStream', 205, 235], ['transcode', 15, 45]]) {
+    for (const c of [Tags.STYLES[kind].start, Tags.STYLES[kind].end]) {
+      const h = hueOf(c);
+      assert.ok(h >= lo && h <= hi, `${kind} ${c}: Farbton ${h.toFixed(0)}`);
+    }
+  }
+});

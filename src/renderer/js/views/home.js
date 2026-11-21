@@ -3,7 +3,7 @@ import { t } from '../i18n.js';
 import { api, backdropOf, landscapeOf, logoOf, itemHref, mapImage } from '../api.js';
 import { state, updateSettings, SUPPORTED_COLLECTIONS } from '../state.js';
 import { lazyImage, row, skeletonRow, titleOf, toast } from '../ui.js';
-import { cardTags } from '../tags.js';
+import { cardTags, seerrTitleTag } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
 import { refreshGlow } from '../glow.js';
@@ -14,6 +14,7 @@ import { openRequestDetail } from './request-detail.js';
 
 const Media = window.JCMedia;
 const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js)
+const Format = window.JCFormat; // Schreibweisen der Angabenzeilen (src/shared/format.js)
 const HomeRows = window.JCHomeRows; // Anpassung der Startseite (src/shared/home-rows.js); Folien im Banner und Trend-Folien kommen aus den Einstellungen
 const HERO_MS = 9000; // so lange bleibt eine Folie ohne Trailer stehen
 const HERO_AFTER_TRAILER_MS = 1200; // nach dem Ende eines Trailers noch kurz das Bild, dann geht es weiter
@@ -80,11 +81,11 @@ async function trendEntries(count) {
 
 function metaLine(item) {
   const bits = [];
-  if (item.Type === 'Episode') bits.push(`${item.ParentIndexNumber != null ? `S${item.ParentIndexNumber}:` : ''}E${item.IndexNumber ?? '?'} · ${item.Name}`);
+  if (item.Type === 'Episode') bits.push(Format.episodeLabel(item));
   else if (item.ProductionYear) bits.push(String(item.ProductionYear));
   if (item.OfficialRating) bits.push(h('span', { class: 'rating-box' }, item.OfficialRating));
   if (item.RunTimeTicks) bits.push(fmtDuration(ticksToSec(item.RunTimeTicks)));
-  if (item.CommunityRating) bits.push(h('span', { class: 'score' }, icon('star', 14), item.CommunityRating.toFixed(1)));
+  if (Format.score(item.CommunityRating)) bits.push(h('span', { class: 'score' }, icon('star', 14), Format.score(item.CommunityRating)));
   return bits;
 }
 
@@ -148,8 +149,8 @@ function seerrSlide(entry, first) {
   slide.append(lazyImage({ url: mapImage(`jellycloud://tmdb/w1280${r.backdropPath}`), hash: null }, { cls: 'hero-bg', eager: first }), h('div', { class: 'hero-shade' }));
 
   const content = h('div', { class: 'hero-content' }, h('span', { class: 'hero-label' }, t('home.trendLabel')), h('h1', { class: 'hero-title' }, r.title));
-  const standTag = h('span', { class: 'rating-box' }); // Stand bei Seerr (Angefragt, Verfuegbar ...), nur wenn schon etwas angefragt ist
-  const bits = [r.year ? String(r.year) : null, h('span', { class: 'score' }, icon('star', 14), r.rating.toFixed(1)), t('seerr.movie'), standTag].filter(Boolean);
+  const standTag = h('span', { class: 'hero-stand' }); // Stand bei Seerr als Tag (Angefragt, Verfuegbar ...), nur wenn schon etwas angefragt ist
+  const bits = [r.year ? String(r.year) : null, Format.score(r.rating) ? h('span', { class: 'score' }, icon('star', 14), Format.score(r.rating)) : null, t('seerr.movie'), standTag].filter(Boolean);
   content.append(h('div', { class: 'hero-meta' }, bits.map((b) => (typeof b === 'string' ? h('span', null, b) : b))));
   if (r.overview) content.append(h('p', { class: 'hero-overview' }, r.overview));
 
@@ -158,8 +159,9 @@ function seerrSlide(entry, first) {
   const paint = () => {
     const open = SeerrState.isRequestable(r.status); // ohne Stand oder geloescht: anfragen moeglich; gesperrt nie
     ask.hidden = !open;
-    standTag.hidden = open || !SeerrState.isTaken(r.status);
-    standTag.textContent = standTag.hidden ? '' : t(`seerr.status.${r.status}`);
+    const tag = seerrTitleTag(r.status);
+    standTag.replaceChildren(...(tag ? [tag] : []));
+    standTag.hidden = !tag;
   };
   paint();
   const askFromDetails = async () => {
@@ -447,23 +449,21 @@ export function homeView() {
     }
     refreshGlow(); // Ambient Glow: das Banner steht jetzt (Reichweite von unten, oberer Schein erst ohne Banner)
 
-    // Reihen: Standardreihenfolge ist Weiterschauen (ganz oben), Neuzugaenge je Bibliothek, Als Naechstes, Favoriten, Filme im Trend (wie HomeRows.defaultOrder); der Nutzer kann sie umordnen und ausblenden
-    // (Einstellungen > Startseite). "Filme im Trend" kommt als Platzhalter an seinen Platz und fuellt sich, sobald Seerr geantwortet hat.
+    // Reihen in der Standardreihenfolge aus HomeRows.defaultOrder (Weiterschauen, Als Naechstes, Neuzugaenge je Bibliothek, Favoriten, Filme im Trend);
+    // der Nutzer kann sie umordnen und ausblenden (Einstellungen > Startseite). "Filme im Trend" kommt als Platzhalter an seinen Platz und fuellt sich,
+    // sobald Seerr geantwortet hat.
     const builders = new Map();
-    const present = [];
-    const offer = (id, build) => {
-      present.push(id);
-      builders.set(id, build);
-    };
+    const offer = (id, build) => builders.set(id, build);
     if (resume.length) offer('continue', () => row(t('home.continue'), resume, { variant: 'landscape', onPlay }));
     for (const { view, items } of latestPerLib) {
       if (items.length) offer(`latest:${view.Id}`, () => row(t('home.latestIn', { name: view.Name }), items, { href: `#/library/${view.Id}`, onPlay: onPlaySeries }));
     }
     if (nextUp.length) offer('nextUp', () => row(t('home.nextUp'), nextUp, { variant: 'landscape', onPlay }));
     if (favorites.length) offer('favorites', () => row(t('home.favorites'), favorites, { onPlay: onPlaySeries }));
-    const contentRows = present.length;
+    const contentRows = builders.size;
     let trendSlot = null;
     offer('trending', () => (trendSlot = h('div', { class: 'trend-slot', hidden: true })));
+    const present = HomeRows.defaultOrder(latestPerLib.map((l) => l.view.Id)).filter((id) => builders.has(id));
     const hidden = state.settings.appearance.homeTrending === false ? [...cfg.hidden, 'trending'] : cfg.hidden; // "Filme im Trend" schaltet die Einstellung aus Erscheinungsbild/Startseite
     const shown = HomeRows.arrangeRows(present, cfg.order, hidden);
     for (const id of shown) rows.append(builders.get(id)());

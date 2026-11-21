@@ -51,11 +51,8 @@ function progressOf(item) {
   return 0;
 }
 
-function episodeLabel(item) {
-  if (item.Type !== 'Episode') return '';
-  const s = item.ParentIndexNumber != null ? `S${item.ParentIndexNumber}:` : '';
-  return `${s}E${item.IndexNumber ?? '?'}`;
-}
+/** "S1 · E3" einer Folge (src/shared/format.js), sonst leer. */
+const episodeLabel = (item) => (item.Type === 'Episode' ? window.JCFormat.episodeNumbers(item) : '');
 
 export function titleOf(item) {
   return item.Type === 'Episode' ? item.SeriesName ?? item.Name : item.Name;

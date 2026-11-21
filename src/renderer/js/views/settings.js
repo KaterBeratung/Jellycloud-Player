@@ -267,7 +267,8 @@ export function settingsView({ section }) {
       if (id.startsWith('latest:')) return t('home.latestIn', { name: state.views.find((v) => v.Id === id.slice(7))?.Name ?? '…' });
       return { continue: t('home.continue'), nextUp: t('home.nextUp'), favorites: t('home.favorites'), trending: t('home.trending') }[id] ?? id;
     };
-    const presentIds = () => HomeRows.defaultOrder(libs().map((v) => v.Id));
+    // Die Top-10-Reihen kennt diese Fassung noch nicht (sie kommen mit den Ranglisten von Seerr): ohne sie keine Schalter, die nichts bewirken
+    const presentIds = () => HomeRows.defaultOrder(libs().map((v) => v.Id)).filter((id) => !HomeRows.RANKING_ROWS.includes(id));
     const arranged = () => HomeRows.arrangeAll(presentIds(), cfg().order);
     // "Filme im Trend" nutzt den bestehenden Schalter (appearance.homeTrending), alle anderen Reihen die Liste "hidden"
     const isOff = (id) => (id === 'trending' ? app().homeTrending === false : cfg().hidden.includes(id));

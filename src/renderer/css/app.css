@@ -1037,9 +1037,8 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .rq-fact .k { flex: none; width: 110px; color: var(--muted); font-weight: 650; }
 .rq-fact .v { font-weight: 650; }
 .rq-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.rq-status { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 999px; font: 700 14px var(--font); background: var(--glass2); border: 1px solid var(--line2); }
-.rq-status.s2, .rq-status.s3 { background: rgb(var(--accent-rgb) / 0.32); border-color: rgb(var(--accent-rgb) / 0.55); }
-.rq-status.s4, .rq-status.s5 { background: rgb(53 208 127 / 0.28); border-color: rgb(53 208 127 / 0.55); }
+/* Stand bei Seerr im Detailfenster: ein Tag (Bezeichnung und Farbe aus seerr-state.js und media-tags.js), auf Hoehe der Knoepfe */
+.rq-status { display: inline-flex; align-items: center; min-height: 44px; }
 .rq-note { max-width: 62ch; font-size: 13.5px; color: var(--muted); }
 .rq-note[hidden], .rq-cast[hidden], .rq-original[hidden], .rq-tagline[hidden] { display: none; }
 .rq-cast { position: relative; padding: 0 clamp(20px, 3vw, 36px) 30px; }
@@ -1053,10 +1052,11 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 @keyframes rq-fade { from { opacity: 0; } }
 @keyframes rq-pop { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
 @media (max-width: 720px) { .rq-body { flex-direction: column; padding-top: 110px; } .rq-poster { width: 130px; } }
-.req-status { position: absolute; left: 10px; top: 10px; z-index: 2; padding: 4px 10px; border-radius: 999px; font: 700 11px var(--font); letter-spacing: 0.02em; color: #fff; background: rgb(18 20 32 / 0.72); border: 1px solid rgb(255 255 255 / 0.28); }
+/* Stand bei Seerr auf dem Plakat: ein Tag oben links (wie die Tags der Bibliothek ein festes Farbpaar je Stand, keine eigene Palette) */
+.req-status { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; pointer-events: none; }
 .req-status[hidden] { display: none; }
-.req-status.s2, .req-status.s3 { background: rgb(var(--accent-rgb) / 0.6); }
-.req-status.s4, .req-status.s5 { background: rgb(53 208 127 / 0.55); }
+.hero-stand { display: inline-flex; align-items: center; }
+.hero-stand[hidden] { display: none; }
 .req-actions { margin-top: 8px; }
 .req-actions[hidden] { display: none; }
 .req-actions .btn { width: 100%; justify-content: center; }

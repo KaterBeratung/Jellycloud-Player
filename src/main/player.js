@@ -1,6 +1,7 @@
 'use strict';
 
 const { BaseWindow, BrowserWindow, ipcMain, powerSaveBlocker } = require('electron');
+const Format = require('../shared/format');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const { MpvPlayer } = require('./mpv');
@@ -487,7 +488,7 @@ class PlayerController extends EventEmitter {
     const isEpisode = item.Type === 'Episode';
     const title = isEpisode ? item.SeriesName ?? item.Name : item.Name;
     const subtitle = isEpisode
-      ? `${item.ParentIndexNumber != null ? `S${item.ParentIndexNumber}:` : ''}E${item.IndexNumber ?? '?'} · ${item.Name}`
+      ? Format.episodeLabel(item) // "S2 · E5 · Titel" (src/shared/format.js, wie Oberflaeche und Apple-App)
       : [item.ProductionYear, item.OfficialRating].filter(Boolean).join(' · ');
 
     this.cur = {
@@ -549,7 +550,7 @@ class PlayerController extends EventEmitter {
         if (this.cur?.item.Id !== itemId) return;
         this.cur.next = next;
         this.cur.episodeIds = new Set(list.map((e) => e.id));
-        this._push({ next: next ? { id: next.Id, title: next.Name, label: `E${next.IndexNumber ?? '?'}` } : null, episodes: list });
+        this._push({ next: next ? { id: next.Id, title: next.Name, label: Format.episodeNumbers(next) } : null, episodes: list });
       });
     }
 

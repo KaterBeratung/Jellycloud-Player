@@ -7,6 +7,8 @@
 // je Farbe, Groesse und Staerke, einmal mit einem Canvas gerechnet (zwei weiche Schatten der Kapsel, innen ausgespart, die zwei Farben quer
 // darueber) und als border-image auf jede Breite gedehnt: keine Unschaerfe zur Laufzeit, keine Bewegung, gehoert nicht zum Layout.
 
+import { getLocale } from './i18n.js';
+
 const Tags = window.JCMediaTags;
 const glowCache = new Map();
 
@@ -118,6 +120,15 @@ function fitRow(row) {
     for (let i = kids.length - 1; i > 0 && row.scrollWidth > row.clientWidth + 0.5; i--) kids[i].hidden = true;
   };
   new ResizeObserver(apply).observe(row);
+}
+
+/**
+ * Stand eines Titels bei Seerr als Tag (Plakate der Suche und der Trends, Banner, Detailfenster): Bezeichnung und Farbe allein aus
+ * src/shared/seerr-state.js. request: Stand seiner neuesten Anfrage, falls bekannt. null, wenn es keinen Stand zu zeigen gibt.
+ */
+export function seerrTitleTag(mediaStatus, { request = null, size = 'compact', surface = 'image', short = false } = {}) {
+  const tag = Tags.seerrAvailability(mediaStatus, request, getLocale());
+  return tag ? mediaTag(tag, { size, surface, short }) : null;
 }
 
 /** Karten-Tags eines Eintrags (4K, HDR, Premium-Ton, HD; hoechstens max). */

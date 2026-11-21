@@ -1,8 +1,11 @@
 import { h, icon } from '../dom.js';
-import { t } from '../i18n.js';
+import { t, getLocale } from '../i18n.js';
 import { initialsOf, lazyImage } from '../ui.js';
 import { navigate } from '../router.js';
 import { mapImage } from '../api.js';
+import { seerrTitleTag } from '../tags.js';
+
+const Format = window.JCFormat; // Schreibweisen der Angabenzeilen (src/shared/format.js)
 
 const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js): 6 gesperrt, 7 geloescht
 
@@ -62,17 +65,19 @@ export function openRequestDetail({ item, request, onStatus = null, returnTo = n
 
   function paintMeta() {
     const parts = [details?.year ?? item.year, typeLabel()].filter(Boolean).map(String);
-    if (details?.runtime) parts.push(t('seerr.detail.min', { n: details.runtime }));
-    if (details?.seasons) parts.push(details.seasons === 1 ? t('seerr.detail.season1') : t('seerr.detail.seasons', { n: details.seasons }));
+    const runtime = Format.runtime((details?.runtime ?? 0) * 60, getLocale()); // Seerr nennt Minuten
+    if (runtime) parts.push(runtime);
+    if (details?.seasons) parts.push(Format.seasonCount(details.seasons, getLocale()));
     if (details?.episodes) parts.push(t('seerr.detail.episodes', { n: details.episodes }));
     meta.replaceChildren(...parts.map((p, i) => h('span', null, i ? ` · ${p}` : p)));
-    if (details?.rating) meta.append(h('span', { class: 'rq-rating', title: t('seerr.detail.rating') }, `★ ${details.rating.toFixed(1)}`));
+    if (Format.rating(details?.rating)) meta.append(h('span', { class: 'rq-rating', title: t('seerr.detail.rating') }, Format.rating(details.rating)));
   }
 
   function paintActions() {
     // Anfragbar nur ohne Stand oder geloescht (src/shared/seerr-state.js); gesperrte Titel zeigen weder Knopf noch Stand
     if (!SeerrState.isRequestable(item.status)) {
-      actions.replaceChildren(...(SeerrState.isTaken(item.status) ? [h('span', { class: `rq-status s${item.status}` }, t(`seerr.status.${item.status}`))] : []));
+      const tag = seerrTitleTag(item.status, { size: 'regular', surface: 'page' });
+      actions.replaceChildren(...(tag ? [h('span', { class: 'rq-status' }, tag)] : []));
       return;
     }
     const btn = h('button', { class: 'btn primary lg', type: 'button' }, icon('plus', 18), h('span', null, t('seerr.request')));

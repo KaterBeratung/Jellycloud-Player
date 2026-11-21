@@ -1,9 +1,11 @@
 /* Gemeinsames Modul: Anpassung der Startseite (Banner und Reihen).
    Laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCHomeRows) in der Oberflaeche.
 
-   Reihen haben Kennungen: "latest:<Bibliotheks-Id>" (Neu in ...), "continue" (Weiterschauen), "nextUp" (Als Naechstes), "favorites", "trending" (Filme im Trend, Seerr).
-   Gespeichert werden nur die Wuensche des Nutzers: "order" (Reihenfolge) und "hidden" (ausgeblendet). Was dort nicht steht (neue Bibliothek, neue Reihe),
-   kommt in der Standardreihenfolge dahinter und ist sichtbar. Unbekannte Eintraege in den Listen schaden nicht (eine geloeschte Bibliothek bleibt einfach ohne Wirkung). */
+   Reihen haben Kennungen: "latest:<Bibliotheks-Id>" (Neu in ...), "continue" (Weiterschauen), "nextUp" (Als Naechstes), "top10Movies", "top10Series"
+   (Top 10, Seerr), "favorites", "trending" (Filme im Trend, Seerr). Gespeichert werden nur die Wuensche des Nutzers: "order" (Reihenfolge) und "hidden"
+   (ausgeblendet), seit Konfigurationsversion 10 je Profil (config-core.js). Was dort nicht steht (neue Bibliothek, neue Reihe), steht hinter der Reihe,
+   hinter der es in der Standardreihenfolge stuende, und ist sichtbar. Unbekannte Eintraege in den Listen schaden nicht (eine geloeschte Bibliothek bleibt
+   einfach ohne Wirkung). Vorlage: Jellycloud/Core/HomeRows.swift der Apple-App. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.JCHomeRows = factory();
@@ -22,9 +24,18 @@
     hidden: [] // ausgeblendete Reihen (Kennungen)
   };
 
-  const STATIC_ROWS = ['continue', 'nextUp', 'favorites', 'trending'];
-  /** Reihen, die in der Standardreihenfolge GANZ OBEN stehen (vor den Neuzugaengen): wer etwas angefangen hat, will zuerst dort weitermachen. */
-  const TOP_ROWS = ['continue'];
+  /** Top 10 Filme und Top 10 Serien (Seerr). */
+  const TOP_MOVIES = 'top10Movies';
+  const TOP_SERIES = 'top10Series';
+  const RANKING_ROWS = [TOP_MOVIES, TOP_SERIES];
+  const STATIC_ROWS = ['continue', 'nextUp', TOP_MOVIES, TOP_SERIES, 'favorites', 'trending'];
+  /** Stehen in der Standardreihenfolge ganz oben: wer etwas angefangen hat, will zuerst dort weitermachen, und die naechste Folge gehoert direkt darunter. */
+  const TOP_ROWS = ['continue', 'nextUp'];
+  /**
+   * Reihen, die es nur mit Seerr gibt (Trend, Top 10): ohne Seerr bleiben sie von der Startseite fort; ihr gemerkter Platz und ob sie
+   * ausgeblendet sind, bleiben.
+   */
+  const SEERR_ROWS = ['trending', ...RANKING_ROWS];
 
   function clampInt(v, min, max, fallback) {
     const n = Math.round(Number(v));
@@ -54,20 +65,38 @@
     };
   }
 
-  /** Standardreihenfolge der vorhandenen Reihen: Weiterschauen ganz oben, dann die Neuzugaenge je Bibliothek (in Bibliotheksreihenfolge), dann die uebrigen festen Reihen. */
+  /**
+   * Standardreihenfolge: Weiterschauen und Als Naechstes ganz oben, dann die Top 10, dann die Neuzugaenge je Bibliothek (in
+   * Bibliotheksreihenfolge), dann die uebrigen festen Reihen (Favoriten, Filme im Trend).
+   */
   function defaultOrder(libraryIds) {
-    return [...TOP_ROWS, ...libraryIds.map((id) => `latest:${id}`), ...STATIC_ROWS.filter((id) => !TOP_ROWS.includes(id))];
+    const first = [...TOP_ROWS, ...RANKING_ROWS];
+    return [...first, ...(libraryIds || []).map((id) => `latest:${id}`), ...STATIC_ROWS.filter((id) => !first.includes(id))];
   }
 
   /**
-   * Alle vorhandenen Reihen in der Reihenfolge des Nutzers (auch die ausgeblendeten): zuerst seine Reihenfolge (nur was es gibt), dann der Rest wie vorgegeben.
+   * Alle vorhandenen Reihen in der Reihenfolge des Nutzers (auch die ausgeblendeten): seine Reihenfolge (nur was es gibt); eine Reihe, die
+   * darin noch nicht vorkommt (neue Bibliothek, neue Reihe wie die Top 10), steht hinter der Reihe, hinter der sie in der
+   * Standardreihenfolge stuende, ohne eine solche ganz vorn. Bis 1.2.4 kam sie ans Ende: wer seine Reihen einmal geordnet hatte, haette eine
+   * neue Bibliothek unter allem anderen gefunden.
    * @param {string[]} present vorhandene Kennungen in Standardreihenfolge
    */
   function arrangeAll(present, order) {
     const have = new Set(present);
     const out = [];
     for (const id of cleanList(order)) if (have.has(id) && !out.includes(id)) out.push(id);
-    for (const id of present) if (!out.includes(id)) out.push(id);
+    present.forEach((id, index) => {
+      if (out.includes(id)) return;
+      // die naechste Reihe davor (in der Standardreihenfolge), die schon einen Platz hat
+      let anchor = null;
+      for (let i = index - 1; i >= 0; i--) {
+        if (out.includes(present[i])) {
+          anchor = present[i];
+          break;
+        }
+      }
+      out.splice(anchor === null ? 0 : out.indexOf(anchor) + 1, 0, id);
+    });
     return out;
   }
 
@@ -88,5 +117,5 @@
     return out;
   }
 
-  return { LIMITS, DEFAULTS, STATIC_ROWS, TOP_ROWS, homeConfig, defaultOrder, arrangeAll, arrangeRows, moveRow };
+  return { LIMITS, DEFAULTS, STATIC_ROWS, TOP_ROWS, TOP_MOVIES, TOP_SERIES, RANKING_ROWS, SEERR_ROWS, homeConfig, defaultOrder, arrangeAll, arrangeRows, moveRow };
 });

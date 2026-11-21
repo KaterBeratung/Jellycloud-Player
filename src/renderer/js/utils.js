@@ -1,4 +1,4 @@
-import { t, getLocale } from './i18n.js';
+import { getLocale } from './i18n.js';
 
 export const TICKS = 10_000_000;
 export const ticksToSec = (ticks) => (ticks || 0) / TICKS;
@@ -15,25 +15,14 @@ export function debounce(fn, ms) {
   return wrapped;
 }
 
-/** 6720 s -> "1 Std. 52 Min." */
-export function fmtDuration(sec) {
-  const total = Math.max(0, Math.round(sec / 60));
-  const hh = Math.floor(total / 60);
-  const mm = total % 60;
-  if (hh && mm) return `${hh} ${t('unit.h')} ${mm} ${t('unit.min')}`;
-  if (hh) return `${hh} ${t('unit.h')}`;
-  return `${mm} ${t('unit.min')}`;
-}
+// Laufzeit und Uhrzeit schreibt allein src/shared/format.js (window.JCFormat), wie in der Apple-App eine Stelle fuer alle Ansichten
+const Format = window.JCFormat;
+
+/** 6720 s -> "1 Std. 52 Min.", 2700 s -> "45 Min." (leer ohne Laufzeit) */
+export const fmtDuration = (sec) => Format.runtime(sec, getLocale()) ?? '';
 
 /** 3725 s -> "1:02:05", 95 s -> "1:35" */
-export function fmtClock(sec) {
-  sec = Math.max(0, Math.floor(sec || 0));
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const ss = String(s).padStart(2, '0');
-  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
+export const fmtClock = (sec) => Format.clock(sec);
 
 export function clockTime(date) {
   return new Intl.DateTimeFormat(getLocale(), { hour: '2-digit', minute: '2-digit' }).format(date);

@@ -47,17 +47,10 @@ const de = {
   'seerr.alreadyRequested': 'Wurde schon angefragt',
   'seerr.authExpired': 'Seerr-Anmeldung abgelaufen. Bitte in den Einstellungen neu verbinden.',
   'seerr.error': 'Seerr: {msg}',
-  'seerr.status.2': 'Angefragt',
-  'seerr.status.3': 'Wird bearbeitet',
-  'seerr.status.4': 'Teilweise verfügbar',
-  'seerr.status.5': 'Verfügbar',
   'seerr.movie': 'Film',
   'seerr.tv': 'Serie',
   'seerr.detail.close': 'Schließen',
   'seerr.detail.open': 'Details zu „{title}“ anzeigen',
-  'seerr.detail.min': '{n} Min.',
-  'seerr.detail.season1': '1 Staffel',
-  'seerr.detail.seasons': '{n} Staffeln',
   'seerr.detail.episodes': '{n} Folgen',
   'seerr.detail.createdBy': 'Erstellt von',
   'seerr.detail.original': 'Originaltitel',
@@ -710,8 +703,6 @@ const de = {
   'set.wheelDesc': 'Was das Mausrad über dem Video macht.',
   'set.wheelSeek': 'Spulen',
   'set.wheelVolume': 'Lautstärke',
-  'unit.h': 'Std.',
-  'unit.min': 'Min.'
 };
 
 const en = {
@@ -763,17 +754,10 @@ const en = {
   'seerr.alreadyRequested': 'Already requested',
   'seerr.authExpired': 'Seerr sign-in expired. Please reconnect in the settings.',
   'seerr.error': 'Seerr: {msg}',
-  'seerr.status.2': 'Requested',
-  'seerr.status.3': 'Processing',
-  'seerr.status.4': 'Partly available',
-  'seerr.status.5': 'Available',
   'seerr.movie': 'Movie',
   'seerr.tv': 'Show',
   'seerr.detail.close': 'Close',
   'seerr.detail.open': 'Show details for "{title}"',
-  'seerr.detail.min': '{n} min',
-  'seerr.detail.season1': '1 season',
-  'seerr.detail.seasons': '{n} seasons',
   'seerr.detail.episodes': '{n} episodes',
   'seerr.detail.createdBy': 'Created by',
   'seerr.detail.original': 'Original title',
@@ -1426,8 +1410,6 @@ const en = {
   'set.wheelDesc': 'What the mouse wheel does over the video.',
   'set.wheelSeek': 'Seek',
   'set.wheelVolume': 'Volume',
-  'unit.h': 'h',
-  'unit.min': 'min'
 };
 
 const dictionaries = { de, en };
