@@ -63,7 +63,7 @@ const TILT_MAX = 7; // Grad
  * Fokuseffekt wie bei tvOS: Die Karte neigt sich zum Mauszeiger und bekommt einen Glanzpunkt (CSS-Variablen --rx/--ry/--gx/--gy).
  * Nur mit der Maus und nur, wenn Animationen nicht ausgeschaltet sind. Gibt eine Funktion zurueck, die die Neigung zuruecksetzt.
  */
-function attachTilt(card, thumb) {
+export function attachTilt(card, thumb) {
   let frame = 0;
   const reset = () => {
     cancelAnimationFrame(frame);

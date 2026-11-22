@@ -81,8 +81,8 @@ Bibliotheken einhalten.
   - *Filme* und *Serien* zeigen **alle Bibliotheken ihrer Art** mit einer Wahl neben dem Titel (nur bei mehr als einer; gemerkt je Reiter): Filme mit Bibliotheken
     ohne Art und gemischten, dahinter Heim- und Musikvideos (bleiben unter Windows und Android erreichbar, Entscheidung E6) und zuletzt die **Kollektionen**; Serien mit
     gemischten. Eine von der Startseite geöffnete Mediathek („Neu in …“) zeigt weiter genau diese, mit dem Ambient Glow der Mediatheken.
-  - *Anfragen* zeigt ohne Seerr „Seerr nicht verbunden“ mit *Seerr verbinden*, sonst den Stand von Seerr (seit 1.2.9, siehe *Anfragen mit Seerr*); die
-    Übersicht der Anfragen folgt mit Paket P11.
+  - *Anfragen* zeigt ohne Seerr „Seerr nicht verbunden“ mit *Seerr verbinden*, sonst die Übersicht der Anfragen (seit 1.2.10) bzw. den Stand von Seerr
+    (siehe *Anfragen mit Seerr*).
   - **Profilmenü** am Profilsymbol: Profile (Haken beim aktiven, darunter „Aktiv · Adresse“; ein Tipp auf ein anderes wechselt), *Quick Connect*,
     *Server oder Profil hinzufügen*, *Einstellungen*, zuletzt *Abmelden* in Rot mit Rückfrage. Haken und Symbole stehen in einer Spalte.
   - Szenario `nav-shell.js`; die kompakten Größen 412 × 891, 360 × 740 und 800 × 411 prüft `web-mode.js`.
@@ -293,6 +293,27 @@ eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern 
   und Anfragen ohne. Alle Anfragen an Seerr ohne Cookie-Speicher und ohne Zwischenspeicher der Antworten (`cache: no-store`), Frist 20 s.
 - Tests: `test/seerr-profile.test.js` (Fälle aus `SeerrProfileTests` und die plattformunabhängigen Fälle 1, 2, 9 bis 11), Szenario `seerr-states.js` (Port 8993).
   Nur gegen den Mock-Seerr geprüft, nicht gegen einen echten Seerr-Server.
+
+**Reiter *Anfragen* (seit 1.2.10, Plan P11, wie `RequestsView` der Apple-App):**
+- **Plakatraster** wie Filme und Serien, der Stand als Tag oben links (Bezeichnung und Farbe aus `seerr-state.js`), darunter Titel und eine kurze Angabe
+  (Jahr, bei Serien die angefragten Staffeln, sonst *Film*/*Serie*, 4K, im Verwalten „von Name“). Titel, Jahr und Bild holt der Reiter je Plakat nach
+  (`seerrMedia`, höchstens sechs zugleich, gemerkt je Profil und Seerr-Sitzung).
+- **Meine Anfragen** und, nur mit dem Recht alle zu sehen (*Anfragen verwalten* oder *Anfragen ansehen*), **Verwalten** (Wahl neben der Überschrift);
+  wird das Recht entzogen, schließt *Verwalten*. Anzeige **Offen / Abgeschlossen** („offen“ = ausstehend, gescheitert, genehmigt und noch nicht da).
+- **Aktionen** nur nach den Rechten aus `/auth/me` (`actionsFor` in `src/shared/seerr-requests.js`): ohne *verwalten* nur *Anfrage zurückziehen* für eigene
+  wartende; mit *verwalten* *Genehmigen*, *Ablehnen* (wartende), *Erneut versuchen* (gescheiterte) und abgesetzt *Anfrage entfernen* (jede). Erreichbar über den
+  runden Knopf oben rechts auf dem Plakat (am Desktop beim Zeigen, auf dem Handy immer), das Kontextmenü (Rechtsklick, langes Drücken, Kontextmenü-Taste).
+  Zurückziehen, Ablehnen und Entfernen fragen nach (Entfernen: „Der Titel und seine Dateien bleiben unberührt“); eine Aktion je Anfrage zur Zeit, das Plakat
+  ist währenddessen gesperrt. Lehnt Seerr eine Aktion ab (auch mit 401), steht „Das ist mit deinem Seerr-Konto nicht möglich …“ da, und die App sieht still
+  nach, ob die Anmeldung noch gilt; danach lädt die Liste neu, Startseite und Suche verwerfen ihren gemerkten Stand.
+- **Antippen** öffnet den Titel: liegt er in der Mediathek (über die TMDB-Nummer), die Detailseite, sonst das Seerr-Fenster.
+- **Blättern zu je 50** (`createPaging`): die nächste Seite, wenn das Ende in Sicht kommt, und von selbst, solange die gewählte Anzeige den Bildschirm nicht
+  füllt (24 Plakate); doppelt Geliefertes zählt einmal, eine leere oder nichts Neues bringende Seite beendet das Blättern. Neuladen (F5, Knopf, nach einer
+  Aktion) holt in einem Abruf so viel, wie geladen war; Ansicht und Anzeige bleiben gemerkt.
+- Tests: `test/seerr-requests.test.js` (die sechs Fälle aus `SeerrRequestPagingTests`, Lesen einer Anfrage, Fälle 3 und 4 aus `seerr-integration.md` gegen den
+  Test-Seerr), Szenario `requests-tab.js` (Port 8991). Nur gegen den Mock-Seerr geprüft; die Kompaktansicht mit Anfragen ließ sich nicht automatisch prüfen
+  (das Desktop-Programm wird nie kompakt, im Browser-Test liest Seerr kein Cookie), geprüft ist nur die Regel für den Aktionsknopf.
+
 
 **Details beim Anklicken:** Ein Klick auf eine Anfrage-Karte (Poster oder Beschriftung, per Tastatur Enter oder Leertaste auf dem Poster) öffnet ein Detailfenster (`src/renderer/js/views/request-detail.js`): sofort mit
 dem, was die Suche schon kennt (Titel, Poster, Beschreibung), dann nachgeladen aus Seerr (`/movie/{id}` bzw. `/tv/{id}`): Hintergrundbild, Jahr, Laufzeit, Bewertung, Genres, Tagline, Regie bzw. *Erstellt von*, Erscheinungsdatum,
@@ -660,10 +681,11 @@ Dazu gibt es dieselben HTTP-Schalter wie beim Testserver der Apple-App (`Tools/m
 | `/__debug/session?device=&item=&at=<s>&user=other&control=0&idle=<s>&client=`, `?clear=1` | Wiedergabe auf einem anderen Gerät desselben Kontos; `GET /Sessions` nennt sie, `POST /Sessions/<Id>/Playing/Stop` merkt sich die Stelle |
 | Seerr: `/__debug/mode?set=ok\|down\|expired` | 503 bei jeder Anfrage bzw. alle bisherigen Sitzungen ungültig (erst eine neue Anmeldung gilt) |
 | Seerr: `/__debug/permissions?set=<Bits>`, `/__debug/identity?jellyfin=<Kennung>\|none` | Rechte des Benutzers (ohne Wert: `MOCK_SEERR_PERMISSIONS`, sonst 1072 = anfragen, verwalten, 4K) und die Jellyfin-Kennung, die `/auth/me` für `demo` nennt (`none`: keine; eine andere: fremde Sitzung). `demo2` (Passwort `demo`) hat eine eigene Sitzung und das Jellyfin-Konto `jf-demo2` |
-| Seerr: `/__debug/request?id=&status=`, `/__debug/requests?count=&open=`, `/__debug/season?id=&season=`, `/__debug/media?tmdb=&status=[&type=tv]` | Stand einer Anfrage, viele Anfragen (die ältesten `open` warten), eine Staffel geliefert, Stand eines Titels (5 verfügbar, 6 gesperrt, 7 gelöscht) |
+| Seerr: `/__debug/request?id=&status=`, `/__debug/requests?count=&open=&by=` (Anfragender: 1 demo, 2 demo2, 3 „ben“; Titel „Anfrage 90001“ …), `/__debug/season?id=&season=`, `/__debug/media?tmdb=&status=[&type=tv]` | Stand einer Anfrage, viele Anfragen (die ältesten `open` warten), eine Staffel geliefert, Stand eines Titels (5 verfügbar, 6 gesperrt, 7 gelöscht) |
 
-Mock-Seerr kann außerdem: `GET /request` mit `take`, `skip`, `filter`, `sort`, `requestedBy` und `pageInfo`, `POST /request/<Id>/approve|decline|retry`,
-`DELETE /request/<Id>` (verwalten = Rechte 2 oder 16, wie Seerr), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
+Mock-Seerr kann außerdem: `GET /request` mit `take`, `skip`, `filter`, `sort`, `requestedBy` und `pageInfo` (ohne das Recht, alle zu sehen, nur die eigenen
+der Sitzung, wie Seerr), `POST /request/<Id>/approve|decline|retry`, `DELETE /request/<Id>` (verwalten = Rechte 2 oder 16; ohne nur eigene wartende, sonst 401
+wie Seerr 3.5.1); Anfragen tragen den Benutzer ihrer Sitzung (demo 1, demo2 2), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
 `/person/<Id>/combined_credits`, `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
 gibt es in der Mediathek; `MOCK_SEERR_OLD=1` oder `SEERR.old` wie ein älteres Seerr gemischt), `/auth/logout`. Jellyfin: `GET /Playback/BitrateTest?Size=`
 (`MOCK_BITRATE_MBPS` bremst). Die Fälle stehen in `test/mock-server.test.js`.
@@ -702,6 +724,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
 | `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `requests-tab.js` | Reiter *Anfragen* (P11): Meine Anfragen, Offen/Abgeschlossen, Stand-Tags, nachgeladene Titel, Zurückziehen mit Rückfrage, Antippen öffnet den Titel, Kontextmenü-Taste, Verwalten mit fremden Anfragen (Genehmigen, Ablehnen, Entfernen), entzogenes Recht, Blättern hinter 120 Anfragen, Neuladen in einem Abruf, Seerr aus (eigener Port 8991) |
 | `seerr-states.js` | Seerr je Profil und vier Zustände (P10): Stand in den Einstellungen, Reiter *Anfragen* verbunden / nicht erreichbar / abgelaufen, *Erneut prüfen*, *Erneut versuchen*, *Erneut anmelden*, fremde Sitzung (abgemeldet und verworfen), zweites Profil mit anderem Jellyfin-Konto, Wechsel stellt die eigene Sitzung her, `language=de` (eigener Port 8993, zweite Adresse 8992) |
 | `seerr-issue.js` | **Problem melden** (31 Prüfungen, Mock-Seerr, Port 8897): **Warnschild** in der Knopfleiste (Lage, Größe, Beschriftung, öffnet das Fenster; fehlt ohne Seerr, ohne TMDB-Nummer und nach dem Trennen), Eintrag im Menü *Mehr* nur mit Seerr und TMDB-Nummer, vier Arten, Kommentar freiwillig, *Melden* erst nach der Wahl, Film, Serie und Folge (Staffel und Folge gehen mit), Ersatztext ohne Kommentar, Esc sendet nichts, Fehler im Fenster (403, Titel Seerr unbekannt) ohne Textverlust, gewählte Art klar markiert |
 | `compact-audit.js` | **Handy-Ansicht auf Abgeschnittenes absuchen** (Web-Fassung, 22 Seiten und Menüs in 412×891, 360×740 und 800×411): Text und Knöpfe außerhalb des Fensters oder von einem Rahmen mit `overflow: hidden` gekappt, Tab-Beschriftungen nur mit „…“, Seitenende unter der Tab-Leiste, Menüs, die herausragen, waagerechtes Scrollen; Aufnahmen bei 412 px |

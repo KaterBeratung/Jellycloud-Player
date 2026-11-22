@@ -78,7 +78,7 @@ module.exports = async (ctx) => {
   // ---------- Reiter Anfragen: verbunden ----------
   await go('#/requests', `!!document.querySelector('.requests .page-status h3')`);
   let rq = await reqStatus();
-  check('Anfragen verbunden: kein Hinweis zum Verbinden, Weg zur Suche', rq.title === 'Deine Anfragen' && rq.href === '#/search', JSON.stringify(rq));
+  check('Anfragen verbunden (noch keine): "Keine offenen Anfragen", kein Hinweis zum Verbinden', rq.title === 'Keine offenen Anfragen' && !rq.btn, JSON.stringify(rq));
 
   // ---------- Sprache ----------
   state.log.length = 0;
@@ -89,7 +89,7 @@ module.exports = async (ctx) => {
 
   // ---------- Seerr nicht erreichbar ----------
   SEERR.mode = 'down';
-  await go('#/requests', `document.querySelector('.requests .page-status')?.dataset.kind === 'failed'`);
+  await go('#/requests', `document.querySelector('.requests .page-status h3')?.textContent === 'Seerr ist nicht erreichbar'`);
   rq = await reqStatus();
   check('Seerr aus: Anfragen zeigt "Seerr ist nicht erreichbar" mit "Erneut versuchen"', rq.kind === 'failed' && rq.title === 'Seerr ist nicht erreichbar' && rq.btn === 'Erneut versuchen', JSON.stringify(rq));
   await ctx.capture(path.join(out, 'SS-02-nicht-erreichbar.png'));
@@ -102,10 +102,10 @@ module.exports = async (ctx) => {
   await clickText('.settings-panel .link-row', 'Erneut prüfen');
   check('Seerr wieder da, "Erneut pruefen": verbunden', await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'connected'`, 6000));
   SEERR.mode = 'down';
-  await go('#/requests', `document.querySelector('.requests .page-status')?.dataset.kind === 'failed'`);
+  await go('#/requests', `document.querySelector('.requests .page-status h3')?.textContent === 'Seerr ist nicht erreichbar'`);
   SEERR.mode = 'ok';
   await clickText('.requests .ps-action .btn', 'Erneut versuchen');
-  check('Anfragen: "Erneut versuchen" nach der Rueckkehr von Seerr zeigt wieder den verbundenen Stand', await waitFor(`document.querySelector('.requests .page-status h3')?.textContent === 'Deine Anfragen'`, 6000), JSON.stringify(await reqStatus()));
+  check('Anfragen: "Erneut versuchen" nach der Rueckkehr von Seerr zeigt wieder den verbundenen Stand', await waitFor(`document.querySelector('.requests .page-status h3')?.textContent === 'Keine offenen Anfragen'`, 6000), JSON.stringify(await reqStatus()));
 
   // ---------- Anmeldung abgelaufen ----------
   SEERR.sid = `mock-seerr-sid-${Date.now().toString(36)}`; // wie /__debug/mode?set=expired: alle bisherigen Sitzungen ungueltig
@@ -127,6 +127,9 @@ module.exports = async (ctx) => {
   // ---------- Fremde Sitzung ----------
   const logoutsBefore = SEERR.counters.logouts;
   SEERR.identity = 'fremdes-konto-0001';
+  // Die naechste Pruefung (hier "Erneut pruefen"; sonst Start, Profilwechsel, Rueckkehr in die App) bemerkt das andere Konto
+  await clickText('.settings-panel .link-row', 'Erneut prüfen');
+  await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'unauthorized'`, 6000);
   await go('#/requests', `document.querySelector('.requests .page-status h3')?.textContent === 'Seerr-Anmeldung abgelaufen'`);
   check('Seerr meldet ein anderes Konto: Anfragen zeigt "Erneut anmelden"', (await reqStatus()).btn === 'Erneut anmelden', JSON.stringify(await reqStatus()));
   await ctx.wait(300); // die Abmeldung bei Seerr laeuft im Hintergrund

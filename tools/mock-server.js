@@ -619,7 +619,11 @@ const withMediaInfo = (r) => {
   const st = seerrMediaStatus(r.mediaType, r.id);
   return st ? { ...r, mediaInfo: { status: st } } : { ...r };
 };
-const seerrUserName = (id) => (id === 1 ? 'Demo' : 'ben');
+const seerrUserName = (id) => ({ 1: 'Demo', 2: 'Demo Zwei' })[id] ?? 'ben';
+/** Seerr-Benutzer einer Sitzung: demo 1, demo2 2. */
+const seerrUserId = (sessionUser) => (sessionUser === 'demo2' ? 2 : 1);
+/** Rechte: Administrator (2), Anfragen verwalten (16) oder Anfragen ansehen (16384) sehen alle Anfragen; ohne nur die eigenen (wie Seerr). */
+const seesAllRequests = () => (seerrPermissions() & (2 | 16 | 16384)) !== 0;
 /** Eine Anfrage, wie Seerr sie in GET /request und als Antwort auf POST /request liefert. */
 function seerrRequestDto(r) {
   return {
@@ -707,7 +711,8 @@ function seerrDebug(p, q) {
     const n = Math.max(0, Math.min(2000, int('count') ?? 0));
     const k = Math.max(0, Math.min(n, int('open') ?? 0));
     const first = SEERR.requests.length;
-    for (let i = 0; i < n; i++) addSeerrRequest({ mediaType: 'movie', mediaId: 90001 + first + i, status: i < k ? 1 : 5 });
+    const by = int('by') ?? 1; // Anfragender: 1 demo, 2 demo2, 3 ein anderer Benutzer ("ben")
+    for (let i = 0; i < n; i++) addSeerrRequest({ mediaType: 'movie', mediaId: 90001 + first + i, status: i < k ? 1 : 5, requestedBy: by });
     return [200, { requests: SEERR.requests.length }];
   }
   if (p === '/__debug/season') {
@@ -800,7 +805,9 @@ async function handleSeerr(req, res, p, q, method) {
   }
   const dm = /^\/(movie|tv)\/(\d+)$/.exec(sub);
   if (dm && method === 'GET') {
-    const entry = SEERR.catalog.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]) ?? SEERR.trending.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]);
+    // Titel der Anfragen, die /__debug/requests anlegt (TMDB 90001 und folgende): ein erfundener Eintrag mit Namen und Jahr
+    const made = Number(dm[2]) >= 90001 && Number(dm[2]) <= 99999 ? { id: Number(dm[2]), mediaType: dm[1], [dm[1] === 'movie' ? 'title' : 'name']: `Anfrage ${dm[2]}`, [dm[1] === 'movie' ? 'releaseDate' : 'firstAirDate']: '2025-05-01', overview: 'Ein Titel aus den gestellten Anfragen.' } : null;
+    const entry = SEERR.catalog.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]) ?? SEERR.trending.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]) ?? made;
     if (!entry) return json(404, { message: 'Not found' });
     if (entry.id === 9999) return json(500, { message: 'Mock: Details nicht verfuegbar' });
     const key = `${entry.mediaType}:${entry.id}`;
@@ -831,7 +838,7 @@ async function handleSeerr(req, res, p, q, method) {
     const kindQuota = SEERR.quota[b.mediaType];
     if (kindQuota.limit && kindQuota.used >= kindQuota.limit) return json(403, { message: 'Quota exceeded' });
     if (kindQuota.limit) kindQuota.used++;
-    const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons: b.mediaType === 'tv' ? (Array.isArray(b.seasons) ? b.seasons : b.seasons === 'all' ? 'all' : null) : null });
+    const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons: b.mediaType === 'tv' ? (Array.isArray(b.seasons) ? b.seasons : b.seasons === 'all' ? 'all' : null) : null, requestedBy: seerrUserId(sessionUser) });
     return json(201, seerrRequestDto(created));
   }
   if (sub === '/request' && method === 'GET') {
@@ -839,7 +846,8 @@ async function handleSeerr(req, res, p, q, method) {
     await seerrGate.wait(); // festgehalten bis zur Freigabe (POST /__debug/delay?requests=<s> oder /__debug/reset?seerr=1)
     await sleep(SEERR.requestDelay);
     const filter = REQUEST_FILTERS[q.get('filter') ?? 'all'] ?? REQUEST_FILTERS.all;
-    const by = Number(q.get('requestedBy')) || null;
+    // Ohne das Recht, alle zu sehen, liefert Seerr nur die eigenen, gleich was verlangt ist
+    const by = seesAllRequests() ? Number(q.get('requestedBy')) || null : seerrUserId(sessionUser);
     const sortKey = q.get('sort') === 'modified' ? 'updatedAt' : 'createdAt';
     const list = SEERR.requests
       .filter((r) => !r.deleted && (!by || r.requestedBy === by) && filter(r, seerrMediaStatus(r.mediaType, r.mediaId)))
@@ -854,7 +862,8 @@ async function handleSeerr(req, res, p, q, method) {
     if (!r || r.deleted) return json(404, { message: 'Request not found.' });
     const manage = (seerrPermissions() & (2 | 16)) !== 0; // Administrator oder Anfragen verwalten
     if (method === 'DELETE') {
-      if (!manage && r.status !== 1) return json(401, { message: 'You do not have permission to delete this request.' });
+      // Ohne "verwalten" nur eigene, solange sie warten (Seerr antwortet sonst mit 401, wie am echten Seerr 3.5.1 gemessen)
+      if (!manage && (r.status !== 1 || r.requestedBy !== seerrUserId(sessionUser))) return json(401, { message: 'You do not have permission to delete this request.' });
       r.deleted = true;
       res.writeHead(204);
       return res.end();
@@ -864,7 +873,7 @@ async function handleSeerr(req, res, p, q, method) {
     r.status = { approve: 2, decline: 3, retry: 2 }[um[2]];
     touchSeerrRequest(r);
     // Wer entschieden hat (modifiedBy): der Benutzer der Sitzung (1) oder, im Test, ein anderer Verwalter aus der Kopfzeile X-Mock-Actor
-    if (um[2] !== 'retry') r.modifiedBy = /^\d+$/.test(req.headers['x-mock-actor'] ?? '') ? Number(req.headers['x-mock-actor']) : 1;
+    if (um[2] !== 'retry') r.modifiedBy = /^\d+$/.test(req.headers['x-mock-actor'] ?? '') ? Number(req.headers['x-mock-actor']) : seerrUserId(sessionUser);
     return json(200, seerrRequestDto(r));
   }
   return json(404, { message: `Mock-Seerr: ${method} ${sub} nicht implementiert` });

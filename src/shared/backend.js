@@ -536,6 +536,41 @@
       seerrTrending: () => seerrRead((s) => s.trending()),
       seerrDetails: (req) => seerrRead((s) => s.details(req?.mediaType, req?.mediaId)),
       seerrRequest: (req) => seerrCall(() => requireSeerr().requestMedia({ mediaType: req?.mediaType, mediaId: req?.mediaId })),
+
+      /**
+       * Eine Seite der Anfragen (Reiter Anfragen): scope "mine" nur die eigenen (requestedBy, die Nummer aus /auth/me; ohne bekannten Benutzer
+       * erst die Pruefung, sonst liefe die Abfrage ohne Filter und zeigte Verwaltern alle), "manage" alle, soweit Seerr sie dem Benutzer zeigt.
+       */
+      async seerrRequests({ scope = 'mine', skip = 0, take = 50 } = {}) {
+        const mine = scope !== 'manage';
+        let checked = null;
+        if (mine && !seerrUser && seerr) checked = await checkSeerr();
+        return seerrRead((s) => {
+          if (mine && !seerrUser) {
+            if (checked?.state === 'unauthorized') throw seerrAuthError();
+            throw new SeerrError(checked?.detail || 'Seerr hat keinen Benutzer gemeldet');
+          }
+          return s.requestPage({ userId: mine ? seerrUser.id : null, skip, take });
+        });
+      },
+      /** Titel, Jahr, Bild und Stand eines Titels fuer ein Plakat der Anfragen. */
+      seerrMedia: (req) => seerrRead((s) => s.media(req?.mediaType, Number(req?.tmdbId))),
+      /**
+       * Aendert eine Anfrage (approve, decline, retry, withdraw, remove) mit der Sitzung des Benutzers; Seerr entscheidet. Seerr lehnt eine
+       * Aktion ohne Recht auch mit 401 ab (am echten Seerr 3.5.1 gemessen): das ist keine abgelaufene Anmeldung, daher Code SEERR_DENIED (die
+       * Oberflaeche prueft dann still, ob die Sitzung noch gilt); 404 heisst, die Anfrage gibt es nicht mehr (SEERR_GONE).
+       */
+      async seerrRequestAction({ id, action } = {}) {
+        const s = requireSeerr();
+        try {
+          await s.requestAction(Number(id), String(action ?? ''));
+        } catch (e) {
+          if (e instanceof SeerrError && (e.status === 401 || e.status === 403)) throw Object.assign(new SeerrError('Das ist mit deinem Seerr-Konto nicht möglich, oder die Anfrage hat sich inzwischen geändert.'), { status: e.status, code: 'SEERR_DENIED' });
+          if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError('Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
+          throw e;
+        }
+        return true;
+      },
       // Problem zu einem Titel melden (Video, Ton, Untertitel, Sonstiges; Kommentar freiwillig). Die Werte werden hier einzeln gepruft und gekuerzt, nichts wird als Ganzes durchgereicht.
       seerrIssue: (req) =>
         seerrCall(() =>

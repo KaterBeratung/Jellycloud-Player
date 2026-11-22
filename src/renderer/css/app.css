@@ -1182,6 +1182,20 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .req-actions[hidden] { display: none; }
 .req-actions .btn { width: 100%; justify-content: center; }
 .seerr-note { margin: 2px var(--pad) 14px; color: var(--muted); }
+.seerr-note[hidden] { display: none; }
+/* Reiter Anfragen (P11, wie RequestsView der Apple-App): Plakatraster wie Filme und Serien, der Stand als Tag oben links; die Aktionen ueber den
+   runden Knopf oben rechts (beim Zeigen, auf dem Handy immer) oder das Kontextmenue. Waehrend einer Aktion ist das Plakat abgeblendet und gesperrt. */
+.rq-item { position: relative; cursor: pointer; outline: none; }
+.rq-item:focus-visible .thumb { outline: 2px solid var(--accent); outline-offset: 3px; }
+.rq-more { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; padding: 0; border-radius: 50%; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 0.28); background: rgb(18 18 22 / 0.55); color: #fff; cursor: pointer; opacity: 0; transition: opacity var(--t-fast), background var(--t-fast), var(--press-tr); }
+.rq-more[hidden] { display: none; }
+.rq-more:hover { background: rgb(18 18 22 / 0.75); }
+.rq-item:hover .rq-more, .rq-item:focus-within .rq-more, html[data-compact='on'] .rq-more { opacity: 1; }
+.rq-busy { position: absolute; left: 50%; top: 50%; z-index: 3; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-width: 3px; color: #fff; display: none; }
+.rq-item.busy { pointer-events: none; }
+.rq-item.busy .thumb .imgbox { filter: brightness(0.45); }
+.rq-item.busy .rq-busy { display: block; }
+.rq-item .meta .l1.sk { margin-top: 2px; }
 .seerr-group { margin-top: 28px; }
 /* Startseite: Reihe "Filme im Trend" (Seerr). Ohne Verbindung steht an ihrer Stelle ein Hinweis mit angedeuteten Postern (views/home.js). */
 .trend-hint-box { display: flex; align-items: center; gap: clamp(22px, 4vw, 56px); margin: 16px var(--pad) 22px; padding: clamp(20px, 2.6vw, 32px); border-radius: calc(var(--radius) * 1.3); background: var(--surface); border: 1px solid var(--line); }

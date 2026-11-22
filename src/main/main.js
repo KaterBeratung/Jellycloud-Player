@@ -285,6 +285,9 @@ function registerIpc() {
   ipcMain.handle('seerr:trending', wrap(() => backend.seerrTrending()));
   ipcMain.handle('seerr:details', wrap((req) => backend.seerrDetails(req)));
   ipcMain.handle('seerr:request', wrap((req) => backend.seerrRequest(req)));
+  ipcMain.handle('seerr:requests', wrap((o) => backend.seerrRequests({ scope: o?.scope === 'manage' ? 'manage' : 'mine', skip: Number(o?.skip) || 0, take: Number(o?.take) || 50 })));
+  ipcMain.handle('seerr:media', wrap((req) => backend.seerrMedia({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId) })));
+  ipcMain.handle('seerr:requestAction', wrap((req) => backend.seerrRequestAction({ id: Number(req?.id), action: String(req?.action ?? '') })));
   ipcMain.handle('seerr:issue', wrap((req) => backend.seerrIssue(req)));
 
   ipcMain.handle('settings:set', wrap((patch) => backend.setSettings(patch)));

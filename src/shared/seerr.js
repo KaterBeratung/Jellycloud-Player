@@ -204,6 +204,46 @@ function tmdbImageUrl(size, file) {
   return TMDB_SIZES.has(size) && TMDB_FILE.test(String(file ?? '')) ? `https://image.tmdb.org/t/p/${size}/${file}` : null;
 }
 
+/**
+ * Eine Anfrage, wie Seerr sie liefert (GET /request; ohne Titel, den holt media). Wie SeerrRequest.parse der Apple-App: Unvollstaendiges ergibt
+ * null. mediaStatus: Stand des Titels (bei einer 4K-Anfrage der der 4K-Fassung); seasons: angefragte Staffeln, sortiert; readySeasons: wie viele
+ * davon Seerr als geliefert fuehrt (Stand der Staffel in der Anfrage: abgeschlossen); modifierId: wer zuletzt entschieden hat.
+ */
+function normalizeRequest(r) {
+  if (!r || typeof r !== 'object' || !Number.isInteger(+r.id) || +r.id <= 0) return null;
+  const m = r.media && typeof r.media === 'object' ? r.media : null;
+  const type = m?.mediaType ?? r.type;
+  if (!m || !Number.isInteger(+m.tmdbId) || (type !== 'movie' && type !== 'tv')) return null;
+  const is4k = r.is4k === true;
+  const status = Number(r.status);
+  const asked = Array.isArray(r.seasons) ? r.seasons.filter((s) => s && Number.isInteger(+s.seasonNumber)) : [];
+  const by = r.requestedBy && typeof r.requestedBy === 'object' ? r.requestedBy : {};
+  const created = typeof r.createdAt === 'string' && !Number.isNaN(Date.parse(r.createdAt)) ? r.createdAt : null;
+  return {
+    id: Number(r.id),
+    status: status >= 1 && status <= 5 ? status : null,
+    is4k,
+    created,
+    mediaType: type,
+    tmdbId: Number(m.tmdbId),
+    mediaStatus: Number(is4k ? m.status4k : m.status) || 0,
+    seasons: [...new Set(asked.map((s) => Number(s.seasonNumber)))].sort((a, b) => a - b),
+    readySeasons: asked.filter((s) => Number(s.status) === SeerrState.SEERR_REQUEST.COMPLETED).length,
+    requesterId: Number.isInteger(+by.id) ? Number(by.id) : 0,
+    requesterName: text(by.displayName || by.jellyfinUsername || by.username, 120),
+    modifierId: Number.isInteger(+r.modifiedBy?.id) ? Number(r.modifiedBy.id) : null
+  };
+}
+
+/** Aktionen an einer Anfrage: Methode und Pfad (zurueckziehen und entfernen sind bei Seerr dasselbe: DELETE, entfernt nur die Anfrage). */
+const REQUEST_ACTIONS = Object.freeze({
+  approve: ['POST', '/approve'],
+  decline: ['POST', '/decline'],
+  retry: ['POST', '/retry'],
+  withdraw: ['DELETE', ''],
+  remove: ['DELETE', '']
+});
+
 /** Abfragen, deren Texte von der Sprache abhaengen (Titel, Handlung, Personen); Anmeldung, Anfragen und Rechte nicht (wie die Apple-App). */
 const CONTENT_PATHS = ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/'];
 
@@ -374,6 +414,40 @@ class SeerrClient {
   }
 
   /**
+   * Eine Seite der Anfragen, neueste zuerst (GET /request, wie Seerr 3.5.1: take, skip, filter all, sort added; userId: nur die Anfragen dieses
+   * Benutzers, requestedBy). received zaehlt auch unlesbare Eintraege (dort beginnt die naechste Seite), total ist pageInfo.results (sonst null).
+   * @returns {Promise<{requests: ReturnType<typeof normalizeRequest>[], received: number, asked: number, total: number|null}>}
+   */
+  async requestPage({ userId = null, skip = 0, take = 50 } = {}) {
+    const t = Math.min(1000, Math.max(1, Math.trunc(Number(take)) || 50));
+    const s = Math.max(0, Math.trunc(Number(skip)) || 0);
+    const query = { take: t, skip: s, filter: 'all', sort: 'added', ...(Number.isInteger(userId) && userId > 0 ? { requestedBy: userId } : {}) };
+    const r = await this.request('GET', '/request', { query });
+    const raw = Array.isArray(r?.results) ? r.results : [];
+    const total = Number(r?.pageInfo?.results);
+    return { requests: raw.map(normalizeRequest).filter(Boolean), received: raw.length, asked: t, total: Number.isInteger(total) && total >= 0 ? total : null };
+  }
+
+  /** Titel, Jahr, Bild und Stand eines Titels (fuer die Plakate der Anfragen), wie ein Suchergebnis; null, wenn die Antwort keinen Titel hat. */
+  async media(mediaType, tmdbId) {
+    if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
+    if (!Number.isInteger(+tmdbId) || +tmdbId <= 0) throw new SeerrError('Ungueltige Titel-ID');
+    const d = await this.request('GET', `/${mediaType}/${Number(tmdbId)}`);
+    return normalizeResult(d && typeof d === 'object' ? { ...d, mediaType } : null);
+  }
+
+  /**
+   * Aendert eine Anfrage: genehmigen, ablehnen, erneut versuchen (Recht "Anfragen verwalten"), zurueckziehen (eigene, solange sie wartet) oder
+   * entfernen (verwalten). Entfernt nur die Anfrage, nie den Titel oder seine Dateien. Seerr prueft die Rechte selbst.
+   */
+  async requestAction(id, action) {
+    const spec = REQUEST_ACTIONS[action];
+    if (!spec) throw new SeerrError('Unbekannte Aktion');
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Anfrage');
+    await this.request(spec[0], `/request/${Number(id)}${spec[1]}`);
+  }
+
+  /**
    * Stellt eine Anfrage. Serien werden komplett angefragt (alle Staffeln).
    * @returns {Promise<{id:number|null, requestStatus:number|null, mediaStatus:number|null}>}
    *   requestStatus: 1 wartet auf Freigabe, 2 freigegeben, 3 abgelehnt. mediaStatus: siehe MEDIA_STATUS.
@@ -387,5 +461,5 @@ class SeerrClient {
   }
 }
 
-return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, seerrLanguage, tmdbImageUrl };
+return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, seerrLanguage, tmdbImageUrl };
 });
