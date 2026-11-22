@@ -297,6 +297,9 @@ function addMovie([name, year, genres, quality], i) {
 MOVIE_DATA.forEach((entry, i) => addMovie(entry, i));
 // Bibliotheksfilm mit der TMDB-Nummer von "Mock Arrival" (Seerr-Trend 4242): das Banner ordnet verfuegbare Trend-Titel so ihrem Bibliothekseintrag zu (anyProviderIdEquals)
 items.get(id32('movie:Paper Moons')).ProviderIds = { Tmdb: '4242' };
+// Abgleich der Suche (P14): "The Glass Garden" gibt es auch bei Seerr (Film 5501 ohne Stand, Seerr kennt die Mediathek noch nicht, dazu eine Serie mit derselben
+// Nummer); die Serie "Code of the Wild" ist bei Seerr teilweise verfuegbar (5502, Stand 4, unten bei den Serien)
+items.get(id32('movie:The Glass Garden')).ProviderIds = { Tmdb: '5501' };
 
 /** Fuer Leistungstests: haengt n weitere Filme an (grosse Bibliothek). */
 function addMovies(n) {
@@ -505,13 +508,14 @@ function listItems(q) {
   const show = [...items.values()].find((i) => i.Type === 'Series' && i.Name === 'Starfall Station');
   if (show) show.ProviderIds = { Tmdb: '1399' };
 }
+items.get(id32('series:Code of the Wild')).ProviderIds = { Tmdb: '5502' }; // Abgleich der Suche (P14): bei Seerr teilweise verfuegbar
 
 // ---------- Mock-Seerr (/api/v1): Anmeldung per Jellyfin-Konto oder API-Schluessel, Suche, Anfragen ----------
 const SEERR = {
   sid: 'mock-seerr-sid',
   apiKey: 'mock-seerr-key',
   expired: false, // true: jede Anfrage bekommt 401 (Sitzung abgelaufen)
-  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 6], ['tv:2001', 4]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt (Seerr 3.5.1: 6 gesperrt, 7 geloescht)
+  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 6], ['tv:2001', 4], ['tv:5502', 4]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt (Seerr 3.5.1: 6 gesperrt, 7 geloescht)
   // Anfragen: { id, status (1 wartet, 2 genehmigt, 3 abgelehnt, 4 gescheitert, 5 abgeschlossen), mediaType, mediaId, seasons, readySeasons,
   // deleted, modifiedBy, requestedBy, createdAt, updatedAt, media }; GET /request liefert sie wie Seerr (neueste zuerst, take/skip/filter/sort)
   requests: [],
@@ -538,7 +542,11 @@ const SEERR = {
     { id: 777, mediaType: 'person', name: 'Mock Person', profilePath: '/mockperson0001.jpg' },
     { id: 2468, mediaType: 'movie', title: 'Dialog Anfrage Film', releaseDate: '2018-03-03', posterPath: '/mockposter0006.jpg', overview: 'Wird im Detailfenster angefragt.' },
     // Serie mit Staffeln: Staffel 1 ist da (Serie teilweise verfuegbar), 2 und 3 lassen sich anfragen (Seite eines Seerr-Titels, Staffelauswahl)
-    { id: 2001, mediaType: 'tv', name: 'Wintersignale', firstAirDate: '2025-10-01', posterPath: '/mockposter0007.jpg', overview: 'Eine Serie mit drei Staffeln.' }
+    { id: 2001, mediaType: 'tv', name: 'Wintersignale', firstAirDate: '2025-10-01', posterPath: '/mockposter0007.jpg', overview: 'Eine Serie mit drei Staffeln.' },
+    // Abgleich der Suche (P14), siehe die Mediathek oben
+    { id: 5501, mediaType: 'movie', title: 'The Glass Garden', releaseDate: '2023-04-01', posterPath: '/glassgarden01.jpg' },
+    { id: 5501, mediaType: 'tv', name: 'The Glass Garden: Die Serie', firstAirDate: '2025-01-01', posterPath: '/glassgarden02.jpg' },
+    { id: 5502, mediaType: 'tv', name: 'Code of the Wild', firstAirDate: '2024-01-01', posterPath: '/codewild0001.jpg' }
   ],
   // Stand je Staffel bei Seerr (mediaInfo.seasons); angefragte Staffeln kommen dazu aus den Anfragen (mediaInfo.requests)
   seasonStates: new Map([['tv:2001', { 1: 5 }]]),
@@ -1236,6 +1244,8 @@ const server = http.createServer(async (req, res) => {
   // weitere Bibliotheken (state.extraViews, von Szenarien gesetzt: zweite Film-Bibliothek, Kollektionen), hinter den beiden festen
   if (p === '/UserViews' || /^\/Users\/[0-9a-f]+\/Views$/.test(p)) return send(res, 200, { Items: [MOVIES_VIEW, SHOWS_VIEW, ...state.extraViews], TotalRecordCount: 2 + state.extraViews.length });
   if (p === '/Items' && method === 'GET') {
+    // Suchen der Mediathek mitschreiben (Ruhe vor der Suche, verworfene Antworten, ProviderIds fuer den Abgleich mit Seerr)
+    if (q.get('searchTerm')) state.log.push({ at: '/Items search', term: q.get('searchTerm'), fields: q.get('fields') ?? '', t: Date.now() });
     if (await listPrelude(req, res)) return;
     if (state.delays.items) await new Promise((r) => setTimeout(r, state.delays.items));
     const body = JSON.stringify(listItems(q));

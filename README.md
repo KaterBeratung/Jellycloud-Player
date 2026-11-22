@@ -83,6 +83,17 @@ Bibliotheken einhalten.
     gemischten. Eine von der Startseite geöffnete Mediathek („Neu in …“) zeigt weiter genau diese, mit dem Ambient Glow der Mediatheken.
   - *Anfragen* zeigt ohne Seerr „Seerr nicht verbunden“ mit *Seerr verbinden*, sonst die Übersicht der Anfragen (seit 1.2.10) bzw. den Stand von Seerr
     (siehe *Anfragen mit Seerr*).
+  - *Suche* (seit 1.2.13, Plan P14, wie die Apple-App): ein **zweiter Klick** auf den gewählten Reiter gibt dem Suchfeld den Fokus (auf dem Handy die Tastatur), der
+    Suchtext bleibt; der erste Tipp öffnet auf dem Handy keine Tastatur (am Desktop steht der Fokus wie bisher gleich im Feld). Ist aus der Suche eine Detailseite
+    offen, führt der Reiter mit dem Suchtext zur Suche zurück. **Strg+K** und **/** springen ins Suchfeld, in der offenen Suche ohne den Text zu verlieren.
+- **Suche (seit 1.2.13, Plan P14, wie `SearchView` der Apple-App):** gesucht wird, wenn die Eingabe **350 ms** ruht (Enter sofort); eine veraltete Antwort wird
+  verworfen (die Anfrage selbst läuft am Server zu Ende). Zuerst die Treffer der Mediathek (nach Art), darunter **unabhängig** die Treffer von Seerr unter
+  *Nicht in der Bibliothek* („Über Seerr anfragen“): abgeglichen über **TMDB-Nummer und Art**, nie über den Titel (die Suche fragt dafür `ProviderIds` mit ab);
+  was Seerr als vorhanden kennt oder unter den Treffern der Mediathek steht, fehlt, **teilweise vorhandene Serien bleiben** anfragbar. Was die Seite ohne Treffer
+  sagt, entscheidet eine Stelle (`src/shared/search-status.js`): „Keine Ergebnisse für …“ und ein Fehler gelten **nur für den beantworteten Text**, beim
+  Weitertippen heißt es „Suche läuft …“; Treffer bleiben stehen, bis die neue Suche antwortet. Ein Ausfall von Seerr oder der Mediathek ersetzt die Treffer der
+  anderen Seite nie durch eine Fehlerseite (kleiner Hinweis darüber, bei der Mediathek mit *Erneut versuchen*). Nach einer Anfrage aus der Suche lädt nur Seerr neu.
+  Tests: `test/search.test.js` (die sechs Fälle aus `SearchStatusTests`, Abgleichfälle), Szenario `search-page.js` (Port 8988), `web-mode.js` (Reiter auf dem Handy).
   - **Profilmenü** am Profilsymbol: Profile (Haken beim aktiven, darunter „Aktiv · Adresse“; ein Tipp auf ein anderes wechselt), *Quick Connect*,
     *Server oder Profil hinzufügen*, *Einstellungen*, zuletzt *Abmelden* in Rot mit Rückfrage. Haken und Symbole stehen in einer Spalte.
   - Szenario `nav-shell.js`; die kompakten Größen 412 × 891, 360 × 740 und 800 × 411 prüft `web-mode.js`.
@@ -268,7 +279,7 @@ YouTube verlangt für Einbettungen einen Referer (sonst Fehler 153). Die Oberfl�
 ## Anfragen mit Seerr
 
 *Einstellungen > Anfragen (Seerr)* verbindet die App mit Seerr (Jellyseerr / Overseerr): mit dem **Jellyfin-Konto** (das Passwort wird nicht gespeichert, nur das Session-Cookie von Seerr, verschlüsselt)
-(einen API-Schlüssel nimmt die App seit 1.2.4 nicht mehr, wie die Apple-App). Die Verbindung gilt **je Profil**: jedes Profil meldet sich selbst an, ein Profilwechsel nimmt sein eigenes Seerr mit; gespeichert werden Adresse, Benutzername, die Jellyfin-Kennung von Seerr und die verschlüsselte Sitzung. Nach *Trennen* bleibt die Adresse vorbelegt. Die Zugangsdaten bleiben im Hauptprozess. Ist Seerr verbunden, zeigt die **Suche** unter den Treffern der Bibliothek die Gruppe *Bei Seerr anfragen*:
+(einen API-Schlüssel nimmt die App seit 1.2.4 nicht mehr, wie die Apple-App). Die Verbindung gilt **je Profil**: jedes Profil meldet sich selbst an, ein Profilwechsel nimmt sein eigenes Seerr mit; gespeichert werden Adresse, Benutzername, die Jellyfin-Kennung von Seerr und die verschlüsselte Sitzung. Nach *Trennen* bleibt die Adresse vorbelegt. Die Zugangsdaten bleiben im Hauptprozess. Ist Seerr verbunden, zeigt die **Suche** unter den Treffern der Bibliothek die Gruppe *Nicht in der Bibliothek* (seit 1.2.13; vorher *Bei Seerr anfragen*):
 Titel, die es noch nicht gibt, mit Poster von TMDB (über das App-Protokoll, nur feste Größen) und der Schaltfläche *Anfragen*. Bereits Angefragtes, in Bearbeitung Befindliches oder teilweise Verfügbares
 zeigt seinen Stand als **Tag** statt der Schaltfläche (Bezeichnung und Farbe allein aus `src/shared/seerr-state.js`, gezeichnet mit den Farbpaaren der Tags: grün *Verfügbar*, Türkis-Blau *Teilweise*, blau *Angefragt* / *Genehmigt*, orange *In Bearbeitung*, Orange-Rot *Abgelehnt* / *Fehlgeschlagen*; überall gleich wie in der Apple-App), Verfügbares fehlt (es steht schon in der Bibliothek). Bei Serien öffnet *Anfragen* die Staffelauswahl (seit 1.2.11). Fehler sind verständlich (Kontingent, schon angefragt, Sitzung abgelaufen);
 eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern zu einem Hinweis mit Weg in die Einstellungen.
@@ -725,7 +736,9 @@ wie Seerr 3.5.1); Anfragen tragen den Benutzer ihrer Sitzung (demo 1, demo2 2); 
 `/person/<Id>/combined_credits` (Person 9202 „Mara Ellison“ ist dieselbe wie in der Mediathek), `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
 gibt es in der Mediathek; `MOCK_SEERR_OLD=1` oder `SEERR.old` wie ein älteres Seerr gemischt), `/auth/logout`. Jellyfin: `GET /Playback/BitrateTest?Size=`
 (`MOCK_BITRATE_MBPS` bremst); Personen mit Biografie, Lebensdaten, Geburtsort und TMDB-Nummer (`GET /Items?ids=`, `personIds`, `GET /Persons?searchTerm=`;
-„Jonas Whitfield“ bekommt seine Angaben erst nach `POST /Items/<Id>/Refresh`, „Nadia Gast“ spielt nur in einer Folge). Die Fälle stehen in `test/mock-server.test.js`.
+„Jonas Whitfield“ bekommt seine Angaben erst nach `POST /Items/<Id>/Refresh`, „Nadia Gast“ spielt nur in einer Folge); Suchen der Mediathek stehen im
+Protokoll (`/Items search`), und für den Abgleich der Suche gibt es „The Glass Garden“ (TMDB 5501) auch bei Seerr (als Film ohne Stand und als Serie) und
+„Code of the Wild“ (5502) dort teilweise verfügbar. Die Fälle stehen in `test/mock-server.test.js`.
 
 Die UI-Szenarien (Screenshots, Layout-Prüfung auf Überlappungen, Wiedergabe mit simuliertem mpv) laufen mit
 `JC_DEV=1`, siehe `tools/shots/`:
@@ -761,6 +774,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
 | `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Seite eines Titels** (Laden, Angabenzeile mit FSK, Besetzung, weitere Titel, Informationen, Anfragen von dort, Fehlerfälle, Zurück), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `search-page.js` | Suche (P14): Hinweis ohne Treffer nur zum beantworteten Text, 350 ms Ruhe (ein Wort = eine Suche), veraltete Antwort verworfen, Fehler der Mediathek mit *Erneut versuchen*, Abgleich mit Seerr über TMDB-Nummer und Art (gleiche Nummer als Serie bleibt, teilweise vorhandene Serie bleibt), Ausfälle von Seerr und der Mediathek ohne Fehlerseite, nach einer Anfrage nur Seerr neu, zweiter Klick auf *Suche* und Strg+K behalten den Text (eigener Port 8988) |
 | `person-page.js` | Personen (P13): Besetzung der Mediathek und eines Seerr-Titels als Verweise, Seite aus beiden Wegen (Lebensdaten, Kapsel, Biografie, Foto oder Initialen), Mediathek zuerst und Filmografie ohne ihre Titel (TMDB-Nummer), Rollen zusammengefasst, Anfrage aus der Filmografie, Gastrolle, gestorben, unbekannte Person, Nachladen nur als Administrator (eigener Port 8989) |
 | `seerr-title.js` | Seite eines Seerr-Titels (P12): Serie mit Staffeln und Stand, Staffelauswahl (vorhandene gesperrt, Fokus auf der ersten offenen), nur gewählte Staffel angefragt, Kontingent (Hinweis, erschöpft gesperrt), fehlendes Recht, weitere Titel öffnen ihre Seite bzw. die Mediathek, doppelter Klick (eigener Port 8990) |
 | `requests-tab.js` | Reiter *Anfragen* (P11): Meine Anfragen, Offen/Abgeschlossen, Stand-Tags, nachgeladene Titel, Zurückziehen mit Rückfrage, Antippen öffnet den Titel, Kontextmenü-Taste, Verwalten mit fremden Anfragen (Genehmigen, Ablehnen, Entfernen), entzogenes Recht, Blättern hinter 120 Anfragen, Neuladen in einem Abruf, Seerr aus (eigener Port 8991) |

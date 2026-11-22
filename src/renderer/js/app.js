@@ -14,7 +14,7 @@ import { libraryView } from './views/library.js';
 import { detailView } from './views/detail.js';
 import { seerrTitleView } from './views/seerr-title.js';
 import { personView } from './views/person.js';
-import { searchView } from './views/search.js';
+import { searchView, focusSearchField, openSearch, lastSearchQuery } from './views/search.js';
 import { settingsView } from './views/settings.js';
 import { adminView } from './views/admin.js';
 import { loginView } from './views/login.js';
@@ -161,10 +161,7 @@ function buildShell() {
     nav.append(a);
     return a;
   });
-  nav.addEventListener('click', (e) => {
-    const a = e.target.closest('.nav-link');
-    if (a && location.hash === a.getAttribute('href')) view.scrollTo({ top: 0, behavior: document.documentElement.dataset.anim === 'reduced' ? 'auto' : 'smooth' });
-  });
+  nav.addEventListener('click', (e) => sameTabClick(e, e.target.closest('.nav-link')));
 
   // Rechte Kapsel (Entscheidung E9): Neu laden, Verwaltung (nur Administratoren), Einstellungen (dort haengt der Update-Punkt) und das Profilsymbol
   // mit dem Profilmenue; gleich grosse runde Scheiben, gleiche Hoehe und Bauart wie die Kapsel der Reiter
@@ -186,6 +183,24 @@ function buildShell() {
   const topbar = h('header', { class: 'topbar' }, h('div', { class: 'titlebar' }), h('div', { class: 'navrow' }, h('div', { class: 'navrow-start' }, brand, h('span', { class: 'grow' })), pill, h('div', { class: 'navrow-end' }, h('span', { class: 'grow' }), tools, updateNote)));
   const view = h('main', { id: 'view', tabindex: '-1' });
   const tabbar = state.platform !== 'desktop' ? buildTabbar() : null; // im Windows-Programm gibt es sie nicht
+  /**
+   * Klick auf einen Reiter (Kapsel am Desktop, Tab-Leiste auf dem Handy), wie die Apple-App (Build 93):
+   * - Seite des Reiters schon offen: an ihren Anfang; beim Reiter "Suche" bekommt das Suchfeld den Fokus (auf dem Handy die Tastatur), der Suchtext bleibt.
+   * - Eine Seite aus der Suche offen (Detailseite, Person): zurueck zur Suche mit ihrem Text, ohne Tastatur; erst der naechste Klick gibt den Fokus.
+   * - Sonst wie gewohnt zur Seite des Reiters.
+   */
+  function sameTabClick(e, a) {
+    if (!a) return;
+    if (location.hash.split('?')[0] === a.getAttribute('href')) {
+      e.preventDefault(); // sonst ginge "#/search?q=..." auf "#/search" und der Suchtext waere weg
+      view.scrollTo({ top: 0, behavior: document.documentElement.dataset.anim === 'reduced' ? 'auto' : 'smooth' });
+      if (a._tab === 'search') focusSearchField();
+    } else if (a._tab === 'search' && currentTab === 'search' && lastSearchQuery()) {
+      e.preventDefault();
+      navigate(`/search?q=${encodeURIComponent(lastSearchQuery())}`);
+    }
+  }
+  tabbar?.el.addEventListener('click', (e) => sameTabClick(e, e.target.closest('.tabbar-item')));
   root.replaceChildren(topbar, view, ...(tabbar ? [tabbar.el] : []));
 
   const place = (target) => {
@@ -439,13 +454,13 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && Nav.tabForDigit(e.key)) {
     // Strg+1 bis Strg+5: Start, Filme, Serien, Anfragen, Suche (Entscheidung E9; am Mac Cmd)
     e.preventDefault();
-    navigate(Nav.tabForDigit(e.key).path);
-  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    const tab = Nav.tabForDigit(e.key);
+    // Die Suche mit Tastatur: ins Suchfeld (ist sie schon offen, bleibt der Suchtext)
+    if (tab.key === 'search') openSearch();
+    else navigate(tab.path);
+  } else if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (!typing && e.key === '/')) {
     e.preventDefault();
-    navigate('/search');
-  } else if (!typing && e.key === '/') {
-    e.preventDefault();
-    navigate('/search');
+    openSearch();
   } else if (!typing && (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowLeft'))) {
     e.preventDefault();
     history.back();

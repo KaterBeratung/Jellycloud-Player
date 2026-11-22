@@ -220,6 +220,27 @@ module.exports = async (ctx) => {
   await page('#/search?q=Aurora', `document.querySelectorAll('.card').length >= 1`);
   await ctx.wait(700);
   await shot('W-06-handy-suche.png');
+  // Reiter "Suche" auf dem Handy (wie die Apple-App, Build 93): der erste Tipp oeffnet die Suche ohne Tastatur, der zweite gibt dem Suchfeld den Fokus; aus einer
+  // Detailseite der Suche fuehrt er mit dem Suchtext zurueck, ohne Tastatur
+  const searchTab = `document.querySelector('.tabbar-item[href="#/search"]').click()`;
+  const fieldFocused = `document.activeElement === document.querySelector('.search .search-input')`;
+  await page('#/home', `!!document.querySelector('.home .rows .row')`);
+  await ev(searchTab);
+  await waitFor(`!!document.querySelector('.search .search-input')`, 4000);
+  await ctx.wait(500);
+  check('Handy: erster Tipp auf "Suche" oeffnet die Suche ohne Fokus im Feld (keine Tastatur)', (await ev(`!(${fieldFocused})`)) === true);
+  await ev(`(() => { const i = document.querySelector('.search-input'); i.value = 'Aurora'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+  await waitFor(`document.querySelectorAll('.search .card').length >= 1`, 6000);
+  await ev(`document.querySelector('.search .card').click()`);
+  await waitFor(`location.hash.startsWith('#/item/')`, 4000);
+  await ctx.wait(600);
+  await ev(searchTab);
+  const toSearch = await waitFor(`location.hash === '#/search?q=Aurora' && document.querySelector('.search-input')?.value === 'Aurora'`, 4000);
+  await ctx.wait(400);
+  check('Handy: aus der Detailseite fuehrt "Suche" zur Suche mit dem Text zurueck, ohne Tastatur', toSearch && (await ev(`!(${fieldFocused})`)) === true, await ev('location.hash'));
+  await ev(searchTab);
+  await ctx.wait(300);
+  check('Handy: der zweite Tipp gibt dem Suchfeld den Fokus, der Text bleibt', (await ev(`${fieldFocused} && location.hash === '#/search?q=Aurora' && document.querySelector('.search-input').value === 'Aurora'`)) === true, await ev('location.hash'));
   // Einstellungen auf dem Handy: Liste nach Themen, ein Bereich mit "Zurueck" (keine Chip-Zeile oben)
   await page('#/settings', `!!document.querySelector('.settings-list .slist-row')`);
   await ctx.wait(700);

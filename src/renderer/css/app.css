@@ -578,6 +578,7 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .search-results.busy { opacity: 0.55; }
 .search-group { margin-top: 18px; }
 .search-group .grid { padding-top: 14px; }
+.search-group-note { margin: 4px var(--pad) 0; color: var(--muted); font-size: 13.5px; } /* unter "Nicht in der Bibliothek": "Über Seerr anfragen" */
 
 /* ---------- Einstellungen ---------- */
 .settings { padding-top: calc(var(--topbar-h) + 6px); }

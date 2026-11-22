@@ -80,8 +80,8 @@ module.exports = async (ctx) => {
   await search('mock');
   const found = await cards();
   const by = Object.fromEntries(found.map((c) => [c.title, c]));
-  check('Suche zeigt die Seerr-Treffer als Gruppe "Bei Seerr anfragen"', (await ctx.run(`document.querySelector('.seerr-group h2')?.textContent`)) === 'Bei Seerr anfragen');
-  check('Hinweis, dass nichts in der Bibliothek gefunden wurde', await ctx.run(`/nicht gefunden/.test(document.querySelector('.seerr-note')?.textContent ?? '')`));
+  check('Suche zeigt die Seerr-Treffer als Gruppe "Nicht in der Bibliothek" (wie die Apple-App)', (await ctx.run(`document.querySelector('.seerr-group h2')?.textContent`)) === 'Nicht in der Bibliothek');
+  check('...darunter "Über Seerr anfragen"; ohne Treffer der Mediathek kein Hinweis "Keine Ergebnisse"', (await ctx.run(`document.querySelector('.seerr-group .search-group-note')?.textContent`)) === 'Über Seerr anfragen' && (await ctx.run(`!document.querySelector('.search-results .page-status')`)));
   check('Verfuegbare Titel und Personen fehlen, die anderen sind da (4 Karten)', found.length === 4 && !by['Mock Arrival'] && !by['Mock Person'], found.map((c) => c.title).join(', '));
   check('Neue Titel haben die Schaltflaeche "Anfragen", keine Beschriftung', by['Mock Matrix Resurrection']?.canRequest && by['Mock Matrix Resurrection']?.chip === '');
   check('Schon angefragter Titel zeigt "Angefragt" und keine Schaltflaeche', by['Mock Pending Story']?.chip === 'Angefragt' && !by['Mock Pending Story']?.canRequest);

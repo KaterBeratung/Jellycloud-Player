@@ -404,8 +404,9 @@ class JellyfinClient {
     }
   }
 
+  /** Suche in der Mediathek; mit den TMDB-Nummern (ProviderIds), damit die Suche Treffer von Seerr ueber Nummer und Art abgleichen kann, nie ueber den Titel. */
   async search(term, limit = 40) {
-    const r = await this.getItems({ searchTerm: term, includeItemTypes: 'Movie,Series,Episode,BoxSet', recursive: true, limit });
+    const r = await this.getItems({ searchTerm: term, includeItemTypes: 'Movie,Series,Episode,BoxSet', recursive: true, limit, fields: [...LIST_FIELDS, 'ProviderIds'] });
     return r.Items ?? [];
   }
 
