@@ -143,14 +143,19 @@ module.exports = async (ctx) => {
   const reqBtn = (title) => `[...document.querySelectorAll('.home .trend-row .req-card')].find((c) => c.querySelector('.l1').textContent === ${JSON.stringify(title)}).querySelector('.req-actions button')`;
   await ctx.run(`${reqBtn('Trend Film Eins')}.click()`);
   check('Film aus der Reihe anfragen: Karte zeigt "Angefragt", Knopf weg, Hinweis "wurde angefragt"', (await waitFor(`[...document.querySelectorAll('.home .trend-row .req-card')].find((c) => c.querySelector('.l1').textContent === 'Trend Film Eins').querySelector('.req-status:not([hidden])')?.textContent === 'Angefragt'`, 5000)) && /wurde angefragt/.test(await toasts()), await toasts());
-  check('Der Server bekam genau diese eine Anfrage (Film, ohne Staffeln)', JSON.stringify(state.log.filter((l) => l.at === 'seerr:request-body').map(({ at, ...b }) => b)) === JSON.stringify([{ mediaType: 'movie', mediaId: 7001 }]), JSON.stringify(state.log.map((l) => l.at)));
+  check('Der Server bekam genau diese eine Anfrage (Film, ohne Staffeln, nie 4K)', JSON.stringify(state.log.filter((l) => l.at === 'seerr:request-body').map(({ at, ...b }) => b)) === JSON.stringify([{ mediaType: 'movie', mediaId: 7001, is4k: false }]), JSON.stringify(state.log.map((l) => l.at)));
   await ctx.run(`[...document.querySelectorAll('.home .trend-row .req-card')].find((c) => c.querySelector('.l1').textContent === 'Trend Film Zwei').querySelector('.thumb').click()`);
-  check('Klick auf ein Poster der Reihe öffnet das Detailfenster', await waitFor(`document.querySelector('.rq .rq-title')?.textContent === 'Trend Film Zwei'`, 3000));
-  check('...die Details laden (kein Fehlerhinweis) und die Beschreibung der Liste steht schon da', (await waitFor(`!document.querySelector('.rq-loading')`, 4000)) && (await ctx.run(`document.querySelector('.rq .rq-note')?.hidden === true`)) && state.log.some((l) => l.at === 'seerr:GET /movie/7002'));
-  await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  check('Esc schließt es, der Fokus kehrt zum Poster zurück', (await waitFor(`!document.querySelector('.rq-scrim')`, 2000)) && (await ctx.run(`document.activeElement?.closest('.req-card')?.querySelector('.l1')?.textContent === 'Trend Film Zwei'`)));
+  check('Klick auf ein Poster der Reihe öffnet die Seite des Titels', await waitFor(`location.hash === '#/seerr/movie/7002' && document.querySelector('.seerr-page .detail-title')?.textContent === 'Trend Film Zwei'`, 3000), await ctx.run('location.hash'));
+  const pageReady = await waitFor(`!!document.querySelector('.seerr-page .info-block') && !!document.querySelector('.seerr-page .seerr-request')`, 8000);
+  const pageState = await ctx.run(`({ note: document.querySelector('.seerr-page .seerr-page-note')?.hidden ? '' : document.querySelector('.seerr-page .seerr-page-note')?.textContent, year: document.querySelector('.seerr-page .detail-meta > span')?.textContent, button: document.querySelector('.seerr-page .seerr-request')?.textContent })`);
+  check('...die Angaben laden (kein Fehlerhinweis), Jahr aus der Liste und "Film anfragen" stehen da', pageReady && !pageState.note && pageState.year === '2025' && /Film anfragen/.test(pageState.button ?? '') && state.log.some((l) => l.at === 'seerr:GET /movie/7002'), JSON.stringify(pageState));
+  await ctx.run(`history.back()`);
+  check('"Zurück" führt wieder auf die Startseite', await waitFor(`location.hash === '#/home' && !!document.querySelector('.home .trend-row')`, 4000));
 
   // ---------- Liste wird zwischengemerkt ----------
+  // Nach einer Anfrage holt die Startseite die Liste neu (der Stand hat sich geaendert, wie die Apple-App); danach gilt sie wieder zehn Minuten
+  await rebuild();
+  await showRow('.trend-row');
   const before = trendCount();
   await rebuild();
   await showRow('.trend-row');

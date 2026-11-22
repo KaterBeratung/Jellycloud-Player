@@ -1128,51 +1128,33 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
    ========================================================================== */
 .req-card .thumb, .req-card .meta { cursor: pointer; }
 .req-card .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-/* Detailfenster zu einem Titel aus der Seerr-Suche (views/request-detail.js) */
-/* Abdunklung hinter Fenstern: ohne Weichzeichner (Glas nur fuer schwebende Bedienelemente, E11; ein Weichzeichner ueber die ganze Seite kostet zudem bei jedem Bild) */
-.rq-scrim { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: clamp(14px, 3vw, 36px); background: rgb(0 0 0 / 0.6); animation: rq-fade calc(180ms * var(--dur)) var(--ease) both; }
-.rq-scrim.closing { opacity: 0; transition: opacity calc(150ms * var(--dur)) var(--ease); pointer-events: none; }
-.rq { position: relative; width: min(960px, 100%); max-height: min(88vh, 780px); display: flex; flex-direction: column; border-radius: calc(var(--radius) * 1.5); background: var(--surface); box-shadow: 0 0 0 1px var(--line2), 0 50px 120px -30px rgb(0 0 0 / 0.9); overflow: hidden; animation: rq-pop calc(320ms * var(--dur)) var(--ease) both; }
-.rq-close { position: absolute; top: 14px; right: 14px; z-index: 6; }
-.rq-scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.rq-hero { position: absolute; inset: 0 0 auto 0; height: 320px; overflow: hidden; background: linear-gradient(135deg, rgb(var(--accent-rgb) / 0.35), transparent 70%), var(--surface2); }
-.rq-hero-img { position: absolute; inset: 0; }
-.rq-hero .imgbox, .rq-hero .imgbox.failed { background: none; } /* durchsichtig: das Hintergrundbild liegt ueber dem verwischten Poster, ein Fehlschlag soll es nicht mit einer Flaeche verdecken */
-.rq-hero-blur { filter: blur(28px) saturate(1.5); transform: scale(1.4); opacity: 0.55; }
-.rq-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(0 0 0 / 0.1), var(--surface) 96%), linear-gradient(90deg, color-mix(in srgb, var(--surface) 65%, transparent), transparent 70%); }
-.rq-body { position: relative; display: flex; gap: clamp(20px, 3vw, 34px); padding: 150px clamp(20px, 3vw, 36px) 26px; }
-.rq-poster { position: relative; flex: none; width: clamp(150px, 20vw, 210px); aspect-ratio: 2 / 3; height: auto; align-self: flex-start; border-radius: calc(var(--radius) * 0.9); overflow: hidden; box-shadow: 0 0 0 1px var(--line2), 0 26px 60px -18px rgb(0 0 0 / 0.85); }
-.rq-main { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 6px; }
-.rq-title { font: 800 clamp(26px, 3.2vw, 40px)/1.05 var(--font-display); letter-spacing: -0.03em; text-wrap: balance; text-shadow: 0 2px 18px rgb(0 0 0 / 0.5); padding-right: 48px; }
-.rq-original { margin-top: -6px; font-size: 13px; color: var(--muted); }
-.rq-meta { display: flex; flex-wrap: wrap; align-items: center; font-weight: 650; }
-.rq-meta span { white-space: pre; } /* sonst verschluckt die Flex-Zeile die Leerzeichen um die Punkte */
-.rq-rating { margin-left: 12px; color: #f5c451; }
-.rq-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.rq-chip { padding: 5px 12px; border-radius: 999px; background: var(--glass2); border: 1px solid var(--line); font: 650 12.5px var(--font); }
-.rq-tagline { font-style: italic; color: var(--muted); }
-.rq-overview { max-width: 62ch; line-height: 1.55; color: color-mix(in srgb, var(--text) 88%, transparent); }
-.rq-loading { display: grid; gap: 8px; width: min(420px, 100%); }
-.rq-facts { display: grid; gap: 6px; margin-top: 2px; }
-.rq-fact { display: flex; gap: 14px; font-size: 14px; }
-.rq-fact .k { flex: none; width: 110px; color: var(--muted); font-weight: 650; }
-.rq-fact .v { font-weight: 650; }
-.rq-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-/* Stand bei Seerr im Detailfenster: ein Tag (Bezeichnung und Farbe aus seerr-state.js und media-tags.js), auf Hoehe der Knoepfe */
-.rq-status { display: inline-flex; align-items: center; min-height: 44px; }
-.rq-note { max-width: 62ch; font-size: 13.5px; color: var(--muted); }
-.rq-note[hidden], .rq-cast[hidden], .rq-original[hidden], .rq-tagline[hidden] { display: none; }
-.rq-cast { position: relative; padding: 0 clamp(20px, 3vw, 36px) 30px; }
-.rq-cast h3 { margin-bottom: 12px; font: 750 16px var(--font); }
-.rq-cast-row { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
-.rq-person { flex: none; width: 92px; text-align: center; }
-.rq-avatar { position: relative; width: 72px; height: 72px; margin: 0 auto 8px; border-radius: 50%; overflow: hidden; }
-.rq-avatar .fallback-title { padding: 0; font-size: 20px; }
-.rq-person .n { font: 650 12.5px/1.25 var(--font); }
-.rq-person .c { margin-top: 2px; font-size: 11.5px; line-height: 1.25; color: var(--muted); }
-@keyframes rq-fade { from { opacity: 0; } }
-@keyframes rq-pop { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
-@media (max-width: 720px) { .rq-body { flex-direction: column; padding-top: 110px; } .rq-poster { width: 130px; } }
+/* Seite eines Seerr-Titels (views/seerr-title.js, wie SeerrDetailSheet der Apple-App): Bildkopf und Kopf wie die Detailseite (.detail-*), darunter
+   Staffeln, Besetzung, weitere Titel und der Informationsblock. Abdunklung hinter Fenstern ohne Weichzeichner (E11). */
+.seerr-page .detail-actions[hidden], .seerr-page-note[hidden], .seerr-genres[hidden] { display: none; }
+.seerr-page-note { max-width: 62ch; margin-top: 2px; font-size: 13.5px; color: var(--muted); }
+.seerr-genres { color: var(--muted); font-size: 14px; }
+.seerr-page-check { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; }
+.seerr-sections { position: relative; }
+.seerr-seasons { padding: 6px var(--pad) 18px; max-width: calc(640px + var(--pad) * 2); }
+.seerr-seasons h2, .info-block h2 { font: 700 22px var(--font-display); letter-spacing: -0.02em; margin-bottom: 12px; }
+.seerr-season-list { display: flex; flex-direction: column; border-radius: var(--radius); background: var(--glass); border: 1px solid var(--line); overflow: hidden; }
+.seerr-season { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 18px; border-bottom: 1px solid var(--line); }
+.seerr-season:last-child { border-bottom: 0; }
+.seerr-season-name { font-weight: 650; }
+.seerr-season-sub { color: var(--muted); font-size: 13px; }
+/* Informationsblock: Gruppen nebeneinander, so viele die Breite fasst; Beschriftung ueber dem Wert */
+.info-block { padding: 10px var(--pad) 40px; }
+.info-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 40px; }
+.info-group h3 { margin-bottom: 8px; color: var(--muted); font: 800 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; }
+.info-group dl { display: grid; gap: 10px; }
+.info-group dt { color: var(--muted); font-size: 13px; }
+.info-group dd { margin: 1px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+/* Staffelauswahl (views/season-chooser.js): die Schalter der Einstellungen; vergebene Staffeln stehen da, sind aber gesperrt */
+.season-chooser { display: flex; flex-direction: column; gap: 10px; }
+.season-chooser-sub { color: var(--muted); }
+.season-chooser .settings-group { max-height: min(52vh, 460px); overflow-y: auto; }
+.season-pick.taken .setting-label { color: var(--muted); }
+.season-pick .switch:disabled { opacity: 0.45; cursor: default; }
 /* Stand bei Seerr auf dem Plakat: ein Tag oben links (wie die Tags der Bibliothek ein festes Farbpaar je Stand, keine eigene Palette) */
 .req-status { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; pointer-events: none; }
 .req-status[hidden] { display: none; }
@@ -1231,9 +1213,11 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .btn.sm.icon-only { width: 34px; padding: 0; }
 .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 
-.mdl-scrim { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: clamp(14px, 3vw, 36px); background: rgb(0 0 0 / 0.6); animation: rq-fade calc(160ms * var(--dur)) var(--ease) both; }
+.mdl-scrim { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: clamp(14px, 3vw, 36px); background: rgb(0 0 0 / 0.6); animation: mdl-fade calc(160ms * var(--dur)) var(--ease) both; }
+@keyframes mdl-fade { from { opacity: 0; } }
+@keyframes mdl-pop { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
 .mdl-scrim.closing { opacity: 0; transition: opacity calc(140ms * var(--dur)) var(--ease); pointer-events: none; }
-.mdl { width: min(480px, 100%); max-height: min(88vh, 760px); display: flex; flex-direction: column; gap: 16px; padding: 24px 26px 22px; border-radius: calc(var(--radius) * 1.5); background: var(--surface); box-shadow: 0 0 0 1px var(--line2), 0 50px 120px -30px rgb(0 0 0 / 0.9); animation: rq-pop calc(280ms * var(--dur)) var(--ease) both; }
+.mdl { width: min(480px, 100%); max-height: min(88vh, 760px); display: flex; flex-direction: column; gap: 16px; padding: 24px 26px 22px; border-radius: calc(var(--radius) * 1.5); background: var(--surface); box-shadow: 0 0 0 1px var(--line2), 0 50px 120px -30px rgb(0 0 0 / 0.9); animation: mdl-pop calc(280ms * var(--dur)) var(--ease) both; }
 .mdl.wide { width: min(720px, 100%); }
 .mdl-title { font: 750 20px/1.25 var(--font-display); letter-spacing: -0.02em; text-wrap: balance; }
 .mdl-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 2px; margin: -2px; }
@@ -1261,7 +1245,7 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 @media (max-width: 560px) { .mdl-two { grid-template-columns: 1fr; } }
 
 /* Sehr lange Woerter ohne Leerzeichen (Titel, Namen, Adressen) brechen um, statt Poster, Karten oder die ganze Seite zu sprengen (Seite scrollte sonst waagerecht) */
-.detail-title, .hero-title, .fallback-title, .rq-title, .mdl-title, .mdl-result .n, .setting-label, .setting-desc, .tagline, .detail-info p, .lib-title h1, .admin-status { overflow-wrap: anywhere; }
+.detail-title, .hero-title, .fallback-title, .mdl-title, .mdl-result .n, .setting-label, .setting-desc, .tagline, .detail-info p, .lib-title h1, .admin-status { overflow-wrap: anywhere; }
 
 /* Haarlinie am unteren Rand des Banners: Waehrend die Seite einblendet (bewegt sich 0,4 s), runden Bild, Trailer und Abdunklung die Unterkante verschieden, und die unterste Pixelreihe
    des Bildes oder Trailers blitzte unterhalb der Abdunklung als farbige Linie ueber der Ueberschrift der ersten Reihe auf. Ein Band in Seitenfarbe ueber der Kante (3 Pixel darunter und darueber,

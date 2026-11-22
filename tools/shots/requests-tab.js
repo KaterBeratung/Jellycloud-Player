@@ -104,11 +104,11 @@ module.exports = async (ctx) => {
   await pickMenu('Anfrage zurückziehen');
   await confirm('Zurückziehen');
   check('Zurueckgezogen: die Anfrage ist weg, Seerr bekam genau ein DELETE', (await waitFor(`!${cardByTitle('Anfrage 90003')} && document.querySelectorAll('.requests .rq-item').length === 2`, 5000)) && state.log.filter((l) => l.at === 'seerr:DELETE /request/3').length === 1, JSON.stringify(state.log.map((l) => l.at)));
-  // Antippen: der Titel ist nicht in der Mediathek, also das Fenster des Titels bei Seerr
+  // Antippen: der Titel ist nicht in der Mediathek, also seine Seite bei Seerr (im Verlauf, "Zurueck" fuehrt in den Reiter)
   await ctx.run(`${cardByTitle('Anfrage 90005')}.click()`);
-  check('Antippen oeffnet den Titel (nicht in der Mediathek: das Seerr-Fenster mit dem Titel)', await waitFor(`document.querySelector('.rq .rq-title')?.textContent === 'Anfrage 90005'`, 4000));
-  await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  await waitFor(`!document.querySelector('.rq-scrim')`, 2000);
+  check('Antippen oeffnet den Titel (nicht in der Mediathek: seine Seite bei Seerr)', await waitFor(`location.hash === '#/seerr/movie/90005' && document.querySelector('.seerr-page .detail-title')?.textContent === 'Anfrage 90005'`, 4000), await ctx.run('location.hash'));
+  await ctx.run(`history.back()`);
+  await waitFor(`location.hash === '#/requests' && document.querySelectorAll('.requests .rq-item').length === 2`, 5000);
   await ctx.run(`(() => { const c = ${cardByTitle('Anfrage 90004')}; c.focus(); c.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true })); })()`);
   check('Tastatur: die Kontextmenue-Taste auf dem Plakat oeffnet die Aktionen', await waitFor(`!!document.querySelector('.menu.open')`, 2000));
   await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);

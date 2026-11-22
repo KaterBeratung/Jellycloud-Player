@@ -154,8 +154,129 @@ function trailerKeyOf(list) {
   return (vids.find((v) => v.type === 'Trailer') ?? vids.find((v) => v.type === 'Teaser'))?.key ?? null;
 }
 
+const intOf = (v) => (Number.isInteger(+v) && v !== null && v !== '' ? +v : null);
+const nonEmpty = (v, max = 300) => text(v, max) || null;
+
 /**
- * Reduziert die Detailantwort von Seerr (GET /movie/{id}, /tv/{id}) auf das, was die Detailansicht braucht. Alles bekommt einen festen Typ und eine Obergrenze,
+ * Mitwirkende hinter der Kamera (wie SeerrCredit.keyCrew der Apple-App): vorn Regie (Serie: die Schoepfer, "creator") und Drehbuch, danach Produktion
+ * und Musik; je Person ein Eintrag mit allen ihren Aufgaben (roles: Schluessel, die die Oberflaeche uebersetzt). Die uebrigen Gewerke bleiben weg.
+ */
+function keyCrew(d, movie) {
+  const raw = Array.isArray(d.credits?.crew) ? d.credits.crew : [];
+  const entry = (c, role) => {
+    const name = text(c?.name, 120);
+    if (!name) return null;
+    const pic = c?.profilePath ?? c?.profile_path;
+    return { id: intOf(c?.id), name, roles: [role], profilePath: TMDB_PATH.test(pic ?? '') ? pic : null };
+  };
+  const identity = (c) => (c.id !== null ? `id-${c.id}` : `name-${c.name}`);
+  /** Je Person ein Eintrag, die Aufgaben in der Reihenfolge ihres ersten Auftretens, hoechstens limit Personen. */
+  const merged = (list, limit) => {
+    const order = [];
+    const byKey = new Map();
+    for (const c of list.filter(Boolean)) {
+      const k = identity(c);
+      if (!byKey.has(k)) {
+        order.push(k);
+        byKey.set(k, { ...c, roles: [] });
+      }
+      const e = byKey.get(k);
+      for (const r of c.roles) if (!e.roles.includes(r)) e.roles.push(r);
+    }
+    return order.slice(0, limit).map((k) => byKey.get(k));
+  };
+  const jobs = (wanted, role, limit) => merged(raw.filter((c) => wanted.includes(c?.job)).map((c) => entry(c, role)), limit);
+  const creators = movie ? [] : (Array.isArray(d.createdBy) ? d.createdBy : []).slice(0, 3).map((c) => entry(c, 'creator'));
+  const lead = merged([...creators, ...jobs(['Director'], 'director', 3), ...jobs(['Screenplay', 'Writer', 'Story', 'Teleplay'], 'writer', 3)], 5);
+  const known = new Set(lead.map(identity));
+  const further = [...jobs(['Producer', 'Executive Producer'], 'producer', 2), ...jobs(['Original Music Composer', 'Music'], 'music', 1)].filter((c) => !known.has(identity(c)));
+  return { lead, further };
+}
+
+/**
+ * Weitere Angaben eines Titels fuer den Informationsblock (wie SeerrFacts der Apple-App): roh, ohne Deutung; Fehlendes bleibt leer. Die Freigaben je Land
+ * (Film: die erste Veroeffentlichung mit Angabe; Serie: die Einstufung) waehlt src/shared/seerr-facts.js fuer das Land des Geraets.
+ */
+function factsOf(d, movie, title) {
+  const names = (list) => (Array.isArray(list) ? list.map((x) => text(x?.name, 120)).filter(Boolean).slice(0, 3) : []);
+  const original = nonEmpty(movie ? d.originalTitle : d.originalName);
+  const certifications = {};
+  if (movie) {
+    for (const e of Array.isArray(d.releases?.results) ? d.releases.results : []) {
+      const region = text(e?.iso_3166_1, 4);
+      const found = (Array.isArray(e?.release_dates) ? e.release_dates : []).map((r) => text(r?.certification, 20)).find(Boolean);
+      if (region && found) certifications[region] = found;
+    }
+  } else {
+    for (const e of Array.isArray(d.contentRatings?.results) ? d.contentRatings.results : []) {
+      const region = text(e?.iso_3166_1, 4);
+      const rating = text(e?.rating, 20);
+      if (region && rating) certifications[region] = rating;
+    }
+  }
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}/.test(v ?? '') ? v.slice(0, 10) : null);
+  const votes = intOf(d.voteCount);
+  const episodes = intOf(d.numberOfEpisodes);
+  return {
+    originalTitle: original && original !== title ? original : null,
+    released: day(movie ? d.releaseDate : d.firstAirDate),
+    lastAired: movie ? null : day(d.lastAirDate),
+    nextEpisode: day(d.nextEpisodeToAir?.airDate),
+    votes: votes && votes > 0 ? votes : null,
+    studios: names(d.productionCompanies),
+    networks: movie ? [] : names(d.networks),
+    countries: (Array.isArray(d.productionCountries) ? d.productionCountries : []).map((c) => text(c?.iso_3166_1, 4)).filter(Boolean),
+    originalLanguage: nonEmpty(d.originalLanguage, 10),
+    productionStatus: nonEmpty(d.status, 60),
+    episodes: !movie && episodes && episodes > 0 ? episodes : null,
+    certifications
+  };
+}
+
+/**
+ * Staffeln einer Serie mit ihrem Stand (ohne Staffel 0, "Extras"): der Stand je Staffel aus mediaInfo.seasons; angefragte Staffeln stehen bei Seerr zunaechst
+ * nur in den Anfragen (mediaInfo.requests[].seasons, am echten Seerr 3.5.1 gesehen) und gelten als angefragt, solange die Anfrage nicht abgelehnt ist.
+ */
+function seasonsOf(d) {
+  const info = d.mediaInfo && typeof d.mediaInfo === 'object' ? d.mediaInfo : {};
+  const known = new Map((Array.isArray(info.seasons) ? info.seasons : []).filter((s) => intOf(s?.seasonNumber) !== null).map((s) => [intOf(s.seasonNumber), { status: Number(s.status) || 0, status4k: Number(s.status4k) || 0 }]));
+  const requested = new Set();
+  const requested4k = new Set();
+  for (const r of Array.isArray(info.requests) ? info.requests : []) {
+    if (Number(r?.status) === SeerrState.SEERR_REQUEST.DECLINED) continue;
+    for (const s of Array.isArray(r?.seasons) ? r.seasons : []) {
+      const n = intOf(s?.seasonNumber);
+      if (n !== null) (r.is4k === true ? requested4k : requested).add(n);
+    }
+  }
+  const pending = SeerrState.SEERR_MEDIA.PENDING;
+  return (Array.isArray(d.seasons) ? d.seasons : [])
+    .filter((s) => intOf(s?.seasonNumber) > 0)
+    .map((s) => {
+      const n = intOf(s.seasonNumber);
+      return {
+        number: n,
+        name: text(s.name, 120),
+        episodes: intOf(s.episodeCount) ?? 0,
+        status: Math.max(known.get(n)?.status ?? 0, requested.has(n) ? pending : 0),
+        status4k: Math.max(known.get(n)?.status4k ?? 0, requested4k.has(n) ? pending : 0),
+        airDate: /^\d{4}-\d{2}-\d{2}$/.test(s.airDate ?? '') ? s.airDate : null,
+        posterPath: TMDB_PATH.test(s.posterPath ?? '') ? s.posterPath : null
+      };
+    })
+    .sort((a, b) => a.number - b.number);
+}
+
+/** Stand der neuesten allgemeinen Anfrage eines Titels (Seerr zaehlt die Nummern hoch), sonst null: fuer den Stand der Seite (seerr-state.js titleState). */
+function latestRequestOf(d) {
+  const list = (Array.isArray(d.mediaInfo?.requests) ? d.mediaInfo.requests : []).filter((r) => r && r.is4k !== true && Number.isInteger(+r.id));
+  if (!list.length) return null;
+  const s = Number(list.reduce((a, b) => (+b.id > +a.id ? b : a)).status);
+  return s >= 1 && s <= 5 ? s : null;
+}
+
+/**
+ * Reduziert die Detailantwort von Seerr (GET /movie/{id}, /tv/{id}) auf das, was die Seite eines Titels braucht. Alles bekommt einen festen Typ und eine Obergrenze,
  * Unbekanntes faellt weg; Bildpfade gelten nur in der Form, die das App-Protokoll fuer TMDB annimmt.
  */
 function normalizeDetails(mediaType, d) {
@@ -183,17 +304,43 @@ function normalizeDetails(mediaType, d) {
     posterPath: TMDB_PATH.test(d.posterPath ?? '') ? d.posterPath : null,
     backdropPath: TMDB_PATH.test(d.backdropPath ?? '') ? d.backdropPath : null,
     status: Number(d.mediaInfo?.status) || 0,
+    status4k: Number(d.mediaInfo?.status4k) || 0,
+    latestRequest: latestRequestOf(d),
     // Regie bei Filmen, "Erstellt von" bei Serien
     directors: movie ? names(crew.filter((c) => c?.job === 'Director'), 3) : names(d.createdBy, 3),
+    crew: keyCrew(d, movie).lead,
+    furtherCrew: keyCrew(d, movie).further,
     cast: (Array.isArray(d.credits?.cast) ? d.credits.cast : [])
-      .map((c) => ({ name: text(c?.name, 120), character: text(c?.character, 120), profilePath: TMDB_PATH.test(c?.profilePath ?? '') ? c.profilePath : null }))
+      .map((c) => ({ id: intOf(c?.id), name: text(c?.name, 120), character: text(c?.character, 120), profilePath: TMDB_PATH.test(c?.profilePath ?? '') ? c.profilePath : null }))
       .filter((c) => c.name)
-      .slice(0, 12),
+      .slice(0, 20),
     seasons: movie ? null : number(d.numberOfSeasons),
     episodes: movie ? null : number(d.numberOfEpisodes),
+    seasonList: movie ? [] : seasonsOf(d),
     seriesStatus: movie ? '' : text(d.status, 60),
-    trailerKey: trailerKeyOf(d.relatedVideos) // fuer den Trailer im Banner der Startseite
+    facts: factsOf(d, movie, title),
+    collection: movie && Number.isInteger(+d.collection?.id) && text(d.collection?.name, 200) ? { id: Number(d.collection.id), name: text(d.collection.name, 200) } : null,
+    trailerKey: trailerKeyOf(d.relatedVideos) // fuer den Trailer im Hintergrund (Startseite, Seite des Titels)
   };
+}
+
+/** Titel einer Liste (empfohlene, aehnliche, Filmreihe): ohne Personen, jeder einmal; nennt ein Eintrag seine Art nicht, gilt type. */
+function titleList(raw, type) {
+  const seen = new Set();
+  return (Array.isArray(raw) ? raw : [])
+    .map((r) => normalizeResult(r && typeof r === 'object' ? { ...r, mediaType: r.mediaType ?? type } : null))
+    .filter((r) => r && !seen.has(`${r.mediaType}-${r.id}`) && seen.add(`${r.mediaType}-${r.id}`));
+}
+
+/** Kontingent eines Benutzers je Art (GET /user/<id>/quota); ohne Grenze limit null. */
+function normalizeQuota(q) {
+  const one = (x) => {
+    const limit = intOf(x?.limit);
+    const remaining = intOf(x?.remaining);
+    const days = intOf(x?.days);
+    return { limit: limit && limit > 0 ? limit : null, remaining: remaining !== null && remaining >= 0 ? remaining : null, days: days && days > 0 ? days : null, restricted: x?.restricted === true };
+  };
+  return { movie: one(q?.movie), tv: one(q?.tv) };
 }
 
 const TMDB_SIZES = new Set(['w154', 'w185', 'w342', 'w500', 'w780', 'w1280']); // w1280: Hintergrundbilder im Banner der Startseite
@@ -447,19 +594,57 @@ class SeerrClient {
     await this.request(spec[0], `/request/${Number(id)}${spec[1]}`);
   }
 
+  /** Empfohlene (kind "recommendations") oder aehnliche Titel ("similar"): die erste Seite von Seerr mit dem Stand je Titel, ohne den Titel selbst. */
+  async related(mediaType, tmdbId, kind) {
+    if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
+    if (kind !== 'recommendations' && kind !== 'similar') throw new SeerrError('Unbekannte Liste');
+    if (!Number.isInteger(+tmdbId) || +tmdbId <= 0) throw new SeerrError('Ungueltige Titel-ID');
+    const r = await this.request('GET', `/${mediaType}/${Number(tmdbId)}/${kind}`, { query: { page: 1 } });
+    return titleList(r?.results, mediaType).filter((x) => !(x.mediaType === mediaType && x.id === Number(tmdbId)));
+  }
+
+  /** Die Filme einer Filmreihe in der Reihenfolge von Seerr (nach Erscheinen). */
+  async collection(id) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Filmreihe');
+    const r = await this.request('GET', `/collection/${Number(id)}`);
+    return titleList(r?.parts, 'movie');
+  }
+
+  /** Bewertung von IMDb zu einem Film, wie Seerr sie holt ({ score, votes }); null ohne Bewertung. (Rotten Tomatoes ordnet Seerr nur ueber den Titel zu: nicht uebernommen.) */
+  async imdbRating(tmdbId) {
+    if (!Number.isInteger(+tmdbId) || +tmdbId <= 0) throw new SeerrError('Ungueltige Titel-ID');
+    const r = await this.request('GET', `/movie/${Number(tmdbId)}/ratingscombined`);
+    const score = Number(r?.imdb?.criticsScore);
+    if (!Number.isFinite(score) || score <= 0) return null;
+    const votes = intOf(r.imdb.criticsScoreCount);
+    return { score, votes: votes && votes > 0 ? votes : null };
+  }
+
+  /** Kontingent des Benutzers fuer Filme und Serien (normalizeQuota). */
+  async quota(userId) {
+    if (!Number.isInteger(+userId) || +userId <= 0) throw new SeerrError('Unbekannter Benutzer');
+    return normalizeQuota(await this.request('GET', `/user/${Number(userId)}/quota`));
+  }
+
   /**
-   * Stellt eine Anfrage. Serien werden komplett angefragt (alle Staffeln).
+   * Stellt eine Anfrage: einen Film oder bei Serien die gewaehlten Staffeln (seasons: Nummern; ohne: alle). Immer eine allgemeine Anfrage, nie eine 4K-Anfrage
+   * (wie die Apple-App, auch mit dem Recht dazu). Seerr prueft Rechte, Kontingent und doppelte Anfragen selbst.
    * @returns {Promise<{id:number|null, requestStatus:number|null, mediaStatus:number|null}>}
    *   requestStatus: 1 wartet auf Freigabe, 2 freigegeben, 3 abgelehnt. mediaStatus: siehe MEDIA_STATUS.
    */
-  async requestMedia({ mediaType, mediaId }) {
+  async requestMedia({ mediaType, mediaId, seasons = null }) {
     if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
     if (!Number.isFinite(+mediaId) || +mediaId <= 0) throw new SeerrError('Ungueltige Titel-ID');
-    const body = { mediaType, mediaId: Number(mediaId), ...(mediaType === 'tv' ? { seasons: 'all' } : {}) };
+    let chosen = 'all';
+    if (mediaType === 'tv' && Array.isArray(seasons)) {
+      chosen = [...new Set(seasons.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 1000))].sort((a, b) => a - b);
+      if (!chosen.length) throw new SeerrError('Keine Staffel gewaehlt');
+    }
+    const body = { mediaType, mediaId: Number(mediaId), is4k: false, ...(mediaType === 'tv' ? { seasons: chosen } : {}) };
     const r = await this.request('POST', '/request', { body });
     return { id: r?.id ?? null, requestStatus: Number(r?.status) || null, mediaStatus: Number(r?.media?.status) || null };
   }
 }
 
-return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, seerrLanguage, tmdbImageUrl };
+return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, normalizeQuota, seerrLanguage, tmdbImageUrl };
 });

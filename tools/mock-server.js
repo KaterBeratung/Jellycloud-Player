@@ -490,7 +490,7 @@ const SEERR = {
   sid: 'mock-seerr-sid',
   apiKey: 'mock-seerr-key',
   expired: false, // true: jede Anfrage bekommt 401 (Sitzung abgelaufen)
-  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 6]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt (Seerr 3.5.1: 6 gesperrt, 7 geloescht)
+  statuses: new Map([['movie:4242', 5], ['movie:5151', 2], ['movie:7004', 6], ['tv:2001', 4]]), // bereits bekannte Titel: verfuegbar, angefragt bzw. gesperrt (Seerr 3.5.1: 6 gesperrt, 7 geloescht)
   // Anfragen: { id, status (1 wartet, 2 genehmigt, 3 abgelehnt, 4 gescheitert, 5 abgeschlossen), mediaType, mediaId, seasons, readySeasons,
   // deleted, modifiedBy, requestedBy, createdAt, updatedAt, media }; GET /request liefert sie wie Seerr (neueste zuerst, take/skip/filter/sort)
   requests: [],
@@ -515,8 +515,19 @@ const SEERR = {
     { id: 5151, mediaType: 'movie', title: 'Mock Pending Story', releaseDate: '2020-01-01', posterPath: null },
     { id: 9999, mediaType: 'movie', title: 'Mock Quota Exceeded', releaseDate: '2019-05-05', posterPath: '/mockposter0005.jpg' },
     { id: 777, mediaType: 'person', name: 'Mock Person', profilePath: '/mockperson0001.jpg' },
-    { id: 2468, mediaType: 'movie', title: 'Dialog Anfrage Film', releaseDate: '2018-03-03', posterPath: '/mockposter0006.jpg', overview: 'Wird im Detailfenster angefragt.' }
+    { id: 2468, mediaType: 'movie', title: 'Dialog Anfrage Film', releaseDate: '2018-03-03', posterPath: '/mockposter0006.jpg', overview: 'Wird im Detailfenster angefragt.' },
+    // Serie mit Staffeln: Staffel 1 ist da (Serie teilweise verfuegbar), 2 und 3 lassen sich anfragen (Seite eines Seerr-Titels, Staffelauswahl)
+    { id: 2001, mediaType: 'tv', name: 'Wintersignale', firstAirDate: '2025-10-01', posterPath: '/mockposter0007.jpg', overview: 'Eine Serie mit drei Staffeln.' }
   ],
+  // Stand je Staffel bei Seerr (mediaInfo.seasons); angefragte Staffeln kommen dazu aus den Anfragen (mediaInfo.requests)
+  seasonStates: new Map([['tv:2001', { 1: 5 }]]),
+  // Weitere Titel einer Seite: "<art>:<nummer>:recommendations|similar" -> Titel; Filmreihen; Bewertungen (GET /movie/<nummer>/ratingscombined)
+  related: new Map([
+    ['movie:603:recommendations', [{ id: 7001, mediaType: 'movie', title: 'Trend Film Eins', releaseDate: '2026-02-01', posterPath: '/trendposter0001.jpg' }, { id: 4242, mediaType: 'movie', title: 'Mock Arrival', releaseDate: '2016-11-10', posterPath: '/mockposter0003.jpg' }, { id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection' }, { id: 777, mediaType: 'person', name: 'Mock Person' }]],
+    ['movie:603:similar', [{ id: 7002, mediaType: 'movie', title: 'Trend Film Zwei', releaseDate: '2025-11-20', posterPath: '/trendposter0002.jpg' }]]
+  ]),
+  collections: new Map([[77, { id: 77, name: 'Mock Matrix Reihe', parts: [{ id: 601, mediaType: 'movie', title: 'Mock Matrix', releaseDate: '1999-03-31', posterPath: '/mockposter0008.jpg' }, { id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg' }] }]]),
+  ratings: new Map([[603, { rt: { criticsScore: 63 }, imdb: { title: 'Mock Matrix Resurrection', url: 'https://www.imdb.com/title/tt0', criticsScore: 7.8, criticsScoreCount: 54321 } }]]),
   // Trend-Liste (GET /discover/trending?page=n): Filme, Serien und Personen gemischt, zwei Seiten zu je vier Eintraegen. Ein Film steht zweimal drin,
   // Id 4242 ist verfuegbar, 5151 angefragt, 7004 gesperrt (Stand 6: darf nicht erscheinen). trendingError: Seerr antwortet mit 500.
   trendingError: false,
@@ -538,6 +549,9 @@ const SEERR = {
     'movie:603': {
       tagline: 'Zurueck im Mock.', runtime: 148, voteAverage: 7.34, voteCount: 1234, originalTitle: 'Mock Matrix Resurrection', backdropPath: '/mockbackdrop001.jpg',
       genres: [{ id: 1, name: 'Science Fiction' }, { id: 2, name: 'Action' }],
+      status: 'Released', originalLanguage: 'en', collection: { id: 77, name: 'Mock Matrix Reihe' },
+      productionCompanies: [{ id: 1, name: 'Mock Studios' }], productionCountries: [{ iso_3166_1: 'US', name: 'United States of America' }],
+      releases: { results: [{ iso_3166_1: 'US', release_dates: [{ certification: 'R', type: 3 }] }, { iso_3166_1: 'DE', release_dates: [{ certification: '', type: 1 }, { certification: '16', type: 3 }] }] },
       credits: {
         cast: [
           { id: 9101, name: 'Mock Actor Eins', character: 'Neo', profilePath: '/mockprofile001.jpg' },
@@ -553,6 +567,14 @@ const SEERR = {
       credits: { cast: [{ id: 9106, name: 'Mock Darsteller', character: 'Held', profilePath: '/mockprofile101.jpg' }], crew: [] }
     },
     'movie:5151': { overview: 'Wartet schon auf Freigabe.', runtime: 90, genres: [], credits: { cast: [], crew: [] } },
+    'tv:2001': {
+      tagline: 'Funkstille im Schnee.', episodeRunTime: [48], voteAverage: 8.0, voteCount: 90, numberOfSeasons: 3, numberOfEpisodes: 24, status: 'Returning Series', originalLanguage: 'de', backdropPath: '/mockbackdrop007.jpg',
+      genres: [{ id: 3, name: 'Drama' }], networks: [{ id: 1, name: 'Kanal Eins' }], productionCountries: [{ iso_3166_1: 'DE', name: 'Germany' }],
+      contentRatings: { results: [{ iso_3166_1: 'DE', rating: '16' }, { iso_3166_1: 'US', rating: 'TV-MA' }] },
+      createdBy: [{ id: 9201, name: 'Ines Berger', profile_path: '/inesberger01.jpg' }],
+      seasons: [{ seasonNumber: 0, name: 'Extras', episodeCount: 2 }, { seasonNumber: 1, name: 'Staffel 1', episodeCount: 8, airDate: '2025-10-01' }, { seasonNumber: 2, name: 'Staffel 2', episodeCount: 8, airDate: '2026-03-01' }, { seasonNumber: 3, name: 'Staffel 3', episodeCount: 8, airDate: '2026-11-01' }],
+      credits: { cast: [{ id: 9202, name: 'Mara Ellison', character: 'Ärztin', profilePath: null }], crew: [{ id: 9203, name: 'Jo Kim', job: 'Executive Producer', department: 'Production' }] }
+    },
     // Trailer aus den "relatedVideos" (Banner der Startseite): erst ein Teaser, dann der Trailer (der Trailer gewinnt), dazu ein Eintrag mit kaputtem Schluessel
     'movie:7001': {
       runtime: 118, genres: [], credits: { cast: [], crew: [] },
@@ -812,9 +834,32 @@ async function handleSeerr(req, res, p, q, method) {
     if (entry.id === 9999) return json(500, { message: 'Mock: Details nicht verfuegbar' });
     const key = `${entry.mediaType}:${entry.id}`;
     const st = seerrMediaStatus(entry.mediaType, entry.id);
-    const mediaInfo = SEERR.mediaIds.has(key) ? { id: SEERR.mediaIds.get(key), status: st ?? 1 } : st ? { status: st } : null;
+    let mediaInfo = SEERR.mediaIds.has(key) ? { id: SEERR.mediaIds.get(key), status: st ?? 1 } : st ? { status: st } : null;
+    // Wie Seerr 3.5.1: der Stand je Staffel und die Anfragen des Titels (angefragte Staffeln stehen zunaechst nur dort)
+    const live = SEERR.requests.filter((r) => r.mediaType === entry.mediaType && r.mediaId === entry.id && !r.deleted);
+    const states = SEERR.seasonStates.get(key);
+    if (mediaInfo || live.length || states) {
+      mediaInfo = {
+        ...(mediaInfo ?? { status: 1 }),
+        seasons: Object.entries(states ?? {}).map(([n, s]) => ({ seasonNumber: Number(n), status: s, status4k: 1 })),
+        requests: live.map((r) => ({ id: r.id, status: r.status, is4k: false, seasons: (Array.isArray(r.seasons) ? r.seasons : []).map((n) => ({ seasonNumber: n, status: r.readySeasons.includes(n) ? 5 : r.status })) }))
+      };
+    }
     return json(200, { ...entry, ...(SEERR.details[key] ?? {}), ...(mediaInfo ? { mediaInfo } : {}) });
   }
+  // Weitere Titel einer Seite: empfohlene und aehnliche (erste Seite), die Filme einer Filmreihe, die Bewertung von IMDb
+  const rm = /^\/(movie|tv)\/(\d+)\/(recommendations|similar)$/.exec(sub);
+  if (rm && method === 'GET') {
+    const results = (SEERR.related.get(`${rm[1]}:${rm[2]}:${rm[3]}`) ?? []).map(withMediaInfo);
+    return json(200, { page: 1, totalPages: 1, totalResults: results.length, results });
+  }
+  const cm = /^\/collection\/(\d+)$/.exec(sub);
+  if (cm && method === 'GET') {
+    const c = SEERR.collections.get(Number(cm[1]));
+    return c ? json(200, { ...c, parts: c.parts.map(withMediaInfo) }) : json(404, { message: 'Collection not found' });
+  }
+  const im = /^\/movie\/(\d+)\/ratingscombined$/.exec(sub);
+  if (im && method === 'GET') return json(200, SEERR.ratings.get(Number(im[1])) ?? {});
   if (sub === '/issue' && method === 'POST') {
     const b = await readBody(req);
     state.log.push({ at: 'seerr:issue-body', ...b });
@@ -835,10 +880,18 @@ async function handleSeerr(req, res, p, q, method) {
     // Wie Seerr: gesperrte Titel (6) nicht anfragbar; wartende, bearbeitete und vorhandene schon angefragt (409); geloeschte (7) wieder anfragbar
     if (st === 6) return json(403, { message: 'This media is blocklisted.' });
     if ([2, 3, 5].includes(st)) return json(409, { message: 'Request for this media already exists' });
+    // Serien mit Staffeln: "all" heisst alle noch offenen; eine schon vorhandene oder angefragte Staffel noch einmal anfragen lehnt Seerr ab
+    let seasons = b.mediaType === 'tv' ? (Array.isArray(b.seasons) ? b.seasons : b.seasons === 'all' ? 'all' : null) : null;
+    const listed = (SEERR.details[`tv:${b.mediaId}`]?.seasons ?? []).map((s) => s.seasonNumber).filter((n) => n > 0);
+    if (b.mediaType === 'tv' && listed.length) {
+      const taken = new Set([...Object.entries(SEERR.seasonStates.get(`tv:${b.mediaId}`) ?? {}).filter(([, s]) => s >= 2).map(([n]) => Number(n)), ...SEERR.requests.filter((r) => r.mediaType === 'tv' && r.mediaId === b.mediaId && !r.deleted && r.status !== 3).flatMap((r) => (Array.isArray(r.seasons) ? r.seasons : []))]);
+      if (seasons === 'all') seasons = listed.filter((n) => !taken.has(n));
+      if (!Array.isArray(seasons) || !seasons.length || seasons.some((n) => taken.has(n))) return json(409, { message: 'Request for this media already exists' });
+    }
     const kindQuota = SEERR.quota[b.mediaType];
     if (kindQuota.limit && kindQuota.used >= kindQuota.limit) return json(403, { message: 'Quota exceeded' });
     if (kindQuota.limit) kindQuota.used++;
-    const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons: b.mediaType === 'tv' ? (Array.isArray(b.seasons) ? b.seasons : b.seasons === 'all' ? 'all' : null) : null, requestedBy: seerrUserId(sessionUser) });
+    const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons, requestedBy: seerrUserId(sessionUser) });
     return json(201, seerrRequestDto(created));
   }
   if (sub === '/request' && method === 'GET') {

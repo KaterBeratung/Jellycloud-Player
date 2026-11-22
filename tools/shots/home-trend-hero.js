@@ -141,13 +141,14 @@ module.exports = async (ctx) => {
   // ---------- Details und Anfragen aus dem Banner ----------
   const S3 = `document.querySelectorAll('.home .hero .hero-slide')[2]`; // die Folie von "Trend Film Eins"
   await ctx.run(`${S3}.querySelector('.hero-actions .btn.primary').click()`);
-  check('"Details" oeffnet das Fenster zum Anfragen mit dem Titel', await waitFor(`document.querySelector('.rq .rq-title')?.textContent === 'Trend Film Eins'`, 4000));
-  check('...die Details werden geladen (Seerr bekam die Abfrage)', (await waitFor(`!document.querySelector('.rq-loading')`, 4000)) && state.log.some((l) => l.at === 'seerr:GET /movie/7001'));
-  await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  check('...Esc schliesst es', await waitFor(`!document.querySelector('.rq .rq-title')`, 3000));
+  check('"Details" oeffnet die Seite des Titels bei Seerr', await waitFor(`location.hash === '#/seerr/movie/7001' && document.querySelector('.seerr-page .detail-title')?.textContent === 'Trend Film Eins'`, 4000), await ctx.run('location.hash'));
+  check('...die Angaben werden geladen (Seerr bekam die Abfrage)', await waitFor(`!!document.querySelector('.seerr-page .seerr-request')`, 4000) && state.log.some((l) => l.at === 'seerr:GET /movie/7001'));
+  await ctx.run(`history.back()`);
+  check('..."Zurueck" fuehrt wieder auf die Startseite', await waitFor(`location.hash === '#/home' && !!document.querySelector('.home .hero')`, 4000));
+  await ctx.wait(600);
   await ctx.run(`[...${S3}.querySelectorAll('.hero-actions .btn')].find((b) => b.textContent.includes('Anfragen')).click()`);
   check('"Anfragen" im Banner: die Folie zeigt "Angefragt", der Knopf ist weg, Hinweis "wurde angefragt"', (await waitFor(`${S3}.querySelector('.hero-meta .hero-stand')?.textContent === 'Angefragt' && ![...${S3}.querySelectorAll('.hero-actions .btn:not([hidden])')].some((b) => b.textContent.includes('Anfragen'))`, 5000)) && /wurde angefragt/.test(await ctx.run(`[...document.querySelectorAll('.toast')].map((t) => t.innerText).join(' | ')`)));
-  check('Der Server bekam genau diese eine Anfrage (Film 7001)', JSON.stringify(state.log.filter((l) => l.at === 'seerr:request-body').map(({ at, ...x }) => x)) === JSON.stringify([{ mediaType: 'movie', mediaId: 7001 }]));
+  check('Der Server bekam genau diese eine Anfrage (Film 7001, nie 4K)', JSON.stringify(state.log.filter((l) => l.at === 'seerr:request-body').map(({ at, ...x }) => x)) === JSON.stringify([{ mediaType: 'movie', mediaId: 7001, is4k: false }]));
   check('Dieselbe Anfrage zeigt auch die Karte in der Reihe als "Angefragt" (gleiche Daten)', await ctx.run(`[...document.querySelectorAll('.home .trend-row .req-card')].find((c) => c.querySelector('.l1').textContent === 'Trend Film Eins').querySelector('.req-status:not([hidden])')?.textContent === 'Angefragt'`));
   // Folien zeigen und aufnehmen
   await ctx.run(`document.querySelectorAll('.home .hero .hero-dots .dot')[2].click()`);

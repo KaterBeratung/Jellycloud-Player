@@ -198,7 +198,7 @@ test('Details-Normalisierung: kaputte Eintraege ergeben null, Typen und Laengen 
   assert.deepEqual([d.runtime, d.rating, d.releaseDate, d.year, d.tagline, d.posterPath, d.backdropPath, d.status], [null, null, '', null, '', null, null, 0]);
   assert.equal(d.genres.length, 6);
   assert.deepEqual(d.genres.slice(0, 1), ['A']);
-  assert.equal(d.cast.length, 12);
+  assert.equal(d.cast.length, 20, 'hoechstens 20 wie in der Apple-App');
   assert.equal(d.cast[0].profilePath, '/gueltig01.jpg');
   assert.equal(d.cast[1].profilePath, null);
   assert.deepEqual(d.directors, ['R1']);
@@ -212,14 +212,14 @@ test('Kein API-Schluessel mehr (Entscheidung E12): der Baustein nimmt keinen an 
   await assert.rejects(() => c.search('mock'), (e) => e.status === 403, 'ein Schluessel oeffnet nichts');
 });
 
-test('Anfragen: Film ohne Staffeln, Serie komplett; Antwort mit Status', async () => {
+test('Anfragen: Film ohne Staffeln, Serie ohne Wahl komplett; nie 4K; Antwort mit Status', async () => {
   const c = await cookieClient();
   const movie = await c.requestMedia({ mediaType: 'movie', mediaId: 603 });
   assert.deepEqual(movie, { id: 1, requestStatus: 1, mediaStatus: MEDIA_STATUS.PENDING });
   const tv = await c.requestMedia({ mediaType: 'tv', mediaId: 1399 });
   assert.equal(tv.id, 2);
   const bodies = state.log.filter((l) => l.at === 'seerr:request-body');
-  assert.deepEqual(bodies.map(({ at, ...b }) => b), [{ mediaType: 'movie', mediaId: 603 }, { mediaType: 'tv', mediaId: 1399, seasons: 'all' }]);
+  assert.deepEqual(bodies.map(({ at, ...b }) => b), [{ mediaType: 'movie', mediaId: 603, is4k: false }, { mediaType: 'tv', mediaId: 1399, is4k: false, seasons: 'all' }]);
   const after = await c.search('thrones');
   assert.equal(after[0].status, MEDIA_STATUS.PENDING, 'danach steht der Titel als angefragt in der Suche');
 });

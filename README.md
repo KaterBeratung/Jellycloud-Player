@@ -270,7 +270,7 @@ YouTube verlangt für Einbettungen einen Referer (sonst Fehler 153). Die Oberfl�
 *Einstellungen > Anfragen (Seerr)* verbindet die App mit Seerr (Jellyseerr / Overseerr): mit dem **Jellyfin-Konto** (das Passwort wird nicht gespeichert, nur das Session-Cookie von Seerr, verschlüsselt)
 (einen API-Schlüssel nimmt die App seit 1.2.4 nicht mehr, wie die Apple-App). Die Verbindung gilt **je Profil**: jedes Profil meldet sich selbst an, ein Profilwechsel nimmt sein eigenes Seerr mit; gespeichert werden Adresse, Benutzername, die Jellyfin-Kennung von Seerr und die verschlüsselte Sitzung. Nach *Trennen* bleibt die Adresse vorbelegt. Die Zugangsdaten bleiben im Hauptprozess. Ist Seerr verbunden, zeigt die **Suche** unter den Treffern der Bibliothek die Gruppe *Bei Seerr anfragen*:
 Titel, die es noch nicht gibt, mit Poster von TMDB (über das App-Protokoll, nur feste Größen) und der Schaltfläche *Anfragen*. Bereits Angefragtes, in Bearbeitung Befindliches oder teilweise Verfügbares
-zeigt seinen Stand als **Tag** statt der Schaltfläche (Bezeichnung und Farbe allein aus `src/shared/seerr-state.js`, gezeichnet mit den Farbpaaren der Tags: grün *Verfügbar*, Türkis-Blau *Teilweise*, blau *Angefragt* / *Genehmigt*, orange *In Bearbeitung*, Orange-Rot *Abgelehnt* / *Fehlgeschlagen*; überall gleich wie in der Apple-App), Verfügbares fehlt (es steht schon in der Bibliothek). Serien werden komplett angefragt. Fehler sind verständlich (Kontingent, schon angefragt, Sitzung abgelaufen);
+zeigt seinen Stand als **Tag** statt der Schaltfläche (Bezeichnung und Farbe allein aus `src/shared/seerr-state.js`, gezeichnet mit den Farbpaaren der Tags: grün *Verfügbar*, Türkis-Blau *Teilweise*, blau *Angefragt* / *Genehmigt*, orange *In Bearbeitung*, Orange-Rot *Abgelehnt* / *Fehlgeschlagen*; überall gleich wie in der Apple-App), Verfügbares fehlt (es steht schon in der Bibliothek). Bei Serien öffnet *Anfragen* die Staffelauswahl (seit 1.2.11). Fehler sind verständlich (Kontingent, schon angefragt, Sitzung abgelaufen);
 eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern zu einem Hinweis mit Weg in die Einstellungen.
 
 **Seerr je Profil und vier Zustände (seit 1.2.9, Plan P10, wie die Apple-App):**
@@ -315,15 +315,30 @@ eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern 
   (das Desktop-Programm wird nie kompakt, im Browser-Test liest Seerr kein Cookie), geprüft ist nur die Regel für den Aktionsknopf.
 
 
-**Details beim Anklicken:** Ein Klick auf eine Anfrage-Karte (Poster oder Beschriftung, per Tastatur Enter oder Leertaste auf dem Poster) öffnet ein Detailfenster (`src/renderer/js/views/request-detail.js`): sofort mit
-dem, was die Suche schon kennt (Titel, Poster, Beschreibung), dann nachgeladen aus Seerr (`/movie/{id}` bzw. `/tv/{id}`): Hintergrundbild, Jahr, Laufzeit, Bewertung, Genres, Tagline, Regie bzw. *Erstellt von*, Erscheinungsdatum,
-bei Serien Staffeln, Folgen und Stand, dazu die **Besetzung** mit Fotos (oder Initialen). Im Fenster steht die Schaltfläche *Anfragen* (oder der Stand, wenn schon angefragt); die Anfrage von dort aktualisiert auch die
-Karte dahinter. Schließen mit Kreuz, Esc, Klick neben das Fenster oder beim Seitenwechsel; der Fokus kehrt zum Poster zurück, Tab bleibt im Fenster. Schlägt das Nachladen fehl, bleiben die bekannten Angaben und die Schaltfläche,
-dazu ein Hinweis (bei abgelaufener Sitzung mit Weg in die Einstellungen). Ohne Hintergrundbild dient das verwischte Poster als Kopf.
+**Seite eines Titels (seit 1.2.11, Plan P12, wie `SeerrDetailSheet` der Apple-App; kein Dialogfenster mehr):** Ein Klick auf eine Seerr-Karte (Suche, *Filme im Trend*,
+*Details* im Banner, Reiter *Anfragen*, weitere Titel einer Seite) öffnet den Titel über **einen** Weg (`src/renderer/js/seerr-open.js`): liegt er in der Mediathek
+(Abgleich über die TMDB-Nummer, nie über den Titel), seine Detailseite dort, sonst seine Seite bei Seerr (`#/seerr/<art>/<nummer>`, `views/seerr-title.js`, im Verlauf
+wie jede Seite; „Zurück“ führt dorthin, wo man herkam). Ein Öffnen zur Zeit. Die Seite folgt der Detailseite: Bildkopf (TMDB `w1280`, Trailer im Hintergrund wie
+dort), Plakat, Titel, Tagline, Angabenzeile (Jahr, Freigabe für das Land des Geräts, in Deutschland „FSK 16“, Laufzeit, Staffeln, Bewertung), der Stand als Tag,
+die Knöpfe, Handlung und Genres; darunter **Staffeln** mit Folgen, Jahr und Stand, die **Besetzung** (vorn Regie bzw. die Schöpfer und Drehbuch, je Person einmal mit
+allen Aufgaben, dann die Darsteller mit Rolle, hinten Produktion und Musik), **weitere Titel** (Filmreihe, *Empfohlen*, *Ähnliche Titel*, je mit Stand) und die
+**Informationen** in Gruppen (Allgemein, Bewertungen mit TMDB und IMDb samt Stimmen, Produktion; `src/shared/seerr-facts.js`). Was schon bekannt ist, steht sofort da.
+- **Hauptknopf:** *Abspielen*, wenn der Titel in der Mediathek liegt (bei Serien die nächste Folge), sonst *Film anfragen*, *Serie anfragen* bzw. *Weitere Staffeln
+  anfragen*; neben *Abspielen* ist die Anfrage weiterer Staffeln ein zweiter Knopf. **Nur allgemeine Anfragen, nie 4K**, auch mit dem Recht dazu.
+- **Serien:** die **Staffelauswahl** (`views/season-chooser.js`) zeigt vorhandene und angefragte Staffeln mit ihrem Stand, aber nicht wählbar; offene sind
+  vorausgewählt, der Fokus liegt auf der ersten offenen (ein zweiter schneller Tastendruck fragt nicht gleich alle an). Angefragte Staffeln stehen bei Seerr zunächst
+  nur in den Anfragen des Titels und gelten als angefragt, solange die Anfrage nicht abgelehnt ist. Nennt Seerr keine Staffeln, wird die ganze Serie angefragt.
+- **Hinweis unter den Knöpfen:** das **Kontingent** vorher („Noch 2 von 3 Anfragen in 7 Tagen.“; erschöpft ist der Knopf gesperrt), fehlendes Recht („Dein
+  Seerr-Konto darf keine Serien anfragen.“, auch bei offenen Staffeln einer teilweise vorhandenen Serie), gesperrte Titel, Fehler. Ein zweiter Klick während einer
+  Anfrage zählt nicht; bleibt die Antwort aus, liest die Seite zuerst den Stand bei Seerr, statt erneut zu senden (angekommen erkennt sie an den gewählten
+  Staffeln bzw. am Stand). Danach verwerfen Startseite, Suche und Anfragen ihren gemerkten Stand.
+- Die Karten der Suche und der Trends fragen Filme weiter direkt an; bei Serien öffnet ihr *Anfragen* die Staffelauswahl.
+- Tests: `test/seerr-title.test.js` (die acht Fälle aus `SeerrDetailsTests`, die Fälle 5 bis 8 und 11 aus `seerr-integration.md`), Szenarien `seerr-title.js`
+  (Port 8990) und `seerr.js`. Nur gegen den Mock-Seerr geprüft.
 
 **Filme im Trend auf der Startseite:** Ganz unten auf der Startseite (unter Weiterschauen, Als Nächstes, Neuzugängen und Favoriten) steht die Reihe *Filme im Trend, über Seerr*. Sie holt `GET /discover/trending` (Seerr mischt dort Filme, Serien und Personen) und behält nur
 die **Filme**: ohne Serien, Personen, Doppelte und gesperrte Titel (Stand 6; gelöschte, Stand 7, bleiben und lassen sich wieder anfragen), bis zu 20, gelesen über höchstens drei Seiten; scheitert eine spätere Seite, bleibt es bei dem, was da ist. Die Karten sind dieselben wie in der Suche (`views/request-card.js`): Poster von TMDB,
-*Anfragen*-Knopf bei offenen Titeln, sonst der Stand als Tag (*Angefragt*, *In Bearbeitung*, *Teilweise*, grün *Verfügbar*); ein Klick auf das Poster öffnet das Detailfenster. Die Liste bleibt zehn Minuten im Speicher der Oberfläche (die Startseite wird etwa nach
+*Anfragen*-Knopf bei offenen Titeln, sonst der Stand als Tag (*Angefragt*, *In Bearbeitung*, *Teilweise*, grün *Verfügbar*); ein Klick auf das Poster öffnet die Seite des Titels. Die Liste bleibt zehn Minuten im Speicher der Oberfläche (die Startseite wird etwa nach
 jedem Film neu aufgebaut, das soll Seerr nicht jedes Mal fragen); Anfragen aus der Reihe ändern den gemerkten Stand mit. Die Reihe wartet nicht auf die Bibliotheks-Reihen und blockiert sie nicht.
 **Ohne Seerr-Verbindung** steht an ihrer Stelle ein Hinweis mit angedeuteten Postern, der erklärt, was dort erscheint, und *Seerr einrichten* (führt in *Einstellungen > Anfragen*) sowie *Ausblenden* anbietet. Ist Seerr verbunden, aber nicht erreichbar, bleibt die Startseite ohne die Reihe
 (kein Fehlerhinweis); eine abgelaufene Seerr-Anmeldung zeigt statt der Karten den Hinweis mit Weg in die Einstellungen. Ausschalten: *Einstellungen > Startseite > Reihen > Filme im Trend* (auch der Knopf *Ausblenden* setzt das); Verbinden und Trennen von Seerr verwirft die
@@ -331,7 +346,7 @@ gemerkte Startseite, damit sie sofort die Reihe bzw. den Hinweis zeigt. Es gibt 
 
 **Gut bewertete Trend-Filme im Banner:** Im Banner oben auf der Startseite stehen zwischen den Neuzugängen standardmäßig **zwei** Folien *Im Trend* (an dritter und fünfter Stelle; Zahl der Folien und der Trend-Folien sind unter *Einstellungen > Startseite* einstellbar, die Trend-Folien nehmen den Platz von Neuzugängen). Gewählt werden aus
 der Trend-Liste (dieselbe wie in der Reihe, nur einmal geholt) in der Reihenfolge von Seerr die Filme mit einer **TMDB-Bewertung ab 7,0** und einem Hintergrundbild (`HERO_TREND_SLIDES`, `TREND_MIN_RATING` in `views/home.js`). Es gibt zwei Arten von Folien:
-- **Film nicht in der Bibliothek** (`seerrSlide()`): Hintergrundbild von TMDB in der Stufe `w1280` (Titelbild, kein Logo), Jahr, Bewertung, *Film*, Beschreibung. *Details* öffnet dasselbe Fenster zum Anfragen wie die Karten der Reihe, *Anfragen* fragt gleich an; ist schon etwas angefragt, steht der Stand (*Angefragt*,
+- **Film nicht in der Bibliothek** (`seerrSlide()`): Hintergrundbild von TMDB in der Stufe `w1280` (Titelbild, kein Logo), Jahr, Bewertung, *Film*, Beschreibung. *Details* öffnet die Seite des Titels wie die Karten der Reihe, *Anfragen* fragt gleich an; ist schon etwas angefragt, steht der Stand (*Angefragt*,
   *Verfügbar* ...) statt des Knopfes, und die Karte in der Reihe zeigt denselben Stand (beide teilen die Daten). Der **Trailer** kommt wie bei den anderen Folien (Einstellungen *Trailer*, *Auch auf der Startseite*): Seerr liefert ihn in den Details (`relatedVideos`; `trailerKey` in `normalizeDetails`: erst ein Trailer, sonst
   ein Teaser, nur YouTube mit echtem Schlüssel aus 11 Zeichen).
 - **Film schon in der Bibliothek:** Meldet Seerr den Titel als verfügbar oder teilweise verfügbar, sucht die App ihn über die TMDB-Nummer (`anyProviderIdEquals=tmdb.<Nummer>`, nur Filme) in der Bibliothek. Gefunden: die normale Bibliotheks-Folie mit *Abspielen*, *Details* und dem Trailer des Eintrags, nur mit der Beschriftung *Im Trend*;
@@ -685,7 +700,9 @@ Dazu gibt es dieselben HTTP-Schalter wie beim Testserver der Apple-App (`Tools/m
 
 Mock-Seerr kann außerdem: `GET /request` mit `take`, `skip`, `filter`, `sort`, `requestedBy` und `pageInfo` (ohne das Recht, alle zu sehen, nur die eigenen
 der Sitzung, wie Seerr), `POST /request/<Id>/approve|decline|retry`, `DELETE /request/<Id>` (verwalten = Rechte 2 oder 16; ohne nur eigene wartende, sonst 401
-wie Seerr 3.5.1); Anfragen tragen den Benutzer ihrer Sitzung (demo 1, demo2 2), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
+wie Seerr 3.5.1); Anfragen tragen den Benutzer ihrer Sitzung (demo 1, demo2 2); die Angaben eines Titels nennen `mediaInfo.seasons` und `mediaInfo.requests`
+(Serie „Wintersignale“, TMDB 2001: Staffel 1 da, 2 und 3 offen; eine schon vergebene Staffel noch einmal anfragen gibt 409), dazu `/movie|tv/<Id>/recommendations|similar`,
+`/collection/<Id>` (Filmreihe 77) und `/movie/<Id>/ratingscombined` (IMDb für 603), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
 `/person/<Id>/combined_credits`, `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
 gibt es in der Mediathek; `MOCK_SEERR_OLD=1` oder `SEERR.old` wie ein älteres Seerr gemischt), `/auth/logout`. Jellyfin: `GET /Playback/BitrateTest?Size=`
 (`MOCK_BITRATE_MBPS` bremst). Die Fälle stehen in `test/mock-server.test.js`.
@@ -723,7 +740,8 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
-| `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Seite eines Titels** (Laden, Angabenzeile mit FSK, Besetzung, weitere Titel, Informationen, Anfragen von dort, Fehlerfälle, Zurück), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `seerr-title.js` | Seite eines Seerr-Titels (P12): Serie mit Staffeln und Stand, Staffelauswahl (vorhandene gesperrt, Fokus auf der ersten offenen), nur gewählte Staffel angefragt, Kontingent (Hinweis, erschöpft gesperrt), fehlendes Recht, weitere Titel öffnen ihre Seite bzw. die Mediathek, doppelter Klick (eigener Port 8990) |
 | `requests-tab.js` | Reiter *Anfragen* (P11): Meine Anfragen, Offen/Abgeschlossen, Stand-Tags, nachgeladene Titel, Zurückziehen mit Rückfrage, Antippen öffnet den Titel, Kontextmenü-Taste, Verwalten mit fremden Anfragen (Genehmigen, Ablehnen, Entfernen), entzogenes Recht, Blättern hinter 120 Anfragen, Neuladen in einem Abruf, Seerr aus (eigener Port 8991) |
 | `seerr-states.js` | Seerr je Profil und vier Zustände (P10): Stand in den Einstellungen, Reiter *Anfragen* verbunden / nicht erreichbar / abgelaufen, *Erneut prüfen*, *Erneut versuchen*, *Erneut anmelden*, fremde Sitzung (abgemeldet und verworfen), zweites Profil mit anderem Jellyfin-Konto, Wechsel stellt die eigene Sitzung her, `language=de` (eigener Port 8993, zweite Adresse 8992) |
 | `seerr-issue.js` | **Problem melden** (31 Prüfungen, Mock-Seerr, Port 8897): **Warnschild** in der Knopfleiste (Lage, Größe, Beschriftung, öffnet das Fenster; fehlt ohne Seerr, ohne TMDB-Nummer und nach dem Trennen), Eintrag im Menü *Mehr* nur mit Seerr und TMDB-Nummer, vier Arten, Kommentar freiwillig, *Melden* erst nach der Wahl, Film, Serie und Folge (Staffel und Folge gehen mit), Ersatztext ohne Kommentar, Esc sendet nichts, Fehler im Fenster (403, Titel Seerr unbekannt) ohne Textverlust, gewählte Art klar markiert |

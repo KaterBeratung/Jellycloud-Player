@@ -535,7 +535,17 @@
       seerrSearch: (query, page) => seerrRead((s) => s.search(String(query ?? '').slice(0, 200), Number(page) || 1)),
       seerrTrending: () => seerrRead((s) => s.trending()),
       seerrDetails: (req) => seerrRead((s) => s.details(req?.mediaType, req?.mediaId)),
-      seerrRequest: (req) => seerrCall(() => requireSeerr().requestMedia({ mediaType: req?.mediaType, mediaId: req?.mediaId })),
+      // Anfrage: ein Film oder die gewaehlten Staffeln einer Serie (ohne Wahl alle); nie 4K. Ein Schreibvorgang: laeuft mit seiner Sitzung zu Ende.
+      seerrRequest: (req) => seerrCall(() => requireSeerr().requestMedia({ mediaType: req?.mediaType, mediaId: req?.mediaId, seasons: Array.isArray(req?.seasons) ? req.seasons.slice(0, 200) : null })),
+      /** Empfohlene oder aehnliche Titel (kind "recommendations" | "similar"), die Filme einer Filmreihe, die Bewertung von IMDb (Seite eines Titels). */
+      seerrRelated: (req) => seerrRead((s) => s.related(req?.mediaType, Number(req?.tmdbId), req?.kind)),
+      seerrCollection: (id) => seerrRead((s) => s.collection(Number(id))),
+      seerrImdb: (tmdbId) => seerrRead((s) => s.imdbRating(Number(tmdbId))),
+      /** Kontingent des angemeldeten Seerr-Benutzers (Nummer aus /auth/me; ohne bekannten Benutzer erst die Pruefung); null, wenn er nicht feststeht. */
+      async seerrQuota() {
+        if (!seerrUser && seerr) await checkSeerr();
+        return seerrRead((s) => (seerrUser ? s.quota(seerrUser.id) : null));
+      },
 
       /**
        * Eine Seite der Anfragen (Reiter Anfragen): scope "mine" nur die eigenen (requestedBy, die Nummer aus /auth/me; ohne bekannten Benutzer

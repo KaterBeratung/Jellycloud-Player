@@ -1,13 +1,12 @@
 import { h, icon } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { state } from '../state.js';
-import { api, mapImage } from '../api.js';
+import { mapImage } from '../api.js';
 import { pageStatus, showPageStatus, lazyImage, openMenu, segmented, toast, confirmDialog, attachTilt } from '../ui.js';
 import { mediaTag } from '../tags.js';
-import { navigate, invalidate } from '../router.js';
+import { invalidate } from '../router.js';
 import { seerrState, runSeerrCheck } from '../connection.js';
-import { openRequestDetail } from './request-detail.js';
-import { requestOne } from './request-card.js';
+import { openSeerrTitle } from '../seerr-open.js';
 
 const SeerrState = window.JCSeerrState; // Staende und Rechte (src/shared/seerr-state.js)
 const Requests = window.JCSeerrRequests; // Blaettern, Aktionen, Angabe unter dem Plakat (src/shared/seerr-requests.js)
@@ -63,7 +62,6 @@ export function requestsView() {
   let shownState = null;
   let shownPerms = null;
   let userKey = null;
-  let opening = false;
   const busy = new Set();
   const cards = new Map(); // Anfrage-Nummer -> { el, r, paint }
 
@@ -184,13 +182,13 @@ export function requestsView() {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.rq-more')) return;
       resetTilt();
-      openTitle(c.r, card);
+      openTitle(c.r);
     });
     card.addEventListener('keydown', (e) => {
       if (e.target !== card) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        openTitle(c.r, card);
+        openTitle(c.r);
       } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
         e.preventDefault();
         showActions(c.r, more);
@@ -248,23 +246,11 @@ export function requestsView() {
     if (!destroyed) await load();
   }
 
-  /** Antippen: ist der Titel in der Mediathek, seine Detailseite (dort abspielen); sonst das Seerr-Fenster des Titels. Ein Oeffnen zur Zeit. */
-  async function openTitle(r, from) {
-    if (opening || busy.has(r.id)) return;
-    opening = true;
-    try {
-      if (SeerrState.isPresent(r.mediaStatus)) {
-        const res = await api.getItems({ anyProviderIdEquals: `tmdb.${r.tmdbId}`, includeItemTypes: r.mediaType === 'movie' ? 'Movie' : 'Series', recursive: true, limit: 1 }).catch(() => null);
-        const item = res?.Items?.[0];
-        if (item && !destroyed) return navigate(`/item/${item.Id}`);
-      }
-      if (destroyed) return;
-      const known = titles().get(keyOf(r));
-      const item = { mediaType: r.mediaType, id: r.tmdbId, title: titleOf(r), year: known?.year ?? null, overview: known?.overview ?? '', posterPath: known?.posterPath ?? null, status: r.mediaStatus };
-      openRequestDetail({ item, request: () => requestOne(item), returnTo: from });
-    } finally {
-      opening = false;
-    }
+  /** Antippen: ist der Titel in der Mediathek, seine Detailseite (dort abspielen); sonst seine Seite bei Seerr (seerr-open.js, ein Oeffnen zur Zeit). */
+  function openTitle(r) {
+    if (busy.has(r.id)) return;
+    const known = titles().get(keyOf(r));
+    openSeerrTitle({ mediaType: r.mediaType, tmdbId: r.tmdbId, known: known ? { ...known, status: r.mediaStatus } : null, checkLibrary: SeerrState.isPresent(r.mediaStatus) });
   }
 
   // ---------- Laden ----------

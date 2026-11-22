@@ -10,7 +10,7 @@ import { refreshGlow } from '../glow.js';
 import { createTrailer } from '../trailer.js';
 import { navigate } from '../router.js';
 import { requestCard, requestOne } from './request-card.js';
-import { openRequestDetail } from './request-detail.js';
+import { openSeerrTitle } from '../seerr-open.js';
 
 const Media = window.JCMedia;
 const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js)
@@ -151,7 +151,7 @@ function heroSlide(entry, first) {
 
 /**
  * Folie fuer einen gut bewerteten Trend-Film von Seerr, der nicht in der Bibliothek liegt: Hintergrundbild von TMDB (ueber das App-Protokoll), Angaben aus der Trend-Liste,
- * "Details" oeffnet das Fenster zum Anfragen (wie bei den Karten der Reihe), "Anfragen" fragt gleich an. Der Titel steht als Text (kein Logo).
+ * "Details" oeffnet die Seite des Titels (wie die Karten der Reihe, seerr-open.js), "Anfragen" fragt gleich an. Der Titel steht als Text (kein Logo).
  */
 function seerrSlide(entry, first) {
   const r = entry.seerr;
@@ -175,11 +175,7 @@ function seerrSlide(entry, first) {
     standTag.hidden = !tag;
   };
   paint();
-  const askFromDetails = async () => {
-    await requestOne(r);
-    paint();
-  };
-  details.addEventListener('click', () => openRequestDetail({ item: r, request: askFromDetails, onStatus: paint, returnTo: details }));
+  details.addEventListener('click', () => openSeerrTitle({ mediaType: 'movie', tmdbId: r.id, known: r }));
   ask.addEventListener('click', async () => {
     ask.disabled = true;
     try {

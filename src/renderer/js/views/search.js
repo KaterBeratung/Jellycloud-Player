@@ -5,7 +5,6 @@ import { state } from '../state.js';
 import { card, pageStatus } from '../ui.js';
 import { debounce } from '../utils.js';
 import { playItem } from '../actions.js';
-import { closeRequestDetail } from './request-detail.js';
 import { requestCard } from './request-card.js';
 
 const SEERR_AVAILABLE = 5;
@@ -100,7 +99,6 @@ export function searchView({ query }) {
     destroy() {
       destroyed = true;
       debounced.cancel();
-      closeRequestDetail();
     },
     focus: () => $('.search-input', el)?.focus()
   };

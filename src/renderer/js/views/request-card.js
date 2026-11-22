@@ -1,23 +1,47 @@
 import { h, icon } from '../dom.js';
 import { t } from '../i18n.js';
 import { lazyImage, toast } from '../ui.js';
-import { navigate } from '../router.js';
-import { openRequestDetail } from './request-detail.js';
+import { navigate, invalidate } from '../router.js';
 import { mapImage } from '../api.js';
 import { seerrTitleTag } from '../tags.js';
+import { openSeerrTitle } from '../seerr-open.js';
+import { chooseSeasons } from './season-chooser.js';
 
 const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js): 6 gesperrt, 7 geloescht
 
-/** Zeichnet die Karte zu einem Titel neu (Stand geaendert, etwa durch eine Anfrage im Detailfenster). */
+/** Zeichnet die Karte zu einem Titel neu (Stand geaendert, etwa durch eine Anfrage). */
 const repaint = new WeakMap();
 
-/** Stellt die Anfrage zu einem Titel (Karte und Detailfenster nutzen dieselbe), meldet Erfolg und Fehler per Hinweis und aktualisiert die Karte. */
+/**
+ * Stellt die Anfrage zu einem Titel (Karten der Suche, der Reihe "Filme im Trend" und das Banner), meldet Erfolg und Fehler per Hinweis und aktualisiert die
+ * Karte. Bei Serien erst die Staffelauswahl (vorhandene und angefragte Staffeln nicht waehlbar); abgebrochen fragt nichts an. Nie 4K.
+ */
 export async function requestOne(r) {
+  let seasons = null;
+  if (r.mediaType === 'tv') {
+    try {
+      const d = await window.jc.seerrDetails({ mediaType: 'tv', mediaId: r.id });
+      r.status = d.status;
+      repaint.get(r)?.();
+      if (!SeerrState.isRequestable(r.status) && !window.JCSeerrRequests.openSeasons(d.seasonList).length) return toast(t('seerr.alreadyRequested'));
+      // Nennt Seerr keine Staffeln, die ganze Serie (sonst ginge die Auswahl leer auf)
+      if (d.seasonList.length) {
+        seasons = await chooseSeasons({ title: r.title, seasons: d.seasonList });
+        if (!seasons) return; // abgebrochen
+      }
+    } catch (e) {
+      if (e.code === 'SEERR_AUTH') return toast(t('seerr.authExpired'), { type: 'error', duration: 8000, action: { label: t('toast.openSettings'), run: () => navigate('/settings/seerr') } });
+      return toast(t('seerr.error', { msg: e.message }), { type: 'error' });
+    }
+  }
   try {
-    const res = await window.jc.seerrRequest({ mediaType: r.mediaType, mediaId: r.id });
+    const res = await window.jc.seerrRequest({ mediaType: r.mediaType, mediaId: r.id, ...(seasons ? { seasons } : {}) });
     r.status = res.mediaStatus ?? 2;
     repaint.get(r)?.();
     toast(t('seerr.requested', { title: r.title }));
+    // Startseite und Anfragen verwerfen ihren gemerkten Stand (die Karte selbst zeigt ihn schon)
+    invalidate();
+    document.dispatchEvent(new CustomEvent('seerr-changed'));
   } catch (e) {
     if (e.status === 409) {
       r.status = 2;
@@ -67,8 +91,8 @@ export function requestCard(r, index) {
     }
   });
 
-  // Karte anklicken (Poster, Beschriftung, Stand) oeffnet die Details; per Tastatur ueber das Poster (Enter oder Leertaste)
-  const openDetails = () => openRequestDetail({ item: r, request: () => requestOne(r), onStatus: paint, returnTo: thumb });
+  // Karte anklicken (Poster, Beschriftung, Stand) oeffnet den Titel (Mediathek oder seine Seite bei Seerr, seerr-open.js); per Tastatur ueber das Poster
+  const openDetails = () => openSeerrTitle({ mediaType: r.mediaType, tmdbId: r.id, known: r });
   thumb.tabIndex = 0;
   thumb.setAttribute('role', 'button');
   thumb.setAttribute('aria-label', t('seerr.detail.open', { title: r.title }));

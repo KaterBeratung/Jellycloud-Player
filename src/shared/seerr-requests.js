@@ -98,5 +98,42 @@
     return parts.join(' · ');
   }
 
-  return { PAGE_SIZE, FILL, DESTRUCTIVE, createPaging, matches, actionsFor, detailLine };
+  // ---------- Anfragen auf der Seite eines Titels (SeerrDetailSheet der Apple-App) ----------
+
+  /** Staffeln, die sich noch anfragen lassen: weder da noch angefragt. */
+  const openSeasons = (list) => (Array.isArray(list) ? list : []).filter((s) => !SeerrState.isTaken(s.status));
+
+  /**
+   * Darf und kann der Benutzer (noch) etwas anfragen? Nur mit dem Recht dazu (aus /auth/me), nie bei gesperrten Titeln; ein Film, solange er anfragbar ist; eine
+   * Serie, solange eine Staffel offen ist (bevor ihre Staffeln geladen sind, nach dem Stand der Serie).
+   * @param {{mediaType:string, status:number, seasonList?:object[]|null, permissions:number}} o seasonList null: noch nicht geladen
+   */
+  function canRequestMore({ mediaType, status, seasonList = null, permissions = 0 }) {
+    const movie = mediaType === 'movie';
+    if (!SeerrState.canRequest(permissions, movie) || SeerrState.isBlocklisted(status)) return false;
+    // Film, Staffeln noch nicht geladen oder von Seerr nicht genannt: nach dem Stand des Titels
+    if (movie || seasonList === null || !seasonList.length) return SeerrState.isRequestable(status);
+    return openSeasons(seasonList).length > 0;
+  }
+
+  /** Beschriftung des Anfrage-Knopfs: "movie" (Film anfragen), "series" (Serie anfragen) oder "more" (Weitere Staffeln anfragen, wenn schon etwas da oder angefragt ist). */
+  function requestKind({ mediaType, status, seasonList = null }) {
+    if (mediaType === 'movie') return 'movie';
+    const partial = Number(status) === SeerrState.SEERR_MEDIA.PARTIALLY_AVAILABLE || (seasonList ?? []).some((s) => SeerrState.isTaken(s.status));
+    return partial ? 'more' : 'series';
+  }
+
+  /** Kontingent der Art erschoepft (Seerr meldet restricted, oder nichts mehr frei)? Ohne Angabe nie. */
+  const quotaExhausted = (q) => !!q && (q.restricted === true || (q.remaining !== null && q.remaining !== undefined && q.remaining <= 0));
+
+  /**
+   * Ist eine Anfrage, deren Antwort ausblieb, doch angekommen? Bei Staffeln an den gewaehlten Staffeln (der Stand einer schon angefragten Serie aendert sich
+   * nicht), beim Film am Stand. Erst danach weiss die Seite, ob sie den Fehler zeigen muss; erneut gesendet wird nie.
+   */
+  function arrived({ seasons = null, seasonList = [], before, status }) {
+    if (Array.isArray(seasons) && seasons.length) return seasons.every((n) => SeerrState.isTaken((seasonList ?? []).find((s) => s.number === n)?.status));
+    return Number(status) !== Number(before) && SeerrState.isTaken(status);
+  }
+
+  return { PAGE_SIZE, FILL, DESTRUCTIVE, createPaging, matches, actionsFor, detailLine, openSeasons, canRequestMore, requestKind, quotaExhausted, arrived };
 });
