@@ -4,7 +4,6 @@ import { state, updateSettings, activeServer } from '../state.js';
 import { applyAppearance, THEMES, SWATCHES, DEFAULT_ACCENT, isHexColor } from '../theme.js';
 import { openMenu, segmented, slider, toast, toggle, confirmDialog } from '../ui.js';
 import { glowSection } from './glow-settings.js';
-import { openQuickConnect } from './quick-connect.js';
 import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
@@ -820,8 +819,6 @@ export function settingsView({ section, query: q }) {
     });
     // Voll (vier Profile): der Hinweis gleich hier, statt erst nach der Anmeldung (die der Server dann wieder abmelden muesste)
     const add = linkRow({ ico: 'plus', label: t('acct.add'), chevron: false, onclick: () => (full ? toast(t('login.profileLimit', { n: state.maxProfiles ?? 4 }), { type: 'error' }) : document.dispatchEvent(new CustomEvent('add-server'))) });
-    // Quick Connect fuer andere Geraete; mit P9 kommt der Eintrag ins Profilmenue
-    const qc = linkRow({ ico: 'qc', label: t('qc.title'), sub: t('qc.entryDesc'), onclick: () => openQuickConnect({ onSignedOut: () => document.dispatchEvent(new CustomEvent('session-expired')) }) });
     const out = linkRow({
       ico: 'logout',
       label: t('set.signOut'),
@@ -848,8 +845,7 @@ export function settingsView({ section, query: q }) {
         infoRow(t('acct.connection'), conn)
       ),
       h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, t('acct.profiles')), h('div', { class: 'settings-group' }, rows, add), foot(t(full ? 'acct.profilesFootFull' : 'acct.profilesFoot', { n: state.maxProfiles ?? 4 }))),
-      group(null, qc),
-      h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, out), foot(t('acct.signOutFoot')))
+      h('div',{ class: 'settings-block' }, h('div', { class: 'settings-group' }, out), foot(t('acct.signOutFoot')))
     );
   }
 
@@ -1244,6 +1240,7 @@ export function settingsView({ section, query: q }) {
   // ---------- Info ----------
   function aboutPanel() {
     const keys = [
+      ['Strg+1 – 5', t('key.tabs')],
       ['Space / K', t('key.pause')],
       ['← / →', t('key.seek')],
       ['J / L', t('key.seek10')],

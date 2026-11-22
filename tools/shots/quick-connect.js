@@ -64,6 +64,12 @@ module.exports = async (ctx) => {
   };
   const type = (sel, value) => ctx.run(`(() => { const f = document.querySelector(${JSON.stringify(sel)}); f.focus(); f.value = ${JSON.stringify(value)}; f.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   const click = (sel) => ctx.run(`document.querySelector(${JSON.stringify(sel)})?.click()`);
+  // Quick Connect liegt seit P9 im Profilmenue (Profilsymbol oben rechts)
+  const openQcFromMenu = async () => {
+    await ctx.run(`document.querySelector('.toolpill .who').click()`);
+    await waitFor(`!!document.querySelector('.menu.open')`, 2000);
+    await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Quick Connect/.test(b.textContent))?.click()`);
+  };
   const clickText = (sel, re) => ctx.run(`[...document.querySelectorAll(${JSON.stringify(sel)})].find((e) => ${re}.test(e.textContent))?.click()`);
 
   // ---------- Anmeldung ----------
@@ -115,7 +121,7 @@ module.exports = async (ctx) => {
   const connected = await waitFor(`[...document.querySelectorAll('.settings-panel .info-row')].some((r) => /Verbindung/.test(r.textContent) && /Verbunden/.test(r.textContent))`, 6000);
   const acct = await ctx.run(`(() => { const rows = [...document.querySelectorAll('.settings-panel .info-row')].map((r) => r.innerText.replace(/\\s+/g, ' ').trim()); return { rows, profiles: [...document.querySelectorAll('.settings-panel a.link-row')].map((a) => a.innerText.replace(/\\s+/g, ' ').trim()), qc: !!document.querySelector('.settings-panel .link-row .ico svg') && [...document.querySelectorAll('.settings-panel .link-row')].some((r) => /Quick Connect/.test(r.textContent)), out: [...document.querySelectorAll('.settings-panel .link-row.danger')].map((r) => r.textContent.trim()), foot: [...document.querySelectorAll('.settings-panel .group-foot')].map((p) => p.textContent) }; })()`);
   check('Aktuelles Profil: Server, Benutzer, Adresse, Verbindung "Verbunden"', connected && acct.rows.length === 4 && /Mock Jellyfin/.test(acct.rows[0]) && /demo/.test(acct.rows[1]) && acct.rows[2].includes('127.0.0.1') && /Verbunden/.test(acct.rows[3]), JSON.stringify(acct.rows));
-  check('Profile: das aktive mit "Aktiv", Text zur Grenze von vier Profilen; Quick Connect; Abmelden mit Erklaerung', acct.profiles.length === 1 && /Aktiv/.test(acct.profiles[0]) && acct.qc && acct.out.includes('Abmelden') && acct.foot.some((f) => /höchstens 4 Profile/.test(f)) && acct.foot.some((f) => /Einstellungen der App/.test(f)), JSON.stringify(acct));
+  check('Profile: das aktive mit "Aktiv", Text zur Grenze von vier Profilen; Quick Connect nicht hier (es liegt im Profilmenue); Abmelden mit Erklaerung', acct.profiles.length === 1 && /Aktiv/.test(acct.profiles[0]) && !acct.qc && acct.out.includes('Abmelden') && acct.foot.some((f) => /höchstens 4 Profile/.test(f)) && acct.foot.some((f) => /Einstellungen der App/.test(f)), JSON.stringify(acct));
   await ctx.wait(700); // die Seite blendet ein: danach aufnehmen
   await ctx.capture(path.join(out, 'QC-03-konto.png'));
 
@@ -127,7 +133,7 @@ module.exports = async (ctx) => {
   check('...Abbrechen: weiter angemeldet', await ctx.run(`!document.querySelector('.login') && !!document.querySelector('.settings-panel .info-row')`));
 
   // ---------- Maske Quick Connect ----------
-  await clickText('.settings-panel .link-row', '/Quick Connect/');
+  await openQcFromMenu();
   check('Die Maske liegt ueber der ganzen App', await waitFor(`!!document.querySelector('.connect-overlay .qc-input')`, 5000));
   await ctx.wait(500);
   const mask = await ctx.run(`(() => {
@@ -173,10 +179,10 @@ module.exports = async (ctx) => {
   check('Der Code steht nicht in der Konfiguration', !cfg.includes('482913') && !cfg.includes('111111'));
   await clickText('.connect-overlay .qc-body .btn', '/Fertig/');
   const closed = await waitFor(`!document.querySelector('.connect-overlay') && !document.documentElement.classList.contains('covered') && [...document.querySelectorAll('#app > *')].every((e) => !e.inert)`, 3000);
-  check('"Fertig": die Maske ist zu, die App wieder bedienbar, Glow der Einstellungen, der Fokus wieder auf der Zeile', closed && (await ctx.run(`document.querySelector('#glow')?.dataset.scope === 'settings' && /Quick Connect/.test(document.activeElement?.textContent ?? '')`)), await ctx.run(`document.querySelector('#glow')?.dataset.scope + ' / ' + document.activeElement?.className`));
+  check('"Fertig": die Maske ist zu, die App wieder bedienbar, Glow der Einstellungen, der Fokus wieder auf dem Profilsymbol (dort oeffnete das Menue sie)', closed && (await ctx.run(`document.querySelector('#glow')?.dataset.scope === 'settings' && !!document.activeElement?.classList.contains('who')`)), await ctx.run(`document.querySelector('#glow')?.dataset.scope + ' / ' + document.activeElement?.className`));
 
   // Schon bestaetigt, dann Escape
-  await clickText('.settings-panel .link-row', '/Quick Connect/');
+  await openQcFromMenu();
   await waitFor(`!!document.querySelector('.connect-overlay .qc-input')`, 5000);
   await type('.connect-overlay .qc-input', '482913');
   await click('.connect-overlay .qc-body .btn.primary');
@@ -186,7 +192,7 @@ module.exports = async (ctx) => {
 
   // Am Server ausgeschaltet: die Maske sagt es beim Oeffnen; "Erneut pruefen" nach dem Einschalten bringt die Eingabe
   await post('/__debug/quickconnect?disabled=1');
-  await clickText('.settings-panel .link-row', '/Quick Connect/');
+  await openQcFromMenu();
   check('Quick Connect am Server aus: Hinweis mit "Erneut pruefen", keine Eingabe', await waitFor(`/ausgeschaltet/.test(document.querySelector('.connect-overlay .qc-outcome')?.textContent ?? '') && !document.querySelector('.connect-overlay .qc-input')?.isConnected`, 5000));
   await ctx.wait(700); // die Seite blendet ein: danach aufnehmen
   await ctx.capture(path.join(out, 'QC-06-maske-aus.png'));

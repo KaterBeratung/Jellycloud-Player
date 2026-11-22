@@ -69,13 +69,14 @@ module.exports = async (ctx) => {
   await ctx.run(`document.querySelector('#view').scrollTop = 0`);
 
   // ---------- Bibliotheken, Suche, Einstellungen, Detailseite ----------
-  const libs = await ctx.run(`[...document.querySelectorAll('.nav-link')].map((a) => a.getAttribute('href')).filter((x) => /library/.test(x ?? ''))`);
+  // Seit P9 die Reiter Filme und Serien (alle Bibliotheken der Art), wie in der Apple-App
+  const libs = await ctx.run(`[...document.querySelectorAll('.nav-link')].map((a) => a.getAttribute('href')).filter((x) => x === '#/movies' || x === '#/shows')`);
   await go(libs[0], `!!document.querySelector('.grid .card')`);
   const movies = await layer();
-  check('Bibliothek mit Filmen: Bereich Filme, oben 58 % der Hoehe (hoechstens 760)', movies.scope === 'movies' && movies.top && movies.bottom && Math.abs(movies.topH - Math.round(Math.min(760, h * 0.58))) <= 1, JSON.stringify({ s: movies.scope, t: movies.topH }));
+  check('Reiter Filme: Bereich Filme, oben 58 % der Hoehe (hoechstens 760)', movies.scope === 'movies' && movies.top && movies.bottom && Math.abs(movies.topH - Math.round(Math.min(760, h * 0.58))) <= 1, JSON.stringify({ s: movies.scope, t: movies.topH }));
   await ctx.capture(path.join(out, 'GL-filme.png'));
   await go(libs[1], `!!document.querySelector('.grid .card')`);
-  check('Bibliothek mit Serien: Bereich Serien', (await layer()).scope === 'series');
+  check('Reiter Serien: Bereich Serien', (await layer()).scope === 'series');
   await go('#/search?q=a', `!!document.querySelector('.search')`);
   check('Suche: Bereich Suche', (await layer()).scope === 'search');
   const movie = [...items.values()].find((i) => i.Name === 'Aurora Protocol');

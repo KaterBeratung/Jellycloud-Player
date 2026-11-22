@@ -68,8 +68,9 @@ module.exports = async (ctx) => {
   setAdmin(true);
   await relogin();
   await go('#/home');
-  check('Administrator: Verwaltungsknopf (Schild) in der Kopfzeile, vor den Einstellungen', await ctx.run(`(() => { const t = [...document.querySelectorAll('.toolpill .tool')]; const i = t.findIndex((x) => x.getAttribute('href') === '#/admin'); return i === 2 && t[3].getAttribute('href') === '#/settings'; })()`));
-  check('Die Kopfzeile bleibt in Ordnung: fuenf gleich grosse runde Scheiben in der Kapsel', await ctx.run(`(() => { const p = document.querySelector('.toolpill'); const d = [...p.children].map((c) => Math.round(c.getBoundingClientRect().width) + 'x' + Math.round(c.getBoundingClientRect().height)); return p.children.length === 5 && new Set(d).size === 1 && Math.round(p.getBoundingClientRect().height) === 44; })()`));
+  // Kopfzeile seit P9 (Entscheidung E9): Neu laden, Verwaltung, Einstellungen, Profilsymbol
+  check('Administrator: Verwaltungsknopf (Schild) in der Kopfzeile, nach Neu laden und vor den Einstellungen', await ctx.run(`(() => { const t = [...document.querySelectorAll('.toolpill .tool')]; const i = t.findIndex((x) => x.getAttribute('href') === '#/admin'); return i === 1 && t[2].getAttribute('href') === '#/settings'; })()`));
+  check('Die Kopfzeile bleibt in Ordnung: vier gleich grosse runde Scheiben in der Kapsel', await ctx.run(`(() => { const p = document.querySelector('.toolpill'); const d = [...p.children].map((c) => Math.round(c.getBoundingClientRect().width) + 'x' + Math.round(c.getBoundingClientRect().height)); return p.children.length === 4 && new Set(d).size === 1 && Math.round(p.getBoundingClientRect().height) === 44; })()`));
   await click('.tool[href="#/admin"]');
   check('Klick auf das Schild oeffnet die Verwaltung (Server)', await waitFor(`location.hash === '#/admin' && /Mock Jellyfin/.test(document.querySelector('.admin')?.innerText ?? '')`, 6000));
   const srv = await text('.admin');

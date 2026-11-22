@@ -1,11 +1,12 @@
 import { h, icon, $ } from './dom.js';
 import { t, setLocale } from './i18n.js';
-import { state, refreshState, SUPPORTED_COLLECTIONS, activeServer, updateSettings } from './state.js';
+import { state, refreshState, activeServer, updateSettings } from './state.js';
 import { applyAppearance } from './theme.js';
 import { api } from './api.js';
 import { route, start, refresh, navigate, invalidate } from './router.js';
-import { toast, closeMenu, initialsOf, pageStatus } from './ui.js';
-import { closeQuickConnect } from './views/quick-connect.js';
+import { toast, closeMenu, initialsOf, pageStatus, openMenu, confirmDialog } from './ui.js';
+import { closeQuickConnect, openQuickConnect } from './views/quick-connect.js';
+import { requestsView } from './views/requests.js';
 import { syncAmbient } from './ambient.js';
 import { syncGlow } from './glow.js';
 import { homeView } from './views/home.js';
@@ -28,8 +29,13 @@ let routerStarted = false;
 let splashStarted = false; // die Startanimation gibt es nur beim Start der App, nicht bei jedem Neuaufbau (erneute Anmeldung, Sprache, Neu laden)
 let currentLogin = null;
 
+const Nav = window.JCNav; // die fuenf Reiter (src/shared/nav.js), die einzige Stelle dafuer
+
 route(/^\/home$/, () => homeView(), { cache: true, nav: 'home' });
-route(/^\/library\/(?<id>[0-9a-fA-F-]+)$/, (p) => libraryView(p), { cache: true });
+route(/^\/movies$/, () => libraryView({ tab: 'movies' }), { cache: true, nav: 'movies' });
+route(/^\/shows$/, () => libraryView({ tab: 'shows' }), { cache: true, nav: 'shows' });
+route(/^\/requests$/, () => requestsView(), { nav: 'requests' });
+route(/^\/library\/(?<id>[0-9a-fA-F-]+)$/, (p) => libraryView(p), { cache: true }); // von der Startseite geoeffnet ("Neu in ...")
 route(/^\/item\/(?<id>[0-9a-fA-F-]+)$/, (p) => detailView(p));
 route(/^\/search$/, (p) => searchView(p), { nav: 'search' });
 route(/^\/settings(?:\/(?<section>\w+))?$/, (p) => settingsView(p), { nav: 'settings' });
@@ -61,33 +67,72 @@ function showLogin({ cancellable = false, message = '' } = {}) {
   if (message) toast(message, { type: 'error' });
 }
 
-function navItems() {
-  const items = [{ key: 'home', path: '/home', label: t('nav.home'), match: /^\/home/ }];
-  for (const v of state.views.filter((x) => SUPPORTED_COLLECTIONS.has(x.CollectionType))) {
-    items.push({ key: v.Id, path: `/library/${v.Id}`, label: v.Name, match: new RegExp(`^/library/${v.Id}`) });
-  }
-  return items;
-}
-
-const TAB_ICONS = { movies: 'film', tvshows: 'tv', music: 'music' };
 /**
- * Tab-Leiste unten fuer das Handy (nur ausserhalb des Desktop-Programms gebaut; sichtbar nur in der kompakten Ansicht, siehe app.css):
- * Start, bis zu drei Bibliotheken, Suche, Einstellungen. Weitere Bibliotheken erreicht man ueber die Reihentitel der Startseite und die Suche.
+ * Tab-Leiste unten fuer das Handy (nur ausserhalb des Desktop-Programms gebaut; sichtbar nur in der kompakten Ansicht, siehe app.css): dieselben
+ * fuenf Reiter wie die Kapsel am Desktop (Start, Filme, Serien, Anfragen, Suche). Die Einstellungen sind kein Reiter (Profilmenue oben rechts).
  */
 function buildTabbar() {
-  const libs = state.views.filter((x) => SUPPORTED_COLLECTIONS.has(x.CollectionType)).slice(0, 3);
-  const defs = [
-    { path: '/home', label: t('nav.home'), ico: 'home', match: /^\/home/ },
-    ...libs.map((v) => ({ path: `/library/${v.Id}`, label: v.Name, ico: TAB_ICONS[v.CollectionType] ?? 'folder', match: new RegExp(`^/library/${v.Id}`) })),
-    { path: '/search', label: t('nav.search'), ico: 'search', match: /^\/search/ },
-    { path: '/settings', label: t('nav.settings'), ico: 'settings', match: /^\/(settings|admin)/ }
-  ];
-  const items = defs.map((d) => {
-    const a = h('a', { class: 'tabbar-item', href: `#${d.path}` }, icon(d.ico, 24), h('span', null, d.label));
-    a._match = d.match;
+  const items = Nav.TABS.map((tab) => {
+    const a = h('a', { class: 'tabbar-item', href: `#${tab.path}` }, icon(tab.icon, 24), h('span', null, t(tab.label)));
+    a._tab = tab.key;
     return a;
   });
-  return { el: h('nav', { class: 'tabbar', 'aria-label': 'Tab-Leiste' }, items), items };
+  return { el: h('nav', { class: 'tabbar', 'aria-label': t('nav.tabs') }, items), items };
+}
+
+/**
+ * Profilmenue am Profilsymbol (wie die Apple-App, Notiz design-system "Profilmenue"): Abschnitt Profile (der Haken beim aktiven, darunter
+ * "Aktiv · Adresse"; die anderen mit ihrer Adresse), dann Quick Connect, Server oder Profil hinzufuegen, Einstellungen und zuletzt Abmelden.
+ * Haken und Symbole stehen in einer Spalte. (Mitteilungen kommen mit Paket P17 dazu, nur mit Seerr.)
+ */
+function openProfileMenu(anchor) {
+  const max = state.maxProfiles ?? 4;
+  const entries = [
+    { header: true, label: t('acct.profiles') },
+    ...state.servers.map((s) => {
+      const on = s.id === state.activeServerId;
+      return { id: 'profile', profile: s.id, label: s.label || s.userName, sub: on ? `${t('set.active')} · ${s.url}` : s.url, selected: on };
+    }),
+    { separator: true },
+    { id: 'qc', label: t('qc.title'), icon: 'qc' },
+    { id: 'add', label: t('acct.add'), icon: 'plus' },
+    { id: 'settings', label: t('nav.settings'), icon: 'settings' },
+    { separator: true },
+    { id: 'signout', label: t('set.signOut'), icon: 'logout', danger: true }
+  ];
+  openMenu(anchor, entries, {
+    align: 'right',
+    minWidth: 280,
+    maxHeight: 640,
+    columns: false,
+    onPick: async (e) => {
+      if (e.id === 'profile') {
+        if (e.profile === state.activeServerId) return;
+        try {
+          await window.jc.switchServer(e.profile);
+          document.dispatchEvent(new CustomEvent('relogin'));
+        } catch (err) {
+          toast(err.message, { type: 'error' });
+        }
+      } else if (e.id === 'qc') {
+        openQuickConnect({ onSignedOut: () => document.dispatchEvent(new CustomEvent('session-expired')) });
+      } else if (e.id === 'add') {
+        // Voll (vier Profile): der Hinweis gleich hier, statt erst nach der Anmeldung (die der Server dann wieder abmelden muesste)
+        if (state.servers.length >= max) toast(t('login.profileLimit', { n: max }), { type: 'error' });
+        else document.dispatchEvent(new CustomEvent('add-server'));
+      } else if (e.id === 'settings') {
+        navigate('/settings');
+      } else if (e.id === 'signout') {
+        if (!(await confirmDialog({ title: t('acct.signOutTitle'), text: t('acct.signOutText'), confirmLabel: t('set.signOut'), danger: true }))) return;
+        try {
+          await window.jc.logout();
+          document.dispatchEvent(new CustomEvent('relogin'));
+        } catch (err) {
+          toast(err.message, { type: 'error' });
+        }
+      }
+    }
+  });
 }
 
 // Punkt am Zahnrad, solange ein Update gefunden, geladen oder bereit ist (wird von buildShell belegt)
@@ -102,23 +147,29 @@ function buildShell() {
   const nav = h('nav', { class: 'nav', 'aria-label': 'Hauptnavigation' });
   const indicator = h('span', { class: 'nav-indicator hidden' });
   nav.append(indicator);
-  const links = navItems().map((it) => {
-    const a = h('a', { class: 'nav-link', href: `#${it.path}` }, it.label);
-    a._item = it;
+  // Die fuenf Reiter (Start, Filme, Serien, Anfragen, Suche), immer alle; Strg+1 bis Strg+5 waehlen sie. Ein Klick auf den schon gewaehlten
+  // Reiter fuehrt an den Anfang seiner Seite zurueck.
+  const links = Nav.TABS.map((tab, i) => {
+    const a = h('a', { class: 'nav-link', href: `#${tab.path}`, title: `${t(tab.label)} (Strg+${i + 1})` }, t(tab.label));
+    a._tab = tab.key;
     nav.append(a);
     return a;
   });
+  nav.addEventListener('click', (e) => {
+    const a = e.target.closest('.nav-link');
+    if (a && location.hash === a.getAttribute('href')) view.scrollTo({ top: 0, behavior: document.documentElement.dataset.anim === 'reduced' ? 'auto' : 'smooth' });
+  });
 
-  // Rechte Kapsel: gleiche Hoehe und gleiche Bauart wie die linke; darin drei gleich grosse Scheiben (Suche, Einstellungen, Konto)
+  // Rechte Kapsel (Entscheidung E9): Neu laden, Verwaltung (nur Administratoren), Einstellungen (dort haengt der Update-Punkt) und das Profilsymbol
+  // mit dem Profilmenue; gleich grosse runde Scheiben, gleiche Hoehe und Bauart wie die Kapsel der Reiter
   const tools = h('div', { class: 'tools toolpill' });
-  const search = h('a', { class: 'tool', href: '#/search', title: `${t('nav.search')} (Strg+K)`, 'aria-label': t('nav.search') }, icon('search', 20));
   const reload = h('button', { class: 'tool', type: 'button', title: `${t('action.reload')} (F5)`, 'aria-label': t('action.reload'), onclick: () => reloadData() }, icon('refresh', 20));
   const settings = h('a', { class: 'tool', href: '#/settings', title: t('nav.settings'), 'aria-label': t('nav.settings') }, icon('settings', 20));
-  // Verwaltung nur fuer Administratoren: gleiche runde Scheibe wie die anderen, vor den Einstellungen
   const admin = state.isAdmin ? h('a', { class: 'tool', href: '#/admin', title: t('nav.admin'), 'aria-label': t('nav.admin') }, icon('shield', 20)) : null;
   const srv = activeServer();
-  const who = h('button', { class: 'tool who', type: 'button', title: srv ? `${srv.userName} @ ${srv.name || srv.url}` : '', 'aria-label': t('nav.account'), onclick: () => navigate('/settings/account') }, h('span', { class: 'avatar-sm' }, initialsOf(srv?.userName)));
-  tools.append(search, reload, ...(admin ? [admin] : []), settings, who);
+  const who = h('button', { class: 'tool who', type: 'button', 'aria-haspopup': 'menu', title: srv ? `${srv.label || srv.userName} @ ${srv.name || srv.url}` : '', 'aria-label': t('nav.profileMenu') }, h('span', { class: 'avatar-sm' }, initialsOf(srv?.label || srv?.userName)));
+  who.addEventListener('click', () => openProfileMenu(who));
+  tools.append(reload, ...(admin ? [admin] : []), settings, who);
   // Versionshinweis in Gruen unter dem Konto (rechtsbuendig unter der Kapsel), solange ein Update gefunden, geladen oder bereit ist
   const updateNote = h('a', { class: 'update-note', href: '#/settings/about', hidden: true });
 
@@ -140,19 +191,24 @@ function buildShell() {
     indicator.style.width = `${target.offsetWidth}px`;
     indicator.style.transform = `translateX(${target.offsetLeft}px)`;
   };
+  // Der gewaehlte Reiter bleibt gewaehlt, solange eine Seite aus ihm offen ist (Detailseite, Mediathek, Einstellungen), wie in der Apple-App
+  let currentTab = 'home';
   const markActive = (info) => {
     const path = info?.path ?? '/home';
+    if (Nav.TABS.some((x) => x.key === info?.nav)) currentTab = info.nav;
     let active = null;
     for (const a of links) {
-      const on = a._item.match.test(path);
+      const on = a._tab === currentTab;
       a.classList.toggle('on', on);
-      if (on) active = a;
+      if (on) {
+        a.setAttribute('aria-current', 'page');
+        active = a;
+      } else a.removeAttribute('aria-current');
     }
-    search.classList.toggle('on', path.startsWith('/search'));
     settings.classList.toggle('on', path.startsWith('/settings'));
     admin?.classList.toggle('on', path.startsWith('/admin'));
     for (const a of tabbar?.items ?? []) {
-      const on = a._match.test(path);
+      const on = a._tab === currentTab;
       a.classList.toggle('on', on);
       if (on) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -240,7 +296,7 @@ async function boot() {
     announcedUpdate = true;
     afterSplash(() => toast(t('upd.done', { v: state.appVersion }))); // unter der Startanimation sah man ihn nicht
   }
-  if (!/^#\/(home|library|item|search|settings|admin)/.test(location.hash)) location.hash = '#/home';
+  if (!/^#\/(home|movies|shows|requests|library|item|search|settings|admin)/.test(location.hash)) location.hash = '#/home';
   if (!state.isAdmin && /^#\/admin/.test(location.hash)) location.hash = '#/home';
   if (routerStarted) await refresh();
   else {
@@ -398,6 +454,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
     e.preventDefault();
     reloadData({ hard: e.shiftKey });
+  } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && Nav.tabForDigit(e.key)) {
+    // Strg+1 bis Strg+5: Start, Filme, Serien, Anfragen, Suche (Entscheidung E9; am Mac Cmd)
+    e.preventDefault();
+    navigate(Nav.tabForDigit(e.key).path);
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     navigate('/search');

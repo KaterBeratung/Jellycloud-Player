@@ -235,7 +235,7 @@ module.exports = async (ctx) => {
   const leftDetail = await waitFor(`!location.hash.includes('/item/')`, 4000);
   check('Zurueck auf einer Detailseite: behandelt, eine Seite zurueck', backDetail === true && leftDetail, await ev('location.hash'));
   // Ein echtes Menue der Oberflaeche: "Sortieren" in einer Bibliothek (Reiter unten, kompakte Ansicht)
-  const libHref = await ev(`[...document.querySelectorAll('.tabbar-item')].map((a) => a.getAttribute('href')).find((h) => /library/.test(h ?? '')) ?? null`);
+  const libHref = await ev(`[...document.querySelectorAll('.tabbar-item')].map((a) => a.getAttribute('href')).find((h) => h === '#/movies') ?? null`);
   await ev(`location.hash = ${JSON.stringify(libHref ?? '#/home')}`);
   await waitFor(`[...document.querySelectorAll('.lib-controls .btn')].some((x) => /Sortier/.test(x.textContent))`, 8000);
   await ev(`[...document.querySelectorAll('.lib-controls .btn')].find((x) => /Sortier/.test(x.textContent))?.click()`);

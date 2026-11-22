@@ -31,18 +31,27 @@ function queryFor(parent) {
   }
 }
 
-export function libraryView({ id }) {
-  // Ambient Glow: Bibliotheken mit Filmen tragen den Bereich Filme, mit Serien den Bereich Serien, alle anderen den Bereich Mediatheken (glow.js)
-  const kind = state.views?.find((v) => v.Id === id)?.CollectionType;
-  const el = h('div', { class: 'page library', 'data-glow': kind === 'movies' ? 'movies' : kind === 'tvshows' ? 'series' : 'libraries' });
-  const titleEl = h('h1', null, ' ');
+const Nav = window.JCNav; // Reiter und Bibliotheken je Reiter (src/shared/nav.js)
+
+/**
+ * Raster einer Bibliothek mit Filtern, Genre und Sortierung; laedt seitenweise nach.
+ * - Als Reiter (tab "movies" oder "shows", wie LibraryTab der Apple-App): alle Bibliotheken dieser Art, Wahl der Bibliothek neben dem Titel
+ *   (nur bei mehr als einer; Kollektionen unter Filme), Titel "Filme" bzw. "Serien" (bei Kollektionen "Kollektionen"). Die Kopfzeile steht ab
+ *   dem ersten Bild; die Wahl wird je Reiter gemerkt. Ambient Glow: Filme (auch Kollektionen) bzw. Serien.
+ * - Von der Startseite geoeffnet (id, "Neu in ..."): genau diese Bibliothek mit ihrem Namen; Ambient Glow der Mediatheken.
+ */
+export function libraryView({ id: openedId = null, tab = null } = {}) {
+  const el = h('div', { class: 'page library', 'data-glow': tab === 'shows' ? 'series' : tab === 'movies' ? 'movies' : 'libraries' });
+  const titleEl = h('h1', null, tab ? t(tab === 'shows' ? 'nav.shows' : 'nav.movies') : ' ');
   const countEl = h('span', { class: 'count' });
+  const switchHost = h('span', { class: 'lib-switch' });
   const controls = h('div', { class: 'lib-controls' });
   const grid = h('div', { class: 'grid chunked' });
   const sentinel = h('div', { class: 'sentinel' });
-  el.append(h('header', { class: 'lib-head' }, h('div', { class: 'lib-title' }, titleEl, countEl), controls), grid, sentinel);
+  el.append(h('header', { class: 'lib-head' }, h('div', { class: 'lib-title' }, titleEl, switchHost, countEl), controls), grid, sentinel);
 
-  const prefs = store.get(`lib:${id}`, { sort: 0, filter: 'all', genre: '' });
+  let id = openedId;
+  let prefs = { sort: 0, filter: 'all', genre: '' };
   let parent = null;
   let base = {};
   let start = 0;
@@ -195,29 +204,98 @@ export function libraryView({ id }) {
     loadMore(true);
   }
 
-  async function init() {
+  /** Zeigt eine Bibliothek: ihre gemerkte Auswahl (Filter, Genre, Sortierung), Steuerung, erste Seite. */
+  function show(lib) {
+    id = lib.Id;
+    parent = lib;
+    prefs = store.get(`lib:${id}`, { sort: 0, filter: 'all', genre: '' });
+    genres = null;
+    base = queryFor(parent);
+    if (tab) titleEl.textContent = lib.CollectionType === 'boxsets' ? t('lib.collections') : t(tab === 'shows' ? 'nav.shows' : 'nav.movies');
+    else titleEl.textContent = parent.Name;
+    buildControls();
+    if (!observer) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((x) => x.isIntersecting)) loadMore();
+        },
+        { rootMargin: '900px 0px' }
+      );
+    }
+    observer.disconnect();
+    observer.observe(sentinel);
+    el.parentElement?.scrollTo?.({ top: 0 });
+    loadMore(true);
+  }
+
+  /** Wahl der Bibliothek im Reiter (nur bei mehr als einer): ein Knopf neben dem Titel mit dem Namen der gewaehlten, das Menue mit Haken. */
+  function buildSwitcher(own, current) {
+    switchHost.replaceChildren();
+    if (own.length < 2) return;
+    const name = (v) => (v.CollectionType === 'boxsets' ? t('lib.collections') : v.Name || t('lib.library'));
+    const b = h('button', { class: 'btn glass sm lib-switch-btn', type: 'button', 'aria-label': t('lib.switch'), title: t('lib.switch') }, icon('layers', 16), h('span', null, name(current)), icon('chevron-down', 14));
+    b.addEventListener('click', () =>
+      openMenu(
+        b,
+        own.map((v) => ({ id: v.Id, label: name(v), selected: v.Id === id })),
+        {
+          onPick: (e) => {
+            if (e.id === id) return;
+            const lib = own.find((v) => v.Id === e.id);
+            if (!lib) return;
+            store.set(`tab:${tab}`, lib.Id);
+            buildSwitcher(own, lib);
+            show(lib);
+          }
+        }
+      )
+    );
+    switchHost.append(b);
+  }
+
+  /** Reiter: die Bibliotheken der Art aus der Liste, die die App kennt (beim Start geholt); fehlt sie, wird sie einmal geholt. */
+  async function initTab() {
+    let views = state.views ?? [];
+    if (!Nav.ownLibraries(views, tab).length) {
+      grid.replaceChildren();
+      skeletons();
+      try {
+        views = await api.getViews();
+        state.views = views;
+      } catch (e) {
+        if (destroyed) return;
+        grid.replaceChildren(pageStatus({ kind: 'failed', text: e.message, retry: initTab }));
+        if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
+        return;
+      }
+      if (destroyed) return;
+    }
+    const own = Nav.ownLibraries(views, tab);
+    if (!own.length) {
+      grid.replaceChildren(pageStatus({ symbol: tab === 'shows' ? 'tv' : 'film', title: t(tab === 'shows' ? 'nav.shows' : 'nav.movies'), text: t('lib.noneOfKind') }));
+      return;
+    }
+    const lib = Nav.pickLibrary(own, store.get(`tab:${tab}`, null));
+    buildSwitcher(own, lib);
+    show(lib);
+  }
+
+  /** Von der Startseite geoeffnet: genau diese Bibliothek (ihre Art und ihr Name kommen vom Server). */
+  async function initOpened() {
+    let lib;
     try {
-      parent = await api.getItem(id);
+      lib = await api.getItem(openedId);
     } catch (e) {
       if (destroyed) return;
-      grid.replaceChildren(pageStatus({ kind: 'failed', text: e.message, retry: init }));
+      grid.replaceChildren(pageStatus({ kind: 'failed', text: e.message, retry: initOpened }));
       if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
       return;
     }
     if (destroyed) return;
-    titleEl.textContent = parent.Name;
-    base = queryFor(parent);
-    buildControls();
-    observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((x) => x.isIntersecting)) loadMore();
-      },
-      { rootMargin: '900px 0px' }
-    );
-    observer.observe(sentinel);
-    loadMore(true);
+    show(lib);
   }
-  init();
+  if (tab) initTab();
+  else initOpened();
 
   return {
     el,

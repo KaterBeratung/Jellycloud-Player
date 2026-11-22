@@ -108,11 +108,11 @@ module.exports = async (ctx) => {
 
   // 4) Suche, Einstellungen
   await go('#/home');
-  p = await centerOf('.tool[href="#/search"]');
+  p = await centerOf('.nav-link[href="#/search"]');
   const lupeUnder = await under(p);
   await osClick(p.x, p.y);
   await ctx.wait(900);
-  check('Klick auf Suche (Lupe)', (await hash()).startsWith('#/search'), `${await hash()} - darunter: ${lupeUnder}`);
+  check('Klick auf den Reiter Suche', (await hash()).startsWith('#/search'), `${await hash()} - darunter: ${lupeUnder}`);
   p = await centerOf('.tool[href="#/settings"]');
   await osClick(p.x, p.y);
   await ctx.wait(900);
@@ -120,12 +120,13 @@ module.exports = async (ctx) => {
   p = await centerOf('.who');
   await osClick(p.x, p.y);
   await ctx.wait(900);
-  check('Klick auf das Konto', (await hash()) === '#/settings/account', await hash());
+  check('Klick auf das Profilsymbol oeffnet das Profilmenue', await ctx.run(`!!document.querySelector('.menu .menu-item')`), await hash());
+  await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`);
 
   // 5) Der freie Bereich der Leiste bleibt Ziehflaeche: Fenster per Maus verschieben
   await go('#/home');
   const hwnd = ctx.win.getNativeWindowHandle().readBigUInt64LE(0).toString();
-  for (const sel of ['.titlebar', '.navrow-start > .grow', '.navpill', '.tool[href="#/search"]']) {
+  for (const sel of ['.titlebar', '.navrow-start > .grow', '.navpill', '.nav-link[href="#/search"]']) {
     const q = await centerOf(sel);
     console.log('Trefferpruefung', sel, '->', await hitTest(hwnd, q.x, q.y), '(1 = Inhalt, 2 = Ziehflaeche)');
   }

@@ -237,18 +237,24 @@ let openMenuState = null;
 
 export function closeMenu() {
   if (!openMenuState) return;
-  const { el, off } = openMenuState;
+  const { el, off, anchor } = openMenuState;
   openMenuState = null;
   off();
+  // Wie ein Menue des Systems: lag der Fokus im Menue, geht er an den Knopf zurueck, der es geoeffnet hat (Tastatur, Bildschirmleser; eine danach
+  // geoeffnete Maske kehrt beim Schliessen dorthin zurueck)
+  if (el.contains(document.activeElement) && anchor?.isConnected) anchor.focus({ preventScroll: true });
   el.classList.add('closing');
   setTimeout(() => el.remove(), 140);
 }
 
 /**
  * Popover-Menue unter einem Anker-Element.
- * @param {{id:any,label:string,sub?:string,selected?:boolean,header?:boolean,disabled?:boolean,icon?:string}[]} entries
+ * Haken und Symbole teilen sich eine Spalte (wie die Menues der Apple-App): ein gewaehlter Eintrag zeigt den Haken, sonst sein Symbol (icon);
+ * Eintraege ohne beides bleiben buendig. separator: Trennlinie zwischen Abschnitten; danger: Eintrag in der Farbe der Gefahr (Abmelden).
+ * columns: false haelt das Menue in einer Spalte (Profilmenue), sonst verteilen sich lange Listen auf mehrere.
+ * @param {{id?:any,label?:string,sub?:string,selected?:boolean,header?:boolean,separator?:boolean,disabled?:boolean,icon?:string,danger?:boolean}[]} entries
  */
-export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 200, maxHeight = 360 } = {}) {
+export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 200, maxHeight = 360, columns = true } = {}) {
   closeMenu();
   const el = h('div', { class: 'menu', role: 'menu' });
   let active = -1;
@@ -258,10 +264,14 @@ export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 2
       el.append(h('div', { class: 'menu-head' }, e.label));
       continue;
     }
+    if (e.separator) {
+      el.append(h('div', { class: 'menu-sep', role: 'separator' }));
+      continue;
+    }
     const b = h(
       'button',
       {
-        class: `menu-item${e.selected ? ' selected' : ''}`,
+        class: `menu-item${e.selected ? ' selected' : ''}${e.danger ? ' danger' : ''}`,
         type: 'button',
         role: 'menuitem',
         disabled: e.disabled,
@@ -270,7 +280,7 @@ export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 2
           onPick?.(e);
         }
       },
-      h('span', { class: 'check' }, e.selected ? icon('check', 16) : null),
+      h('span', { class: `check${!e.selected && e.icon ? ' sym' : ''}` }, e.selected ? icon('check', 16) : e.icon ? icon(e.icon, 16) : null),
       h('span', { class: 'txt' }, h('span', { class: 'lbl' }, e.label), e.sub ? h('span', { class: 'sub' }, e.sub) : null)
     );
     buttons.push(b);
@@ -278,7 +288,7 @@ export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 2
   }
   // Lange Listen (z. B. Genres) verteilen sich auf mehrere Spalten, statt zu scrollen.
   const perColumn = Math.max(6, Math.min(12, Math.floor((innerHeight - 140) / 46)));
-  if (entries.length > perColumn) {
+  if (columns && entries.length > perColumn) {
     el.classList.add('multi');
     el.style.setProperty('--rows', String(Math.ceil(entries.length / Math.ceil(entries.length / perColumn))));
   }
@@ -336,6 +346,7 @@ export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 2
   window.addEventListener('resize', closeMenu);
   openMenuState = {
     el,
+    anchor,
     off: () => {
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);

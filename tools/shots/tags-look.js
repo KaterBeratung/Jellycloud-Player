@@ -123,7 +123,7 @@ module.exports = async (ctx) => {
   await setTheme('midnight', '#f5f5f7');
   check('Feste Farben: in allen Designs und mit rosa-roter Akzentfarbe sehen die Tags gleich aus', same && !!base, base.slice(0, 120));
 
-  const libHref = await ctx.run(`[...document.querySelectorAll('.nav-link')].map((a) => a.getAttribute('href')).find((h) => /library/.test(h ?? '')) ?? null`);
+  const libHref = await ctx.run(`[...document.querySelectorAll('.nav-link')].map((a) => a.getAttribute('href')).find((h) => h === '#/movies') ?? null`);
   if (libHref) {
     await go(libHref, `document.querySelectorAll('.grid .card .tags').length > 0`);
     await ctx.capture(path.join(out, 'TG-library.png'));

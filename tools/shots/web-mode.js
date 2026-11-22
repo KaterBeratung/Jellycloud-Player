@@ -161,10 +161,34 @@ module.exports = async (ctx) => {
     };
   })()`);
   check('Schmales Fenster (390): kompakte Ansicht ist an', mob.compact === 'on' && mob.w <= 400, JSON.stringify({ c: mob.compact, w: mob.w }));
-  check('Tab-Leiste sitzt unten (Start, Bibliotheken, Suche, Einstellungen), "Start" ist markiert', mob.bar?.display === 'flex' && Math.abs(mob.bar.bottom - mob.h) <= 1 && mob.tabs.length >= 4 && mob.on.length === 1 && mob.on[0] === mob.tabs[0], JSON.stringify({ bar: mob.bar, tabs: mob.tabs, on: mob.on }));
+  check('Tab-Leiste sitzt unten mit den fuenf Reitern (Start, Filme, Serien, Anfragen, Suche; keine Einstellungen), "Start" ist markiert', mob.bar?.display === 'flex' && Math.abs(mob.bar.bottom - mob.h) <= 1 && JSON.stringify(mob.tabs) === JSON.stringify(['Start', 'Filme', 'Serien', 'Anfragen', 'Suche']) && mob.on.length === 1 && mob.on[0] === 'Start', JSON.stringify({ bar: mob.bar, tabs: mob.tabs, on: mob.on }));
   check('Navigationskapsel weg, Marke und Werkzeuge ueberlappen nicht', mob.pill === 'none' && mob.overlap === false, `pill=${mob.pill} overlap=${mob.overlap}`);
   check('Kein Scrollbalken am Rand (kein reservierter Streifen, scrollbar-width none)', mob.gutter === 0 && mob.sbw === 'none', `gutter=${mob.gutter} sbw=${mob.sbw}`);
   check('Startseite: Banner-Text passt in die Breite, nichts ragt seitlich hinaus', mob.heroRight !== null && mob.heroRight <= mob.w && mob.overflow <= 1, `heroRight=${mob.heroRight} overflow=${mob.overflow}`);
+  // Die fuenf Reiter in den Groessen des Plans (P9): ganze Beschriftungen, gleich breite Reiter, Profilsymbol oben; das Profilmenue passt ins Bild
+  const sizes = [];
+  for (const [w, hgt] of [[412, 891], [360, 740], [800, 411]]) {
+    win.setSize(w, hgt);
+    await ctx.wait(700);
+    const m = await ev(`(() => {
+      const items = [...document.querySelectorAll('.tabbar-item')];
+      const ws = items.map((a) => Math.round(a.getBoundingClientRect().width));
+      const who = document.querySelector('.toolpill .who')?.getBoundingClientRect();
+      return { compact: document.documentElement.dataset.compact, n: items.length, cut: items.filter((a) => { const s = a.querySelector('span:last-child'); return s.scrollWidth > s.clientWidth + 1; }).map((a) => a.textContent), spread: Math.max(...ws) - Math.min(...ws), minH: Math.min(...items.map((a) => Math.round(a.getBoundingClientRect().height))), who: who ? { w: Math.round(who.width), right: Math.round(who.right) } : null, w: innerWidth, overflow: ${metrics} };
+    })()`);
+    await ev(`document.querySelector('.toolpill .who').click()`);
+    await waitFor(`!!document.querySelector('.menu.open')`, 2000);
+    await ctx.wait(300);
+    const menu = await ev(`(() => { const r = document.querySelector('.menu').getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: innerWidth, h: innerHeight, items: [...document.querySelectorAll('.menu .menu-item .lbl')].map((x) => x.textContent) }; })()`);
+    await shot(`W-02-handy-reiter-${w}x${hgt}.png`);
+    await ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`);
+    await waitFor(`!document.querySelector('.menu')`, 2000);
+    const ok = m.compact === 'on' && m.n === 5 && !m.cut.length && m.spread <= 1 && m.minH >= 44 && m.who && m.who.w >= 40 && m.who.right <= m.w && m.overflow <= 1 && menu.l >= 0 && menu.r <= menu.w && menu.t >= 0 && menu.b <= menu.h && menu.items.includes('Einstellungen');
+    sizes.push(ok ? 'ok' : `${w}x${hgt}: ${JSON.stringify({ m, menu })}`);
+  }
+  check('412 x 891, 360 x 740, 800 x 411: fuenf Reiter mit ganzer Beschriftung, gleich breit, mindestens 44 hoch; Profilsymbol oben, sein Menue (mit Einstellungen) ganz im Bild', sizes.every((x) => x === 'ok'), sizes.filter((x) => x !== 'ok').join(' | '));
+  win.setSize(390, 844);
+  await ctx.wait(600);
 
   await page(`#/item/${show.Id}`, `document.querySelectorAll('.episodes .ep').length >= 3`);
   await ctx.wait(1300);
@@ -181,8 +205,8 @@ module.exports = async (ctx) => {
   await page(`#/item/${movie.Id}`, `!!document.querySelector('.detail .detail-actions .btn')`);
   await ctx.wait(1300);
   await shot('W-04-handy-film.png');
-  const libHref = await ev(`document.querySelector('.tabbar-item[href^="#/library/"]')?.getAttribute('href')`);
-  check('Tab-Leiste fuehrt zu einer Bibliothek', typeof libHref === 'string' && libHref.length > 3, String(libHref));
+  const libHref = await ev(`document.querySelector('.tabbar-item[href="#/movies"]')?.getAttribute('href')`);
+  check('Tab-Leiste fuehrt zu den Filmen', libHref === '#/movies', String(libHref));
   await page(libHref, `document.querySelectorAll('.library .card').length >= 3`);
   await ctx.wait(900);
   await shot('W-05-handy-bibliothek.png');
@@ -201,11 +225,12 @@ module.exports = async (ctx) => {
   await ctx.wait(700);
   await shot('W-07-handy-einstellungen.png');
   const list = await ev(`(() => ({ rows: [...document.querySelectorAll('.slist-row')].map((a) => a.getAttribute('href')), groups: [...document.querySelectorAll('.slist-group > h3')].map((x) => x.textContent), panel: !!document.querySelector('.settings-panel'), nav: !!document.querySelector('.settings-nav'), title: document.querySelector('.page-title')?.textContent, tab: document.querySelector('.tabbar-item.on')?.getAttribute('href'), overflow: ${metrics} }))()`);
-  check('Einstellungen auf dem Handy: Liste nach Themen (4 Gruppen), jede Zeile fuehrt zu einem Bereich, keine Chip-Zeile, kein Bereich daneben, Tab markiert', list.groups.length === 4 && list.rows.length >= 7 && list.rows.includes('#/settings/account') && list.rows.includes('#/settings/about') && !list.rows.some((x) => /\/(video|audio|discord)$/.test(x)) && !list.panel && !list.nav && list.title === 'Einstellungen' && list.tab === '#/settings' && list.overflow <= 1, JSON.stringify(list));
+  // Die Einstellungen sind kein Reiter: der zuletzt gewaehlte (Suche) bleibt markiert, wie in der Apple-App
+  check('Einstellungen auf dem Handy: Liste nach Themen (4 Gruppen), jede Zeile fuehrt zu einem Bereich, keine Chip-Zeile, kein Bereich daneben, der Reiter davor bleibt markiert', list.groups.length === 4 && list.rows.length >= 7 && list.rows.includes('#/settings/account') && list.rows.includes('#/settings/about') && !list.rows.some((x) => /\/(video|audio|discord)$/.test(x)) && !list.panel && !list.nav && list.title === 'Einstellungen' && list.tab === '#/search' && list.overflow <= 1, JSON.stringify(list));
   await page('#/settings/appearance', `!!document.querySelector('.settings-back')`);
   await ctx.wait(700);
   const area = await ev(`(() => ({ back: document.querySelector('.settings-back')?.getAttribute('href'), title: document.querySelector('.page-title')?.textContent, panel: !!document.querySelector('.settings-panel .settings-stack'), list: !!document.querySelector('.settings-list'), nav: !!document.querySelector('.settings-nav'), tab: document.querySelector('.tabbar-item.on')?.getAttribute('href'), overflow: ${metrics} }))()`);
-  check('Bereich auf dem Handy: "Zurueck" zur Liste, Titel = Bereich, nur der Bereich, Tab markiert, kein Ueberlauf', area.back === '#/settings' && area.title === 'Erscheinungsbild' && area.panel && !area.list && !area.nav && area.tab === '#/settings' && area.overflow <= 1, JSON.stringify(area));
+  check('Bereich auf dem Handy: "Zurueck" zur Liste, Titel = Bereich, nur der Bereich, Reiter davor markiert, kein Ueberlauf', area.back === '#/settings' && area.title === 'Erscheinungsbild' && area.panel && !area.list && !area.nav && area.tab === '#/search' && area.overflow <= 1, JSON.stringify(area));
   check('Desktop-Bereich per Adresse (Discord) auf dem Handy: es erscheint die Liste', (await page('#/settings/discord', `!!document.querySelector('.settings-list .slist-row')`)) && (await ev(`!document.querySelector('.settings-panel')`)) === true);
 
   // Wieder breit: alles wie vorher

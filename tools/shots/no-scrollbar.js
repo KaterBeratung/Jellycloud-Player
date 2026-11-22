@@ -27,7 +27,7 @@ module.exports = async (ctx) => {
   ctx.win.setContentSize(1280, 720);
   await ctx.wait(500);
   const movie = [...items.values()].find((i) => i.Name === 'The Last Lighthouse');
-  const libHref = await ctx.run(`document.querySelector('.nav-link[href^="#/library/"]')?.getAttribute('href')`);
+  const libHref = await ctx.run(`document.querySelector('.nav-link[href="#/movies"]')?.getAttribute('href')`);
 
   const wc = ctx.win.webContents;
   const pages = [

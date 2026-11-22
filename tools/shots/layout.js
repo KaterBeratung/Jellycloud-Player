@@ -108,6 +108,7 @@ module.exports = async (ctx) => {
     ['settings-account', '#/settings/account'],
     ['settings-about', '#/settings/about'],
     ['search', '#/search?q=a'],
+    ['requests', '#/requests'],
     ['admin-server', '#/admin/server'],
     ['admin-tasks', '#/admin/tasks'],
     ['admin-sessions', '#/admin/sessions'],

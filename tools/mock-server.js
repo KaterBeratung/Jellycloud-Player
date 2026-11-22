@@ -120,7 +120,7 @@ function serveVideo(req, res) {
 // qc: Quick Connect wie beim Apple-Testserver (POST /__debug/quickconnect): hold = Bestaetigung zurueckhalten, gone = Code abgelaufen (404),
 //   disabled = am Server aus, authorized = von einem anderen Geraet bestaetigt (POST /QuickConnect/Authorize), started = Zeit von Initiate
 // remote: gestellte Wiedergaben anderer Geraete (POST /__debug/session), fuer "Auf diesem Geraet fortsetzen"
-const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0, lists: 0, images: 0, auth: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false }, admin: false, faults: {}, expired: false, qc: { hold: false, gone: false, disabled: false, authorized: false, started: 0 }, remote: [] };
+const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0, lists: 0, images: 0, auth: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false }, admin: false, faults: {}, expired: false, qc: { hold: false, gone: false, disabled: false, authorized: false, started: 0 }, remote: [], extraViews: [] };
 
 /** Tor fuer "festhalten, bis der Test freigibt" (delay=hold): wait() wartet, solange es zu ist, hoechstens 120 s. */
 function makeGate() {
@@ -1127,7 +1127,8 @@ const server = http.createServer(async (req, res) => {
     state.log.push({ at: '/Users/Me' });
     return send(res, 200, { ...USER, ServerId: SERVER_ID, Policy: { IsAdministrator: !!state.admin, RemoteClientBitrateLimit: state.limits.user }, Configuration: { AudioLanguagePreference: 'ger', SubtitleMode: 'Default' } });
   }
-  if (p === '/UserViews' || /^\/Users\/[0-9a-f]+\/Views$/.test(p)) return send(res, 200, { Items: [MOVIES_VIEW, SHOWS_VIEW], TotalRecordCount: 2 });
+  // weitere Bibliotheken (state.extraViews, von Szenarien gesetzt: zweite Film-Bibliothek, Kollektionen), hinter den beiden festen
+  if (p === '/UserViews' || /^\/Users\/[0-9a-f]+\/Views$/.test(p)) return send(res, 200, { Items: [MOVIES_VIEW, SHOWS_VIEW, ...state.extraViews], TotalRecordCount: 2 + state.extraViews.length });
   if (p === '/Items' && method === 'GET') {
     if (await listPrelude(req, res)) return;
     if (state.delays.items) await new Promise((r) => setTimeout(r, state.delays.items));
