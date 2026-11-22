@@ -10,7 +10,8 @@ export const THEMES = {
 const Accent = window.JCAccent;
 
 export const DEFAULT_ACCENT = Accent.DEFAULT_ACCENT;
-export const ACCENTS = [DEFAULT_ACCENT, '#0b2dbf', '#3b6bff', '#7a5cff', '#19c3c3', '#35d07f', '#f5c518', '#ff8a1f', '#ff4d6d'];
+/** Die acht Farbfelder der Apple-App ({ id, hex }); Namen in i18n unter accent.<id> */
+export const SWATCHES = Accent.SWATCHES;
 export const isHexColor = (s) => /^#[0-9a-fA-F]{6}$/.test(String(s));
 
 /** Wendet Erscheinungsbild-Einstellungen sofort auf das ganze Fenster an. Eckenradius (18 px, app.css) und Bewegung (motion.js) sind nicht einstellbar. */

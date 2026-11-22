@@ -115,7 +115,7 @@ module.exports = async (ctx) => {
   const base = await signature();
   let same = true;
   for (const theme of ['graphite', 'amoled', 'midnight']) {
-    await setTheme(theme, theme === 'amoled' ? '#ff4d6d' : null);
+    await setTheme(theme, theme === 'amoled' ? '#ef4444' : null);
     await go(`#/item/${movie.Id}`, `!!document.querySelector('.detail-tags .tag')`);
     if ((await signature()) !== base) same = false;
     await ctx.capture(path.join(out, `TG-detail-${theme}.png`));

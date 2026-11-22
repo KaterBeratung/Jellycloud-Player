@@ -176,7 +176,7 @@ module.exports = async (ctx) => {
   await go('#/home');
   await waitFor(`!!document.querySelector('.home .rows .row:not(.skeleton)')`, 8000);
   await ctx.wait(1500);
-  check('Seerr antwortet mit Fehler: die Startseite bleibt ohne die Reihe, ohne Hinweis und ohne Fehlermeldung', (await ctx.run(`!document.querySelector('.home .trend-row, .home .trend-hint, .home .empty.error')`)) && !/Trends/.test(await toasts()));
+  check('Seerr antwortet mit Fehler: die Startseite bleibt ohne die Reihe, ohne Hinweis und ohne Fehlermeldung', (await ctx.run(`!document.querySelector('.home .trend-row, .home .trend-hint, .home .page-status')`)) && !/Trends/.test(await toasts()));
   SEERR.trendingError = false;
   SEERR.expired = true;
   await rebuild();

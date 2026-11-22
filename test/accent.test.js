@@ -1,7 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DEFAULT_ACCENT, hexToRgb, luminance, contrast, resolveAccent } = require('../src/shared/accent');
+const fs = require('node:fs');
+const path = require('node:path');
+const { DEFAULT_ACCENT, SWATCHES, hexToRgb, luminance, contrast, resolveAccent } = require('../src/shared/accent');
 
 const DARK = '#08080a';
 const LIGHT = '#f2f3f7';
@@ -42,6 +44,28 @@ test('Helle farbige Akzente (Gelb): dunkle Schrift und abgedunkelte Tonung', () 
   const y = resolveAccent('#f5c518', { bg: DARK });
   assert.equal(y.ink, '#12131a');
   assert.ok(luminance(y.tint) < luminance(y.accent));
+});
+
+// Farbfelder wie in der Apple-App (Theme.swift, ResolvedAccent.swatches)
+test('Farbfelder: dieselben acht wie in der Apple-App, Silber (der Standard) zuerst, unveraenderlich', () => {
+  assert.deepEqual(SWATCHES.map((s) => s.hex), ['#f5f5f7', '#4169e1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#22c55e', '#14b8a6']);
+  assert.deepEqual(SWATCHES.map((s) => s.id), ['silver', 'royalBlue', 'violet', 'pink', 'red', 'orange', 'green', 'teal']);
+  assert.equal(SWATCHES[0].hex, DEFAULT_ACCENT);
+  assert.ok(Object.isFrozen(SWATCHES) && SWATCHES.every((s) => Object.isFrozen(s)));
+});
+
+test('Jedes Farbfeld: Schrift in Akzentfarbe ist in allen vier Designs lesbar (mindestens 4,5:1)', () => {
+  for (const bg of ['#08080a', '#131314', '#000000', '#0c1426']) {
+    for (const s of SWATCHES) {
+      const c = resolveAccent(s.hex, { bg });
+      assert.ok(contrast(luminance(c.fg), luminance(hexToRgb(bg))) >= 4.5, `${s.id} auf ${bg}`);
+    }
+  }
+});
+
+test('Jedes Farbfeld hat einen Namen auf Deutsch und Englisch (i18n accent.<id>)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'js', 'i18n.js'), 'utf8');
+  for (const s of SWATCHES) assert.equal(src.split(`'accent.${s.id}':`).length - 1, 2, s.id);
 });
 
 test('Ungueltige Eingaben ergeben den Standard', () => {

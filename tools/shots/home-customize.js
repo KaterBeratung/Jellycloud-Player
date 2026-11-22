@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
   const rowTitles = () => ctx.run(`[...document.querySelectorAll('.home .rows .row h2')].map((e) => e.textContent.trim())`);
   const homeReady = async () => {
     await go('#/home');
-    return waitFor(`!!document.querySelector('.home .rows .row:not(.skeleton)') || !!document.querySelector('.home .rows .empty')`, 9000);
+    return waitFor(`!!document.querySelector('.home .rows .row:not(.skeleton)') || !!document.querySelector('.home .page-status')`, 9000);
   };
   const listNames = () => ctx.run(`[...document.querySelectorAll('.home-row .home-row-name')].map((e) => e.textContent.trim())`);
   const clickRow = (name, what) => ctx.run(`(() => { const r = [...document.querySelectorAll('.home-row')].find((x) => x.querySelector('.home-row-name').textContent.trim() === ${JSON.stringify(name)}); if (!r) return 'nicht gefunden'; ${what}; return 'ok'; })()`);
@@ -142,9 +142,10 @@ module.exports = async (ctx) => {
   for (const n of await listNames()) await clickRow(n, `if (r.querySelector('button.switch').getAttribute('aria-checked') === 'true') r.querySelector('button.switch').click()`);
   await ctx.wait(600);
   await homeReady();
-  check('Alle Reihen aus: eine Erklaerung mit Weg in die Einstellungen statt einer leeren Seite', await waitFor(`!!document.querySelector('.home .rows .empty a[href="#/settings/home"]')`, 5000) && (await ctx.run(`/ausgeblendet/.test(document.querySelector('.home .rows .empty h3').textContent)`)));
+  // Ohne Banner steht sonst nichts auf der Seite: der Hinweis gilt fuer die ganze Seite (pageStatus), mit der Hauptaktion darunter
+  check('Alle Reihen aus: eine Erklaerung mit Weg in die Einstellungen statt einer leeren Seite', await waitFor(`!!document.querySelector('.home > .page-status[data-kind="action"] a.btn.primary[href="#/settings/home"]')`, 5000) && (await ctx.run(`/ausgeblendet/.test(document.querySelector('.home .page-status h3').textContent)`)));
   await ctx.capture(path.join(out, 'HC-alles-aus.png'));
-  await ctx.run(`document.querySelector('.home .rows .empty a[href="#/settings/home"]').click()`);
+  await ctx.run(`document.querySelector('.home .page-status a[href="#/settings/home"]').click()`);
   check('...der Knopf fuehrt in die Einstellungen der Startseite', await waitFor(`location.hash === '#/settings/home' && !!document.querySelector('.home-rows')`, 3000), await ctx.run('location.hash'));
 
   // ---------- Zuruecksetzen ----------

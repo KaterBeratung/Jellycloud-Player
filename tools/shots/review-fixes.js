@@ -138,7 +138,7 @@ module.exports = async (ctx) => {
   await typeAndEnter('');
   await ctx.wait(1300); // die erste Antwort ist inzwischen da (und veraltet)
   const busy = await ctx.run(`document.querySelector('.search-results').classList.contains('busy')`);
-  const hint = await ctx.run(`!!document.querySelector('.search-results .empty')`);
+  const hint = await ctx.run(`!!document.querySelector('.search-results .page-status')`);
   check('Suchfeld geleert, bevor die Antwort kommt: der Hinweis steht da und ist nicht abgeblendet ("busy" bleibt nicht haengen)', hint && !busy, `Hinweis ${hint}, busy ${busy}`);
   state.delays.items = 0;
 

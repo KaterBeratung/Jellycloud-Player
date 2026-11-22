@@ -9,6 +9,19 @@
   // Standard: neutrales Silberweiss wie bei Apple TV (frueher Koenigsblau)
   const DEFAULT_ACCENT = '#f5f5f7';
 
+  /** Farbfelder der Akzentfarbe (Einstellungen > Erscheinungsbild), dieselben acht wie in der Apple-App (Theme.swift, ResolvedAccent.swatches);
+   *  dazu eine eigene Farbe. Eine gespeicherte Farbe, die hier nicht steht (auch eines der frueheren Felder), gilt als eigene Farbe und bleibt. */
+  const SWATCHES = Object.freeze([
+    { id: 'silver', hex: DEFAULT_ACCENT },
+    { id: 'royalBlue', hex: '#4169e1' },
+    { id: 'violet', hex: '#8b5cf6' },
+    { id: 'pink', hex: '#ec4899' },
+    { id: 'red', hex: '#ef4444' },
+    { id: 'orange', hex: '#f59e0b' },
+    { id: 'green', hex: '#22c55e' },
+    { id: 'teal', hex: '#14b8a6' }
+  ].map(Object.freeze));
+
   function hexToRgb(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ''));
     if (!m) return null;
@@ -61,5 +74,5 @@
     return { accent, tint, fg: fg ?? [toward, toward, toward], ink: lum > 0.42 ? '#12131a' : '#ffffff' };
   }
 
-  return { DEFAULT_ACCENT, hexToRgb, luminance, contrast, resolveAccent };
+  return { DEFAULT_ACCENT, SWATCHES, hexToRgb, luminance, contrast, resolveAccent };
 });

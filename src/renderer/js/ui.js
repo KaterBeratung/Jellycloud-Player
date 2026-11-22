@@ -15,7 +15,6 @@ export function lazyImage(img, { alt = '', cls = '', fit = 'cover', eager = fals
   // Mit "fallback" steht der Titel auf der Flaeche, wenn es kein Bild gibt oder es nicht ladbar ist.
   const showFallback = () => { if (fallback && !box.querySelector('.fallback-title')) box.append(h('span', { class: 'fallback-title' }, fallback)); };
   if (!img) {
-    // Nicht "empty": diese Klasse ist der Leerzustand einer ganzen Seite (grosser Innenabstand) und wuerde runde Avatare verzerren.
     box.classList.add('noimg');
     showFallback();
     return box;
@@ -163,6 +162,45 @@ export function skeletonRow(variant = 'poster', n = 9) {
     h('div', { class: 'row-head' }, h('div', { class: 'sk sk-title' })),
     h('div', { class: 'scroller' }, Array.from({ length: n }, () => h('div', { class: `card ${variant}` }, h('div', { class: 'thumb sk' }), h('div', { class: 'meta' }, h('div', { class: 'sk sk-line' })))))
   );
+}
+
+// ---------- Zustaende einer Seite ----------
+
+/**
+ * Leer-, Fehler- und Aktionszustand (wie PageStatus der Apple-App): ein Baustein fuer alle Seiten, keine Seite baut ihn selbst. Laden zeigen die Seiten weiter mit
+ * Platzhaltern in der Form ihres Inhalts (skeletonRow, Platzhalter-Karten).
+ * - kind 'empty': Symbol, Ueberschrift, Text. 'failed': Warnsymbol, Ueberschrift (sonst "Das konnte nicht geladen werden"), Meldung und mit `retry` der Knopf
+ *   "Erneut versuchen" (zweiter Knopf; waehrend der Versuch laeuft, ist er gesperrt, ein zweiter Klick bleibt ohne Wirkung). 'action': Hinweis mit Hauptaktion
+ *   (`action`: { label, href } oder { label, run }).
+ * - Als ganze Seite (Standard) liegt der Hinweis in der Mitte des Inhaltsbereichs, der Knopf haengt darunter und verschiebt ihn nicht. Er gehoert dann in die Seite
+ *   selbst (showPageStatus) oder in einen Behaelter ohne eigene Lage (position: static, etwa das Raster der Mediathek). `inline`: im Inhalt, der Knopf in der Folge.
+ */
+export function pageStatus({ kind = 'empty', symbol, title, text = '', retry = null, action = null, inline = false } = {}) {
+  const notice = h('div', { class: 'ps-notice' }, icon(symbol ?? (kind === 'failed' ? 'warning' : 'info'), 40), h('h3', null, title ?? t('error.loadFailed')), text ? h('p', null, text) : null);
+  let button = null;
+  if (kind === 'failed' && retry) {
+    button = h('button', { class: 'btn glass', type: 'button' }, t('action.retry'));
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        await retry();
+      } finally {
+        button.disabled = false;
+      }
+    });
+  } else if (kind === 'action' && action) {
+    button = action.href ? h('a', { class: 'btn primary', href: action.href }, action.label) : h('button', { class: 'btn primary', type: 'button', onclick: action.run }, action.label);
+  }
+  if (button) notice.append(h('div', { class: 'ps-action' }, button));
+  return h('div', { class: `page-status${inline ? ' inline' : ''}`, 'data-kind': kind, role: kind === 'failed' ? 'alert' : 'status' }, notice);
+}
+
+/** Setzt den Hinweis fuer die ganze Seite (pageStatus) direkt in die Seite oder nimmt ihn mit null weg; je Seite hoechstens einer. */
+export function showPageStatus(page, status) {
+  page.querySelector(':scope > .page-status')?.remove();
+  if (status) page.append(status);
+  return status;
 }
 
 /** Horizontale Reihe mit Pfeilen. Mit `render` baut die Reihe ihre Karten selbst (zum Beispiel die Anfrage-Karten von Seerr), sonst sind es Karten der Bibliothek. */

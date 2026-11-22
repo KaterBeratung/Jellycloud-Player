@@ -2,7 +2,7 @@ import { h, icon } from '../dom.js';
 import { t } from '../i18n.js';
 import { api, backdropOf, landscapeOf, logoOf, itemHref, mapImage } from '../api.js';
 import { state, updateSettings, SUPPORTED_COLLECTIONS } from '../state.js';
-import { lazyImage, row, skeletonRow, titleOf, toast } from '../ui.js';
+import { lazyImage, pageStatus, row, showPageStatus, skeletonRow, titleOf, toast } from '../ui.js';
 import { cardTags, seerrTitleTag } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
@@ -321,10 +321,14 @@ export function homeView() {
   const heroHost = h('div', { class: 'hero-host' });
   const rows = h('div', { class: 'rows' });
   el.append(heroHost, rows);
-  rows.append(skeletonRow('poster', 9), skeletonRow('landscape', 5));
   const heroOn = HomeRows.homeConfig(state.settings.home).hero; // ohne Banner gibt es auch keinen Platzhalter dafuer
-  el.classList.toggle('no-hero', !heroOn);
-  if (heroOn) heroHost.append(h('div', { class: 'hero hero-skeleton' }, h('div', { class: 'sk' })));
+  /** Platzhalter, bis die Startseite steht (beim ersten Aufbau und nach "Erneut versuchen") */
+  const placeholders = () => {
+    rows.replaceChildren(skeletonRow('poster', 9), skeletonRow('landscape', 5));
+    heroHost.replaceChildren(...(heroOn ? [h('div', { class: 'hero hero-skeleton' }, h('div', { class: 'sk' }))] : []));
+    el.classList.toggle('no-hero', !heroOn);
+  };
+  placeholders();
 
   let destroyed = false;
   let away = false; // die Startseite liegt gerade im Speicher des Routers (nicht im Bild)
@@ -393,7 +397,7 @@ export function homeView() {
     return sec;
   }
 
-  (async () => {
+  async function load() {
     const cfg = HomeRows.homeConfig(state.settings.home); // Anpassung der Startseite (Einstellungen > Startseite)
     const libs = state.views.filter((v) => SUPPORTED_COLLECTIONS.has(v.CollectionType));
     // Die Neuzugaenge je Bibliothek laufen gleichzeitig mit den anderen Abfragen (frueher erst danach: eine Wartezeit mehr bis zur fertigen Startseite)
@@ -467,17 +471,35 @@ export function homeView() {
     const hidden = state.settings.appearance.homeTrending === false ? [...cfg.hidden, 'trending'] : cfg.hidden; // "Filme im Trend" schaltet die Einstellung aus Erscheinungsbild/Startseite
     const shown = HomeRows.arrangeRows(present, cfg.order, hidden);
     for (const id of shown) rows.append(builders.get(id)());
+    // Hinweise: fuer die ganze Seite, wenn sonst nichts darauf steht; unter dem Banner oder ueber "Filme im Trend" im Inhalt
+    const alone = !hero && !rows.children.length;
+    const notice = (status) => (alone ? showPageStatus(el, status) : rows.prepend(status));
     if (!contentRows) {
-      rows.prepend(h('div', { class: 'empty' }, icon('film', 40), h('h3', null, t('home.emptyTitle')), h('p', null, t('home.emptyText'))));
+      notice(pageStatus({ symbol: 'film', title: t('home.emptyTitle'), text: t('home.emptyText'), inline: !alone }));
     } else if (!rows.children.length) {
-      rows.append(h('div', { class: 'empty' }, icon('settings', 40), h('h3', null, t('home.allHiddenTitle')), h('p', null, t('home.allHiddenText')), h('a', { class: 'btn primary', href: '#/settings/home' }, t('toast.openSettings'))));
+      notice(pageStatus({ kind: 'action', symbol: 'settings', title: t('home.allHiddenTitle'), text: t('home.allHiddenText'), action: { label: t('toast.openSettings'), href: '#/settings/home' }, inline: !alone }));
     }
     if (trendSlot) fillTrending(trendSlot);
-  })().catch((e) => {
-    if (destroyed) return;
-    rows.replaceChildren(h('div', { class: 'empty error' }, icon('info', 40), h('h3', null, t('error.loadFailed')), h('p', null, e.message)));
-    if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
-  });
+  }
+
+  /** Startseite laden; scheitert es, steht der Fehler fuer die ganze Seite da (ohne Banner und Platzhalter), "Erneut versuchen" baut sie neu auf. */
+  function start() {
+    return load().catch((e) => {
+      if (destroyed) return;
+      hero?.destroy();
+      hero = null;
+      heroHost.replaceChildren();
+      rows.replaceChildren();
+      el.classList.add('no-hero');
+      showPageStatus(el, pageStatus({ kind: 'failed', text: e.message, retry: () => {
+        showPageStatus(el, null);
+        placeholders();
+        return start();
+      } }));
+      if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
+    });
+  }
+  start();
 
   return {
     el,

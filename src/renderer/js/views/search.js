@@ -2,7 +2,7 @@ import { h, icon, $ } from '../dom.js';
 import { t } from '../i18n.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { card } from '../ui.js';
+import { card, pageStatus } from '../ui.js';
 import { debounce } from '../utils.js';
 import { playItem } from '../actions.js';
 import { closeRequestDetail } from './request-detail.js';
@@ -47,7 +47,7 @@ export function searchView({ query }) {
     history.replaceState(null, '', q ? `#/search?q=${encodeURIComponent(q)}` : '#/search');
     if (!q) {
       results.classList.remove('busy'); // eine noch laufende Suche ist damit veraltet und raeumt es nicht mehr selbst ab
-      results.replaceChildren(h('div', { class: 'empty' }, icon('search', 40), h('h3', null, t('search.hintTitle')), h('p', null, t('search.hintText'))));
+      results.replaceChildren(pageStatus({ symbol: 'search', title: t('search.hintTitle'), text: t('search.hintText') }));
       return;
     }
     results.classList.add('busy');
@@ -57,9 +57,9 @@ export function searchView({ query }) {
       results.classList.remove('busy');
       results.replaceChildren();
       if (!items.length) {
-        // Ohne Seerr der Leerzustand, mit Seerr gleich der Weg zur Anfrage
-        if (!state.seerr) results.append(h('div', { class: 'empty' }, icon('search', 40), h('h3', null, t('search.noneTitle', { q })), h('p', null, t('search.noneText'))));
-        else results.append(h('div', { class: 'empty slim' }, icon('search', 32), h('h3', null, t('search.noneLocal', { q }))));
+        // Ohne Seerr der Leerzustand der ganzen Seite, mit Seerr ein Hinweis im Inhalt und darunter gleich der Weg zur Anfrage
+        if (!state.seerr) results.append(pageStatus({ symbol: 'search', title: t('search.noneTitle', { q }), text: t('search.noneText') }));
+        else results.append(pageStatus({ symbol: 'search', title: t('search.noneLocal', { q }), inline: true }));
         addRequests(q, my, true);
         return;
       }
@@ -80,7 +80,7 @@ export function searchView({ query }) {
     } catch (e) {
       if (my !== gen || destroyed) return;
       results.classList.remove('busy');
-      results.replaceChildren(h('div', { class: 'empty error' }, icon('info', 40), h('h3', null, t('error.loadFailed')), h('p', null, e.message)));
+      results.replaceChildren(pageStatus({ kind: 'failed', text: e.message, retry: () => run(input.value) }));
     }
   }
 

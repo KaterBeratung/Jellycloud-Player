@@ -2,7 +2,7 @@ import { h, icon } from '../dom.js';
 import { t } from '../i18n.js';
 import { api, isFolder } from '../api.js';
 import { state } from '../state.js';
-import { card, openMenu, segmented, toast } from '../ui.js';
+import { card, openMenu, pageStatus, segmented, toast } from '../ui.js';
 import { store } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
 
@@ -52,6 +52,9 @@ export function libraryView({ id }) {
   let generation = 0;
   let observer = null;
   let genres = null;
+  // Hinweis eines gescheiterten Ladens: bis "Erneut versuchen" (oder eine neue Auswahl) laedt nichts von selbst nach. Sonst meldete sich der Beobachter am Listenende
+  // gleich danach, lud ungefragt erneut und raeumte den Hinweis wieder weg (oder versuchte es beim Scrollen immer wieder).
+  let loadError = null;
 
   const onPlay = async (item) => {
     if (item.Type === 'Series') {
@@ -80,11 +83,12 @@ export function libraryView({ id }) {
     if (destroyed || !parent) return;
     // Eine neue Auswahl (Filter, Sortierung, Genre) gilt sofort, auch wenn die vorige Liste noch laedt: deren Antwort verwirft die Generation unten.
     // Nur das Weiterblaettern (kein reset) wartet auf eine laufende Anfrage.
-    if (loading && !reset) return;
+    if ((loading || loadError) && !reset) return;
     if (reset) {
       generation++;
       start = 0;
       total = Infinity;
+      loadError = null;
       grid.replaceChildren();
     }
     if (start >= total) return;
@@ -116,16 +120,26 @@ export function libraryView({ id }) {
       }
       start += items.length;
       countEl.textContent = t('lib.count', { n: total });
-      if (!items.length && start === 0) {
-        grid.append(h('div', { class: 'empty' }, icon('film', 40), h('h3', null, t('lib.emptyTitle')), h('p', null, t('lib.emptyText'))));
-      }
+      if (!items.length && start === 0) grid.append(pageStatus({ symbol: 'film', title: t('lib.emptyTitle'), text: t('lib.emptyText') }));
       // Alles geladen: kein Beobachter mehr noetig. Sonst weiter, solange das Ende der Liste noch im Blick ist: der Beobachter meldet sich nur bei einer Aenderung, auf einem grossen
       // Bildschirm fuellt die erste Seite den Ansichtsbereich aber nicht, dann kaeme ohne diesen Anstoss nichts mehr nach. Er wird nach jeder Seite neu angelegt (Anstoss ueber die erste Meldung).
       if (start >= total) observer?.disconnect();
       else rearm();
     } catch (e) {
       if (gen !== generation || destroyed) return;
-      grid.replaceChildren(h('div', { class: 'empty error' }, icon('info', 40), h('h3', null, t('error.loadFailed')), h('p', null, e.message)));
+      if (start === 0) {
+        // Nichts geladen: der Fehler fuer die ganze Seite
+        loadError = pageStatus({ kind: 'failed', text: e.message, retry: () => loadMore(true) });
+        grid.replaceChildren(loadError);
+      } else {
+        // Weiterblaettern gescheitert: was schon da ist, bleibt; der Fehler steht am Ende der Liste (wie in der Apple-App)
+        loadError = pageStatus({ kind: 'failed', text: e.message, inline: true, retry: () => {
+          loadError?.remove();
+          loadError = null;
+          return loadMore();
+        } });
+        grid.append(loadError);
+      }
       if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
     } finally {
       if (gen === generation) loading = false; // eine veraltete Anfrage darf die laufende der neuen Auswahl nicht freigeben
@@ -181,11 +195,13 @@ export function libraryView({ id }) {
     loadMore(true);
   }
 
-  (async () => {
+  async function init() {
     try {
       parent = await api.getItem(id);
     } catch (e) {
-      grid.replaceChildren(h('div', { class: 'empty error' }, icon('info', 40), h('h3', null, t('error.loadFailed')), h('p', null, e.message)));
+      if (destroyed) return;
+      grid.replaceChildren(pageStatus({ kind: 'failed', text: e.message, retry: init }));
+      if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
       return;
     }
     if (destroyed) return;
@@ -200,7 +216,8 @@ export function libraryView({ id }) {
     );
     observer.observe(sentinel);
     loadMore(true);
-  })();
+  }
+  init();
 
   return {
     el,

@@ -56,7 +56,8 @@ Bibliotheken einhalten.
   ist dieselbe Wolke **freistehend**, ohne Platte und ohne dunklen Rand, auf transparentem Grund; es entsteht mit `npm run icon` (`tools/make-icon.js`). Weil es weiß ist, steht es auf dunklem Grund (Taskleiste und Startmenü im dunklen Design) klar,
   auf hellem Grund (Explorer im hellen Design) tritt es zurück und ist nur noch schwach zu sehen; das ist gewollt, die dunkle Platte (0.0.44 bis 0.0.47) und der dunkle Rand (bis 0.0.43) waren unerwünscht. In der Oberfläche steht dieselbe Form als Logo in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
   (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
-- **Standardfarbe:** neutrales Silberweiß (`#f5f5f7`) wie bei Apple TV für Buttons, Navigation, Fortschritt und Markierungen. Die Farbe ist unter *Erscheinungsbild* frei wählbar (Königsblau ist eines der Farbfelder). Die Regeln stehen in `src/shared/accent.js`
+- **Standardfarbe:** neutrales Silberweiß (`#f5f5f7`) wie bei Apple TV für Buttons, Navigation, Fortschritt und Markierungen. Die Farbe ist unter *Erscheinungsbild* frei wählbar: seit 1.2.6 dieselben acht Farbfelder wie in der
+  Apple-App (Silber, Königsblau, Violett, Rosa, Rot, Orange, Grün, Türkis; `SWATCHES` in `accent.js`, Namen DE/EN), dazu Farbwähler und Hex-Code; eine früher gewählte Farbe, die kein Feld mehr ist, bleibt als eigene Farbe. Die Regeln stehen in `src/shared/accent.js`
   und gelten für Oberfläche und Player gleich: Weiß, Grau und Schwarz passen sich dem Theme an (auf einem hellen Grund würde Weiß zu Fast-Schwarz, sonst wären
   Buttons unsichtbar); helle Akzente bekommen dunkle Schrift und eine abgedunkelte Tönung für durchscheinende Auswahlzustände (`--accent-rgb`);
   Text und Icons in Akzentfarbe werden so weit aufgehellt bzw. abgedunkelt, dass der Kontrast mindestens 4,5:1 beträgt (`--accent-fg`).
@@ -78,8 +79,24 @@ Bibliotheken einhalten.
 - **Kein Scrollbalken (seit 1.1.4):** Die Oberfläche hat nirgends einen sichtbaren Scrollbalken (weder am Fensterrand noch in Menüs, Dialogen und Listen), wie bei Netflix und Apple TV; es bleibt auch kein 12-px-Streifen reserviert, der Inhalt nutzt die volle Breite.
   Gescrollt wird mit Mausrad, Touchpad, Fingern und Tastatur (Bild hoch/runter, Pos1/Ende, Leertaste; `#view` ist fokussierbar). Umsetzung: `* { scrollbar-width: none; }` und `::-webkit-scrollbar { display: none; }` am Anfang von `app.css`; wer eine eigene Breite braucht, muss `scrollbar-width: none` selbst setzen (Klassenregeln schlagen die allgemeine).
   Ausnahme: die Popups im Player-Overlay (Spuren, Info, Folgenliste) haben noch ihren schmalen, durchscheinenden Balken. Szenario `no-scrollbar.js`.
-- **Personen ohne Foto:** runde Scheibe in der Akzentfarbe mit Initialen. (Die Bildplatzhalter hießen früher `empty`, wie der Leerzustand einer
-  ganzen Seite, und erbten dessen großen Innenabstand; daher die Klasse `noimg`.)
+- **Personen ohne Foto:** runde Scheibe in der Akzentfarbe mit Initialen (Klasse `noimg`).
+- **Design-Grundlagen wie in der Apple-App (seit 1.2.6, Paket P5):** Werte als Tokens am Anfang von `app.css` (und für den Player in `player.css`):
+  - *Feste Farben:* Fehler und Gefahr `--danger-fg` #ff6b86, Punkt für Ungelesenes `--badge` #ff453a (für die Mitteilungen), **Schalter „an“ fest grün** `--switch-on`
+    #34c759 mit weißem Knopf, nie in der Akzentfarbe (Silberweiß wäre vom Knopf nicht zu unterscheiden).
+  - *Bewegung:* keine Kurve mit Überschwinger mehr (`--ease-spring` entfällt, Verschieben mit `--ease`); lange, gestaltete Bewegungen (Startanimation) behalten ihre Werte.
+  - *Drücken:* eine Reaktion für jeden Knopf (`PressFeedback`): sofort 0,94 und Deckkraft 0,72 (0,1 s), weich zurück (0,3 s); breite Knöpfe und Menüzeilen 0,97;
+    Karten federn auf 0,95 ein und dunkeln kurz ab. Eigene CSS-Eigenschaft `scale` (verträgt sich mit Hebung und Einblenden), Übergang `--press-tr` am Knopf;
+    während des Drückens wächst der unsichtbare Trefferstreifen (`::before`) so weit, wie der Knopf schrumpft, damit ein Klick am Rand nicht verloren geht.
+  - *Knöpfe und Felder:* Kapseln, 48 hoch (`--control-h`), 20 seitlich; Hauptknopf in der Akzentfarbe, zweiter Knopf als Glasfläche, Symbolknopf rund 46, gesperrt 50 %;
+    `.sm` nur in Werkzeugleisten, `.xl` nur für *Abspielen*. Felder gleich hoch wie die Knöpfe (Anmeldung, Seerr), mehrzeilige behalten ihre Form;
+    fehlerhafte Eingabe (`.invalid` oder `aria-invalid`) mit Kontur 1,5 in der Fehlerfarbe.
+  - *Glas mit Weichzeichner nur an schwebenden Bedienelementen* (Kopfleiste, Navigation, Menüs, Hinweise, Pfeile der Reihen, Seitenpunkte, Tab-Leiste; Entscheidung E11):
+    Segment-Schalter, Suchfeld, Felder, Knöpfe und die Abdunklung hinter Fenstern sind ohne `backdrop-filter`.
+  - *Zustände:* ein Baustein `pageStatus()` in `ui.js` für Leer, Fehler (mit *Erneut versuchen*, während des Versuchs gesperrt) und Hinweis mit Hauptaktion; als ganze
+    Seite in der Mitte des Inhaltsbereichs, der Knopf 18 darunter verschiebt den Hinweis nicht, die Fläche fängt keine Klicks ab; `inline` im Inhalt. Keine Seite baut
+    ihren Leer- oder Fehlerzustand selbst (Startseite, Mediathek, Suche, Detailseite, Verwaltung). Laden zeigen die Seiten weiter mit Platzhaltern in Form des Inhalts.
+    Mediathek: scheitert das Nachladen, bleibt das Geladene und der Fehler steht am Ende der Liste; nach einem Fehler lädt nichts von selbst nach.
+  - Szenario `page-status.js`; Farbfelder und Schalter in `accent-look.js`.
 
 ## Einstellungen
 
@@ -315,7 +332,7 @@ Das dürfen nur Administratoren; sonst erscheint eine verständliche Meldung. Be
 ## Einstellungen wirken sofort
 
 Startseite und Bibliothek bleiben beim Verlassen im Speicher des Routers (schnelles Zurück) und lesen die Einstellungen beim Aufbau. Ändert man in den Einstellungen etwas, das sie betrifft (*Banner wechselt automatisch*, *Filme im Trend auf der Startseite*,
-*Spoiler-Schutz*, alle *Trailer*-Einstellungen), verwirft `settings.js` die gemerkten Ansichten (`invalidate()`), und der nächste Besuch baut sie mit den neuen Werten auf, ohne Neuladen. Reine Darstellung (Theme, Akzent, Radius, Postergröße) wirkt sofort per CSS und lässt
+*Spoiler-Schutz*, alle *Trailer*-Einstellungen), verwirft `settings.js` die gemerkten Ansichten (`invalidate()`), und der nächste Besuch baut sie mit den neuen Werten auf, ohne Neuladen. Reine Darstellung (Theme, Akzent, Postergröße) wirkt sofort per CSS und lässt
 die gemerkten Seiten in Ruhe. Das Szenario `tools/shots/settings-live.js` prüft es.
 
 ## Verwaltung (Administratoren)
@@ -630,6 +647,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `no-scrollbar.js` | **Kein Scrollbalken** (20 Prüfungen): auf Startseite, Film, Einstellungen und Bibliothek ist `scrollbar-width` aus, es bleibt kein Streifen am Rand (Inhalt so breit wie das Fenster), und **Mausrad und Bild-runter-Taste scrollen trotzdem**; kein scrollbares Element, keine Stylesheet-Regel (`thin`/`auto`, `::-webkit-scrollbar`) schaltet einen Balken ein; geöffnetes Sortier-Menü ohne Balken; Eingaben mit Fokus-Wiederholung (die VM verschluckt sie zwischendurch) |
 | `hover-audit.js` | **Hover-Prüfung** (Port 9197, echte Mausereignisse per `sendInputEvent`, ohne Trailer): fährt auf den unteren und linken Rand von 100 bedienbaren Elementen auf sieben Seiten und misst, ob der Hover stabil bleibt (kein Zittern, kein Verlust), ob **Knöpfe, Reiter (Staffeln) und Auswahlfelder ohne Weichzeichner** sind (sonst Streifen am Rand), ob ein **Klick ganz am Rand** ankommt, ob bei Animationen *aus* nichts abhebt, ob jedes bedienbare Element den Zeiger zeigt, Karten nach dem Wegfahren wieder in Ruhe sind, **Menü bei Tastatur und Maus nur einen hervorgehobenen Eintrag** hat, die Knöpfe im **Player-Overlay** und „Weiter“ des Pausenbildschirms am Rand stabil sind und der Text beim Zeigen in allen vier Themes mindestens 4,5 : 1 Kontrast hat |
 | `discord.js` | **Discord Rich Presence** (49 Prüfungen, **Fake-Discord** auf eigener Pipe über `JC_DISCORD_PIPE`, Mock-Seerr, Port 9097): Einstellungen (nur Ziffern in der eigenen ID, Test mit falscher und richtiger ID, Status), **eingebaute Anwendung** (Feld nur optional, Einschalten genügt, Test ohne ID) und **eigener Name** (Feld, Servername, leer, auf 128 gekürzt), Anzeige für Film und Folge (Titel, Jahr und Genres, S1E2, Poster von TMDB über Seerr, Fortschritt, Knopf), Pause, Weiterspielen, Sprung, keine Flut bei normalem Weiterlaufen, Titel verbergen, Poster-Quellen (Server im Heimnetz = kein Bild), Ende (Schonfrist, dann weg), Neustart von Discord, Ausschalten; nichts Vertrauliches auf dem Draht |
+| `page-status.js` | **Zustände und Grundmaße** (21 Prüfungen, Port 8996): Leer- und Fehlerhinweis in der Mitte des Inhaltsbereichs, Knopf 18 darunter ohne den Hinweis zu verschieben, Fläche fängt keine Klicks ab, *Erneut versuchen* während des Versuchs gesperrt, Fehler beim Nachladen am Listenende ohne ungefragten neuen Versuch, Detailseite ohne Titel, Suche; Drücken (Knopf 0,94 und blasser, Karte 0,95 und dunkler), Feld so hoch wie der Knopf, Fehlerkontur; Aufnahmen `PS-*.png` |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Trend-Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, neue Bibliothek hinten, alles ausgeblendet, Schalter der Trend-Reihe, Überstehen eines Neustarts |
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |
 | `startup-anim.js` | **Startanimation**: Ablauf (Umriss, Dreieck, Schriftzug, Zoom, Oberfläche blendet ein), Zeit rund 2,7 s, Überspringen per Klick und Taste, ruhige Fassung bei *Bewegung reduzieren*, kein Schalter und keine Vorschau in den Einstellungen, kein zweites Mal beim Neuaufbau, Warten bis das Fenster sichtbar ist, Hinweise erst danach, Bildabstände (Mock, Port 8497) |

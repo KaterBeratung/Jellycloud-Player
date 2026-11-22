@@ -2,7 +2,7 @@ import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { api, backdropOf, landscapeOf, posterOf, logoOf, personImage, isFolder } from '../api.js';
 import { state, updateSettings } from '../state.js';
-import { card, initialsOf, lazyImage, openMenu, row, titleOf, toast, closeMenu } from '../ui.js';
+import { card, initialsOf, lazyImage, openMenu, pageStatus, row, showPageStatus, titleOf, toast, closeMenu } from '../ui.js';
 import { mediaTagRow } from '../tags.js';
 import { setAmbient } from '../ambient.js';
 import { endsAt, fmtBitrate, fmtDate, fmtDuration, fmtSize, langName, ticksToSec } from '../utils.js';
@@ -83,23 +83,15 @@ function groupedSubtitleEntries(streams, selectedIndex, off, expanded) {
   return [...entries, { id: 'more', more: true, label: t('detail.subMore', { n: groups.more.length }), sub: t('detail.subMoreSub', { n: groups.more.reduce((n, g) => n + g.tracks.length, 0) }) }];
 }
 
-function errorBox(e, retry) {
-  return h(
-    'div',
-    { class: 'empty error' },
-    icon('info', 40),
-    h('h3', null, t('error.loadFailed')),
-    h('p', null, e.message),
-    retry ? h('button', { class: 'btn primary', type: 'button', onclick: retry }, t('action.retry')) : null
-  );
-}
+/** Platzhalter der Detailseite, solange der Titel laedt (Plakat, Titel, zwei Zeilen). */
+const loadingPlaceholder = () => h('div', { class: 'detail-loading' }, h('div', { class: 'sk sk-poster' }), h('div', { class: 'sk-stack' }, h('div', { class: 'sk sk-title-lg' }), h('div', { class: 'sk sk-line' }), h('div', { class: 'sk sk-line short' })));
 
 export function detailView({ id, query }) {
   const el = h('div', { class: 'page detail' });
   const bd = h('div', { class: 'detail-bd' });
   const body = h('div', { class: 'detail-body' });
   el.append(bd, body);
-  body.append(h('div', { class: 'detail-loading' }, h('div', { class: 'sk sk-poster' }), h('div', { class: 'sk-stack' }, h('div', { class: 'sk sk-title-lg' }), h('div', { class: 'sk sk-line' }), h('div', { class: 'sk sk-line short' }))));
+  body.append(loadingPlaceholder());
 
   let destroyed = false;
   let trailerCtl = null; // Trailer im Hintergrund (trailer.js)
@@ -110,13 +102,23 @@ export function detailView({ id, query }) {
   };
   scroller()?.addEventListener('scroll', onScroll, { passive: true });
 
+  /** Titel nicht geladen: der Fehler fuer die ganze Seite; "Erneut versuchen" zeigt wieder den Platzhalter und laedt neu. */
+  const failed = (e) => {
+    body.replaceChildren();
+    showPageStatus(el, pageStatus({ kind: 'failed', text: e.message, retry: () => {
+      showPageStatus(el, null);
+      body.replaceChildren(loadingPlaceholder());
+      return load();
+    } }));
+  };
+
   async function load() {
     let item;
     try {
       item = await api.getItem(id);
     } catch (e) {
       if (destroyed) return;
-      body.replaceChildren(errorBox(e, load));
+      failed(e);
       if (e.status === 401) document.dispatchEvent(new CustomEvent('session-expired'));
       return;
     }
@@ -126,7 +128,7 @@ export function detailView({ id, query }) {
     try {
       await render(item);
     } catch (e) {
-      if (!destroyed) body.replaceChildren(errorBox(e, load));
+      if (!destroyed) failed(e);
     }
   }
 
@@ -510,7 +512,7 @@ export function detailView({ id, query }) {
       try {
         eps = await api.getEpisodes(series.Id, sid);
       } catch (e) {
-        if (my === token) list.replaceChildren(errorBox(e));
+        if (my === token && !destroyed) list.replaceChildren(pageStatus({ kind: 'failed', text: e.message, inline: true, retry: () => showSeason(sid) }));
         return;
       }
       if (destroyed || my !== token) return;

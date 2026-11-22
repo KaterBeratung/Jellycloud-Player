@@ -2,7 +2,7 @@ import { h, icon } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { api } from '../api.js';
 import { state, activeServer } from '../state.js';
-import { toast, confirmDialog, openModal, openMenu } from '../ui.js';
+import { toast, confirmDialog, openModal, openMenu, pageStatus } from '../ui.js';
 import { ticksToSec } from '../utils.js';
 
 /**
@@ -56,10 +56,11 @@ export function adminView({ section = 'server' }) {
   const active = SECTIONS.some(([id]) => id === section) ? section : 'server';
   SECTIONS.forEach(([id, ic]) => nav.append(h('a', { class: `snav${id === active ? ' on' : ''}`, href: `#/admin/${id}` }, icon(ic, 18), h('span', null, t(`admin.sec.${id}`)))));
 
-  const failure = (e, retry) => {
-    if (e?.status === 403) return h('div', { class: 'empty error' }, icon('shield', 40), h('h3', null, t('admin.only')), h('p', null, t('admin.onlyText')));
-    return h('div', { class: 'empty error' }, icon('info', 40), h('h3', null, t('error.loadFailed')), h('p', null, e?.message ?? ''), retry ? h('button', { class: 'btn primary', type: 'button', onclick: retry }, t('action.retry')) : null);
-  };
+  // Im Bereich rechts neben der Leiste (im Inhalt): ohne Rechte ein Hinweis, sonst der Fehler mit "Erneut versuchen"
+  const failure = (e, retry) =>
+    e?.status === 403
+      ? pageStatus({ symbol: 'shield', title: t('admin.only'), text: t('admin.onlyText'), inline: true })
+      : pageStatus({ kind: 'failed', text: e?.message ?? '', retry, inline: true });
   const guard = async (what, fn) => {
     try {
       return await fn();
@@ -132,7 +133,7 @@ export function adminView({ section = 'server' }) {
       return first ? show(failure(e, () => tasksPanel())) : undefined;
     }
     if (destroyed) return;
-    if (!tasks.length) return show(note(t('admin.tasks.empty')));
+    if (!tasks.length) return show(pageStatus({ symbol: 'list', title: t('admin.tasks.empty'), inline: true }));
     const byCategory = new Map();
     for (const task of tasks) {
       const key = task.Category || '';

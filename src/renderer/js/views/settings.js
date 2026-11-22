@@ -1,7 +1,7 @@
 import { h, icon } from '../dom.js';
 import { t, setLocale, getLocale } from '../i18n.js';
 import { state, updateSettings, activeServer } from '../state.js';
-import { applyAppearance, THEMES, ACCENTS, DEFAULT_ACCENT, isHexColor } from '../theme.js';
+import { applyAppearance, THEMES, SWATCHES, DEFAULT_ACCENT, isHexColor } from '../theme.js';
 import { openMenu, segmented, slider, toast, toggle } from '../ui.js';
 import { glowSection } from './glow-settings.js';
 import { debounce, langName, fmtSize } from '../utils.js';
@@ -190,7 +190,7 @@ export function settingsView({ section }) {
     const mark = () => {
       const cur = app().accent.toLowerCase();
       swatches.querySelectorAll('.swatch[data-color]').forEach((s) => s.classList.toggle('on', s.dataset.color === cur));
-      swatches.querySelector('.swatch.custom')?.classList.toggle('on', !ACCENTS.includes(cur));
+      swatches.querySelector('.swatch.custom')?.classList.toggle('on', !SWATCHES.some((s) => s.hex === cur));
       swatches.style.setProperty('--cur', cur);
     };
     const setAccent = (c, { fromHex = false } = {}) => {
@@ -200,8 +200,8 @@ export function settingsView({ section }) {
       setAppearance({ accent: c });
       mark();
     };
-    ACCENTS.forEach((c) => {
-      const b = h('button', { class: 'swatch', type: 'button', 'data-color': c, 'aria-label': c, title: c.toUpperCase() });
+    SWATCHES.forEach(({ id, hex: c }) => {
+      const b = h('button', { class: 'swatch', type: 'button', 'data-color': c, 'aria-label': t(`accent.${id}`), title: t(`accent.${id}`) });
       b.style.setProperty('--c', c);
       b.addEventListener('click', () => setAccent(c));
       swatches.append(b);

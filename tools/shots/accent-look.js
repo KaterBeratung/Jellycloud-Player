@@ -46,12 +46,17 @@ module.exports = async (ctx) => {
   // zurueck auf Midnight, dann Koenigsblau gezielt waehlen (muss weiterhin funktionieren)
   await ctx.run(`location.hash = '#/settings/appearance'`);
   await ctx.wait(1500);
+  const sw = await ctx.run(`[...document.querySelectorAll('.swatch[data-color]')].map((b) => b.dataset.color + ' ' + b.getAttribute('aria-label')).join(', ')`);
+  check('Farbfelder wie in der Apple-App: acht, mit Namen, dazu eine eigene Farbe', sw === '#f5f5f7 Silber, #4169e1 Königsblau, #8b5cf6 Violett, #ec4899 Rosa, #ef4444 Rot, #f59e0b Orange, #22c55e Grün, #14b8a6 Türkis' && (await ctx.run(`!!document.querySelector('.swatches .swatch.custom input[type=color]')`)), sw);
   await ctx.run(`document.querySelector('[data-theme-id="midnight"]').click()`);
   await ctx.wait(500);
-  await ctx.run(`document.querySelector('.swatch[data-color="#0b2dbf"]').click()`);
+  await ctx.run(`document.querySelector('.swatch[data-color="#4169e1"]').click()`);
   await ctx.wait(800);
   v = await vars();
-  check('Koenigsblau bleibt waehlbar', v.accent === 'rgb(11 45 191)' && v.ink === '#ffffff', JSON.stringify(v));
+  check('Koenigsblau bleibt waehlbar', v.accent === 'rgb(65 105 225)' && v.ink === '#ffffff', JSON.stringify(v));
+  // Schalter "an" fest gruen (#34c759), nie in der Akzentfarbe; der Knopf darauf bleibt weiss
+  const sw2 = await ctx.run(`(() => { const s = document.querySelector('.settings-panel .switch.on'); if (!s) return null; const cs = getComputedStyle(s); return { bg: cs.backgroundImage, knob: getComputedStyle(s.querySelector('i')).backgroundImage }; })()`);
+  check('Schalter "an" ist gruen, nicht in der Akzentfarbe, mit weissem Knopf', !!sw2 && /rgb\(52, 199, 89\)/.test(sw2.bg) && !/65, 105, 225/.test(sw2.bg) && /rgb\(255, 255, 255\)/.test(sw2.knob), JSON.stringify(sw2));
   await ctx.run(`document.querySelector('.setting:nth-child(6)')?.scrollIntoView({ block: 'center' })`);
   await ctx.wait(500);
   await ctx.capture(path.join(out, 'N-settings-blue.png'));
