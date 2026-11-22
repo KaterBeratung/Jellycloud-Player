@@ -29,9 +29,19 @@ const TREND_WAIT_MS = 1500; // so lange wartet der Aufbau des Banners hoechstens
  * Versprechen (nicht erst das Ergebnis): Banner und Reihe fragen so nur einmal, auch wenn Seerr langsam ist; ein Fehlschlag wird nicht gemerkt.
  */
 let trendCache = null; // { key, at, list: Promise }
+const trendKey = () => `${state.activeServerId}|${state.seerr?.url}|${state.seerr?.userName}`; // Seerr gilt je Profil
+/**
+ * Die gemerkte Liste gehoert zu genau einem Profil und seiner Seerr-Sitzung: baut sich die Startseite fuer ein anderes Profil auf (auch eines ohne Seerr),
+ * ist sie weg, ebenso nach dem Verbinden oder Trennen von Seerr (wie die Apple-App: der Zwischenspeicher des vorigen Profils gilt sofort nicht mehr).
+ */
+function dropForeignTrend() {
+  if (trendCache && trendCache.key !== trendKey()) trendCache = null;
+}
+document.addEventListener('seerr-changed', () => (trendCache = null));
 function loadTrending() {
-  const key = `${state.activeServerId}|${state.seerr?.url}|${state.seerr?.userName}`; // Seerr gilt je Profil
-  if (trendCache && trendCache.key === key && Date.now() - trendCache.at < TREND_TTL_MS) return trendCache.list;
+  dropForeignTrend();
+  const key = trendKey();
+  if (trendCache && Date.now() - trendCache.at < TREND_TTL_MS) return trendCache.list;
   const entry = { key, at: Date.now(), list: window.jc.seerrTrending() };
   trendCache = entry;
   entry.list.catch(() => {
@@ -64,6 +74,7 @@ async function libraryMatch(r) {
  * @returns {Promise<({ kind: 'trend', item: object } | { kind: 'trend', seerr: object })[]>}
  */
 async function trendEntries(count) {
+  dropForeignTrend();
   if (!state.seerr || state.settings.appearance.homeTrending === false || !(count > 0)) return [];
   try {
     const list = await within(loadTrending(), TREND_WAIT_MS, []);
@@ -346,6 +357,7 @@ export function homeView() {
    * die Bibliotheks-Reihen warten nicht darauf. Gibt es nichts zu zeigen, verschwindet der Platzhalter.
    */
   function fillTrending(slot) {
+    dropForeignTrend();
     if (!state.seerr) {
       slot.replaceWith(trendingHint());
       return;

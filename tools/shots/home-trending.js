@@ -64,23 +64,25 @@ module.exports = async (ctx) => {
   const rowTitles = () => ctx.run(`[...document.querySelectorAll('.home .rows > *')].map((c) => (c.querySelector('h2')?.textContent ?? c.className))`);
   const connectJellyfin = async () => {
     await go('#/settings/seerr');
-    await type('.settings-panel input[placeholder="seerr.example.com"]', `127.0.0.1:${PORT}`);
+    await type('.settings-panel input[inputmode=url]', `127.0.0.1:${PORT}`);
     await type('.settings-panel input[type=password]', 'demo');
     await clickText('.settings-panel .btn.primary', 'Verbinden');
-    return waitFor(`/Verbunden mit/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
+    return waitFor(`!!document.querySelector('.settings-panel .status-row[data-state=connected]')`, 6000);
   };
-  // Ein anderes Seerr-Konto (Mock: "demo2"), damit die Liste nicht aus dem Speicher kommt; einen API-Schluessel gibt es nicht mehr
+  // Ein anderes Seerr-Konto (Mock: "demo2", eigene Sitzung); einen API-Schluessel gibt es nicht mehr
   const connectOther = async () => {
     await go('#/settings/seerr');
-    await type('.settings-panel input[placeholder="seerr.example.com"]', `http://127.0.0.1:${PORT}`);
-    await type('.settings-panel input[placeholder="Benutzername"]', 'demo2');
+    await type('.settings-panel input[inputmode=url]', `http://127.0.0.1:${PORT}`);
+    await type('.settings-panel input[autocomplete=username]', 'demo2');
     await type('.settings-panel input[type=password]', 'demo');
     await clickText('.settings-panel .btn.primary', 'Verbinden');
-    return waitFor(`/als Demo Zwei/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
+    return waitFor(`!!document.querySelector('.settings-panel .status-row[data-state=connected]') && /Jellyfin-Konto \\(demo2\\)/.test(document.querySelector('.settings-panel').innerText)`, 6000);
   };
   const disconnect = async () => {
     await go('#/settings/seerr');
-    await clickText('.settings-panel .btn.danger', 'Trennen');
+    await clickText('.settings-panel .link-row.danger', 'Trennen');
+    await waitFor(`!!document.querySelector('.mdl')`, 3000);
+    await clickText('.mdl .btn', 'Trennen');
     return waitFor(`!!document.querySelector('.settings-panel input.field')`, 4000);
   };
 

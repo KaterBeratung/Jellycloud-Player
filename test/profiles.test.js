@@ -41,7 +41,10 @@ function fakeNet() {
         const b = JSON.parse(init.body);
         return json(200, { id: 7, displayName: `Seerr-${b.username}`, jellyfinUserId: `jf-${b.username}` }, { 'set-cookie': `connect.sid=SID-${b.username}; Path=/` });
       }
-      if (u.pathname === '/api/v1/auth/me') return net.seerr.session ? json(200, { id: 7 }) : json(403, { message: 'no' });
+      if (u.pathname === '/api/v1/auth/me') {
+        const who = /connect\.sid=SID-(\w+)/.exec(init.headers?.Cookie ?? '')?.[1];
+        return net.seerr.session && who ? json(200, { id: 7, displayName: `Seerr-${who}`, jellyfinUserId: `jf-${who}`, permissions: 32 }) : json(403, { message: 'no' });
+      }
       return json(404, {});
     }
     const sid = servers[u.hostname];
@@ -133,8 +136,8 @@ test('Pruefung: Jellyfin /Users/Me und Seerr /status + /auth/me nebeneinander; A
   assert.deepEqual(r.seerr, { state: 'none' }, 'ohne Seerr nicht eingerichtet');
   await backend.seerrConnect({ url: 'http://seerr.test', username: 'anna', password: 'pw' });
   r = await backend.checkConnection();
-  assert.deepEqual(r.seerr, { state: 'connected' });
-  assert.ok(calls(net, '/api/v1/status').length >= 2 && calls(net, '/api/v1/auth/me').length === 1);
+  assert.deepEqual(r.seerr, { state: 'connected', user: { id: 7, displayName: 'Seerr-anna', permissions: 32 } }, 'mit dem Seerr-Benutzer und seinen Rechten');
+  assert.ok(calls(net, '/api/v1/status').length >= 2 && calls(net, '/api/v1/auth/me').length === 2, 'einmal bei der Anmeldung, einmal in der Pruefung');
   // Seerr aus: Jellyfin bleibt verbunden, die Seerr-Sitzung bleibt gespeichert
   net.seerr.up = false;
   r = await backend.checkConnection();
@@ -166,8 +169,9 @@ test('Pruefung: haengender Server nach der Frist "nicht erreichbar", eine einzig
   await login(backend, 'anna');
   net.hangMe = true;
   const t0 = Date.now();
-  const [a, b] = await Promise.all([backend.checkConnection(), backend.checkConnection()]);
-  assert.equal(a, b, 'dieselbe Pruefung');
+  const [a, b] = await Promise.all([backend.checkConnection(), backend.checkConnection({ seerr: false })]);
+  assert.deepEqual(a.jellyfin, b.jellyfin, 'dieselbe Pruefung');
+  assert.ok(!('seerr' in b), 'ohne Seerr: nur Jellyfin (darauf wartet der Start)');
   assert.equal(a.jellyfin.state, 'unreachable');
   assert.ok(Date.now() - t0 < 2000);
   assert.equal(calls(net, '/Users/Me').length, 1, 'keine Doppelanfrage, kein Wiederholen');

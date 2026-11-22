@@ -187,6 +187,9 @@ function seerrFetch(state = { expired: false }) {
       return r;
     }
     if (state.expired) return json(401, { message: 'no' });
+    const who = /connect\.sid=SID-(\w+)/.exec(init.headers?.Cookie ?? '')?.[1];
+    if (u.pathname === '/api/v1/auth/me') return who ? json(200, { id: 7, displayName: `Seerr-${who}`, jellyfinUserId: state.identity?.[who] ?? `jf-${who}`, permissions: 32 }) : json(403, {});
+    if (u.pathname === '/api/v1/auth/logout') return json(200, { status: 'ok' });
     if (u.pathname === '/api/v1/search') return json(200, { results: [], totalPages: 1 });
     return json(404, {});
   };
@@ -203,7 +206,7 @@ test('Seerr je Profil: nur mit dem Jellyfin-Konto, ohne Profil keine Verbindung,
   await b.login({ url: 'http://jf.test:8096', username: 'anna', password: 'geheim' });
   const anna = mem.config.data.activeServerId;
   const s = await b.seerrConnect({ url: 'http://seerr.test:5055', username: 'anna', password: 'geheim' });
-  assert.deepEqual(s.seerr, { url: 'http://seerr.test:5055', userName: 'Seerr-anna' }, 'kein Zugangsdatum in der Oberflaeche');
+  assert.deepEqual(s.seerr, { url: 'http://seerr.test:5055', userName: 'anna' }, 'kein Zugangsdatum in der Oberflaeche; gemerkt ist das Jellyfin-Konto der Anmeldung');
   const saved = JSON.parse(mem.store.text);
   assert.ok(!('seerr' in saved), 'nicht mehr fuer das ganze Geraet');
   assert.equal(saved.servers[0].seerr.jellyfinUserId, 'jf-anna', 'die Jellyfin-Kennung von Seerr ist gemerkt');
@@ -214,11 +217,11 @@ test('Seerr je Profil: nur mit dem Jellyfin-Konto, ohne Profil keine Verbindung,
   // Ein zweites Profil hat kein Seerr; zurueck zum ersten: wieder verbunden
   await b.login({ url: 'http://jf.test:8096', username: 'bert', password: 'geheim' });
   assert.equal(b.publicState().seerr, null);
-  assert.equal(b.publicState().seerrAddress, null);
+  assert.equal(b.publicState().seerrAddress, 'http://seerr.test:5055', 'die zuletzt verwendete Adresse ist vorbelegt (keine Zugangsdaten)');
   assert.equal(b.seerr, null);
   await assert.rejects(() => b.seerrSearch('x', 1), /nicht verbunden/);
   b.switchServer(anna);
-  assert.equal(b.publicState().seerr.userName, 'Seerr-anna');
+  assert.equal(b.publicState().seerr.userName, 'anna');
   await b.seerrSearch('matrix', 1);
   assert.equal(net.log.at(-1).cookie, 'connect.sid=SID-anna');
   // Sitzung abgelaufen: SEERR_AUTH, nicht die Jellyfin-Anmeldung

@@ -50,10 +50,10 @@ module.exports = async (ctx) => {
   const trendCount = () => state.log.filter((l) => l.at === 'seerr:GET /discover/trending').length;
   const connectJellyfin = async () => {
     await go('#/settings/seerr');
-    await type('.settings-panel input[placeholder="seerr.example.com"]', `127.0.0.1:${PORT}`);
+    await type('.settings-panel input[inputmode=url]', `127.0.0.1:${PORT}`);
     await type('.settings-panel input[type=password]', 'demo');
     await clickText('.settings-panel .btn.primary', 'Verbinden');
-    return waitFor(`/Verbunden mit/.test(document.querySelector('.settings-panel .account-card')?.innerText ?? '')`, 6000);
+    return waitFor(`!!document.querySelector('.settings-panel .status-row[data-state=connected]')`, 6000);
   };
   // Startseite neu aufbauen lassen (wie nach einem Film) und warten, bis die Bibliotheks-Reihen stehen
   const rebuild = async () => {

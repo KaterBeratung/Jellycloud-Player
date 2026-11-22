@@ -20,6 +20,7 @@ import { installNoDrag } from './no-drag.js';
 import { installCompact } from './compact.js';
 import { playSplash, splashActive, afterSplash } from './splash.js';
 import { installMotion } from './motion.js';
+import { runConnectionCheck } from './connection.js';
 
 installNoDrag();
 installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (data-anim)
@@ -337,31 +338,7 @@ function showStartFailure(e) {
   syncGlow(el);
 }
 
-// ---------- Verbindungspruefung ----------
-
-let checkSeq = 0;
-/**
- * Prueft Jellyfin und Seerr des aktiven Profils (Rueckseite: checkConnection, je Dienst 30 s, ohne Wiederholung, loescht nie etwas) und legt den Stand
- * in state.connection ab; Einstellungen > Konto zeigt ihn als "Verbindung". Anlaesse wie in der Apple-App: Start und Profilwechsel (boot) und die
- * Rueckkehr in die App (Fenster wieder sichtbar). quiet: eine abgelehnte Anmeldung nicht selbst melden (boot entscheidet dann).
- */
-async function runConnectionCheck({ quiet = false } = {}) {
-  const seq = ++checkSeq;
-  const id = state.activeServerId;
-  state.connection = { profileId: id, jellyfin: { state: 'checking' }, seerr: { state: state.seerr ? 'checking' : 'none' } };
-  document.dispatchEvent(new CustomEvent('connection-state'));
-  let r;
-  try {
-    r = await window.jc.checkConnection();
-  } catch (e) {
-    r = { profileId: id, jellyfin: { state: 'failed', detail: e.message }, seerr: { state: 'none' } };
-  }
-  if (seq !== checkSeq || r.profileId !== state.activeServerId) return r; // von einer neueren Pruefung oder einem Profilwechsel ueberholt
-  state.connection = r;
-  document.dispatchEvent(new CustomEvent('connection-state'));
-  if (!quiet && r.jellyfin.state === 'unauthorized' && state.loggedIn && $('#view')) document.dispatchEvent(new CustomEvent('session-expired'));
-  return r;
-}
+// ---------- Verbindungspruefung (connection.js) ----------
 
 // Rueckkehr in die App: das Fenster war verdeckt (minimiert, Handy im Hintergrund) und ist wieder sichtbar
 let hiddenSince = 0;

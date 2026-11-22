@@ -644,6 +644,16 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .link-row-tag { flex: none; color: var(--muted); font-size: 13px; }
 .link-row .link-row-chev { color: var(--faint); }
 .group-foot { padding: 8px 8px 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
+.link-row:disabled { cursor: default; opacity: 0.45; }
+.link-row:disabled:hover { background: none; }
+/* Seerr (wie die Apple-App, SeerrSection): Stand der Verbindung mit Symbol und, wenn etwas nicht stimmt, einem Hinweis darunter */
+.status-row { display: flex; flex-direction: column; gap: 6px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+.status-head { display: flex; align-items: center; gap: 12px; font-weight: 650; }
+.status-head > :first-child { flex: none; width: 22px; display: grid; place-items: center; }
+.status-row[data-state='connected'] .status-head > .ico { color: var(--switch-on); }
+.status-row:is([data-state='unauthorized'], [data-state='unreachable'], [data-state='failed']) .status-head > .ico { color: #ff9f0a; }
+.status-hint { color: var(--muted); font-size: 13px; max-width: 70ch; padding-left: 34px; white-space: pre-line; }
+.status-hint:empty { display: none; }
 .sub-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .settings-back.sub { margin: 0 0 0 -6px; }
 .sub-title { font: 700 22px var(--font-display); padding: 0 8px; }
@@ -752,6 +762,10 @@ html[data-anim='reduced'] .connect-logo.brand-mark { animation: rise calc(500ms 
 .qc-outcome strong { font-size: 17px; font-weight: 650; color: var(--text); }
 .qc-outcome p { color: var(--muted); font-size: 15px; }
 .spinner { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.7s linear infinite; }
+.spinner.lg { width: 30px; height: 30px; border-width: 3px; margin-bottom: 8px; color: var(--faint); }
+/* Ein Zustand, der erst geklaert wird: erst nach einem Augenblick sichtbar, eine schnelle Antwort laesst so nichts aufblitzen */
+.page-status[data-kind='loading'] { animation: ps-wait calc(200ms * var(--dur)) ease-out 400ms both; }
+@keyframes ps-wait { from { opacity: 0; } }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Start ohne Verbindung: der Hinweis in der Mitte des ganzen Fensters (ohne Kopfzeile) */
 .start-status { position: absolute; inset: 0; --topbar-h: 0px; }
@@ -1179,7 +1193,6 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .trend-hint-text p { margin-top: 6px; color: var(--muted); line-height: 1.5; }
 .trend-hint-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 @media (max-width: 1040px) { .trend-ghosts { display: none; } }
-.seerr-intro { margin: 0 0 6px; max-width: 70ch; }
 .settings .setting-control .field { width: min(380px, 100%); min-width: min(300px, 100%); }
 .setting[hidden] { display: none; }
 

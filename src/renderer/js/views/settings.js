@@ -7,6 +7,7 @@ import { glowSection } from './glow-settings.js';
 import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
+import { runSeerrCheck, seerrState } from '../connection.js';
 
 // Bereiche der Einstellungen (Icon fuer die Seitenleiste)
 const SECTIONS = [
@@ -969,66 +970,122 @@ export function settingsView({ section, query: q }) {
     return accountPanel();
   }
 
-  // ---------- Anfragen (Seerr) ----------
+  // ---------- Anfragen (Seerr; wie die Apple-App, SeerrSection) ----------
+  /**
+   * Seerr gilt je Profil und nur mit einem Jellyfin-Konto (vorbelegt mit dem zuletzt bei Seerr angemeldeten, sonst mit dem des Profils; aenderbar).
+   * Eingerichtet: Stand der Verbindung mit Symbol und Hinweis (beim Oeffnen geprueft, solange die Seite offen ist still alle 20 s), Adresse, Anmeldung,
+   * "Erneut pruefen" und "Trennen" mit Rueckfrage; ist die Anmeldung abgelaufen, darunter "Erneut anmelden" mit Konto und Passwort. Nicht eingerichtet:
+   * Adresse (aus der letzten Verbindung vorbelegt), Konto, Passwort und "Verbinden". Das Passwort bleibt nach keinem Versuch stehen.
+   */
   function seerrPanel() {
-    const refresh = () => panel.replaceChildren(seerrPanel());
-    const info = state.seerr;
-    if (info) {
-      const out = h('button', { class: 'btn danger', type: 'button' }, icon('logout', 18), h('span', null, t('seerr.disconnect')));
-      out.addEventListener('click', async () => {
-        try {
-          const next = await window.jc.seerrDisconnect();
-          state.seerr = next.seerr;
-          state.seerrAddress = next.seerrAddress;
-          invalidate(); // die Startseite im Speicher zeigt noch die Reihe "Filme im Trend"
-          toast(t('seerr.disconnected'));
-          refresh();
-        } catch (e) {
-          toast(e.message, { type: 'error' });
-        }
-      });
-      return h('div', { class: 'settings-stack' }, h('div', { class: 'settings-group' }, h('div', { class: 'account-card' }, h('div', { class: 'avatar-lg' }, icon('plus', 28)), h('div', null, h('div', { class: 'setting-label' }, t('seerr.connected')), h('div', { class: 'setting-desc' }, t('seerr.statusLine', { url: info.url, user: info.userName })))), h('div', { class: 'btn-row' }, out)));
-    }
-    // Seerr gilt je Profil und nur mit dem Jellyfin-Konto (wie in der Apple-App): Benutzer des Profils vorbelegt (aenderbar), Adresse aus der letzten Verbindung
-    const err = h('div', { class: 'form-error', role: 'alert' });
-    const url = h('input', { class: 'field', type: 'text', placeholder: 'seerr.example.com', autocomplete: 'off', spellcheck: 'false', 'aria-label': t('seerr.url') });
+    const box = h('div', { class: 'settings-stack' });
+    let busy = false;
+    const url = h('input', { class: 'field', type: 'text', placeholder: t('seerr.addressPh'), autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', inputmode: 'url', 'aria-label': t('seerr.address') });
     url.value = state.seerrAddress ?? '';
-    const user = h('input', { class: 'field', type: 'text', placeholder: t('login.user'), autocomplete: 'off', spellcheck: 'false', 'aria-label': t('login.user') });
-    user.value = activeServer()?.userName ?? '';
-    const pass = h('input', { class: 'field', type: 'password', placeholder: t('login.password'), autocomplete: 'off', 'aria-label': t('login.password') });
-    const connect = h('button', { class: 'btn primary', type: 'button' }, icon('link', 18), h('span', null, t('seerr.connect')));
-    const submit = async () => {
-      if (connect.disabled) return; // Enter waehrend einer laufenden Anmeldung: nicht doppelt anmelden
+    const user = h('input', { class: 'field', type: 'text', placeholder: t('seerr.account'), autocomplete: 'username', spellcheck: 'false', autocapitalize: 'off', 'aria-label': t('seerr.account') });
+    user.value = state.seerr?.userName || activeServer()?.userName || '';
+    const pass = h('input', { class: 'field', type: 'password', placeholder: t('seerr.password'), autocomplete: 'current-password', 'aria-label': t('seerr.password') });
+    const err = h('p', { class: 'form-error left', role: 'alert' });
+    const submit = h('button', { class: 'btn primary', type: 'button' }, h('span'));
+    const ready = () => !busy && !!(state.seerr || url.value.trim()) && !!user.value.trim() && !!pass.value;
+    const paintSubmit = () => {
+      submit.firstChild.textContent = t(state.seerr ? 'seerr.signInAgain' : 'seerr.connect');
+      submit.disabled = !ready();
+      submit.classList.toggle('loading', busy);
+    };
+    for (const f of [url, user, pass]) {
+      f.addEventListener('input', paintSubmit);
+      f.addEventListener('keydown', (e) => e.key === 'Enter' && connect());
+    }
+    submit.addEventListener('click', () => connect());
+
+    /** Verbinden bzw. erneut anmelden (dann mit der Adresse des eingerichteten Seerr); ein zweiter Klick waehrenddessen bleibt ohne Wirkung. */
+    async function connect() {
+      if (!ready()) return;
+      busy = true;
       err.textContent = '';
-      connect.disabled = true;
+      paintSubmit();
       try {
-        const next = await window.jc.seerrConnect({ url: url.value, username: user.value, password: pass.value });
+        const next = await window.jc.seerrConnect({ url: state.seerr ? state.seerr.url : url.value, username: user.value.trim(), password: pass.value });
         state.seerr = next.seerr;
         state.seerrAddress = next.seerrAddress;
-        invalidate(); // die Startseite im Speicher zeigt noch den Hinweis zur Einrichtung
+        invalidate(); // Seiten im Speicher (Startseite) zeigen noch den alten Stand
+        document.dispatchEvent(new CustomEvent('seerr-changed'));
         toast(t('seerr.connected'));
-        refresh();
+        runSeerrCheck(); // Stand und Rechte des neuen Benutzers
       } catch (e) {
         err.textContent = e.message;
       } finally {
-        connect.disabled = false;
+        busy = false;
+        pass.value = '';
+        paint(true);
       }
+    }
+
+    async function disconnect() {
+      if (!(await confirmDialog({ title: t('seerr.disconnectTitle'), text: t('seerr.disconnectText'), confirmLabel: t('seerr.disconnect'), danger: true }))) return;
+      try {
+        const next = await window.jc.seerrDisconnect();
+        state.seerr = next.seerr;
+        state.seerrAddress = next.seerrAddress;
+        url.value = next.seerrAddress ?? '';
+        invalidate();
+        document.dispatchEvent(new CustomEvent('seerr-changed'));
+        toast(t('seerr.disconnected'));
+        runSeerrCheck();
+      } catch (e) {
+        toast(e.message, { type: 'error' });
+      }
+      paint(true);
+    }
+
+    const statusRow = (s, info) => {
+      const mark = s === 'checking' ? h('span', { class: 'spinner', 'aria-hidden': 'true' }) : icon({ connected: 'check-circle-fill', unauthorized: 'key-off' }[s] ?? 'warning', 22);
+      const hint = {
+        unreachable: [t('seerr.hint.unreachable'), info?.detail].filter(Boolean).join('\n'),
+        unauthorized: t(info?.reason === 'foreign' ? 'seerr.hint.foreign' : 'seerr.hint.unauthorized'),
+        failed: t('seerr.hint.failed', { msg: info?.detail || '?' })
+      }[s];
+      return h('div', { class: 'status-row', 'data-state': s, role: 'status' }, h('div', { class: 'status-head' }, mark, h('span', null, t(`seerr.st.${s}`))), h('p', { class: 'status-hint' }, hint ?? ''));
     };
-    connect.addEventListener('click', submit);
-    for (const input of [url, user, pass]) input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
-    return h(
-      'div',
-      { class: 'settings-stack' },
-      h('p', { class: 'setting-desc seerr-intro' }, t('seerr.intro')),
-      group(
-        t('seerr.grpConnection'),
-        setting(t('seerr.url'), t('seerr.urlDesc'), url),
-        setting(t('login.user'), t('seerr.userDesc'), user),
-        setting(t('login.password'), t('seerr.passwordNote'), pass),
-        h('div', { class: 'btn-row' }, connect),
-        err
-      )
-    );
+    const signInRows = () => [setting(t('seerr.account'), null, user), setting(t('seerr.password'), null, pass), h('div', { class: 'setting save-row' }, err, submit)];
+
+    let shown = null;
+    /** Baut die Seite nach dem Stand neu; ein unveraenderter Stand laesst sie stehen (Eingaben und Fokus bleiben). */
+    function paint(force = false) {
+      const s = seerrState();
+      const info = state.connection?.profileId === state.activeServerId ? state.connection.seerr : null;
+      const key = `${s}|${info?.reason ?? ''}|${info?.detail ?? ''}`;
+      if (!force && key === shown) return;
+      shown = key;
+      const focused = [url, user, pass].find((f) => f === document.activeElement);
+      paintSubmit();
+      if (!state.seerr) {
+        box.replaceChildren(h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, setting(t('seerr.address'), null, url), ...signInRows()), foot(t('seerr.foot'))));
+      } else {
+        const z = state.seerr;
+        const recheck = linkRow({ ico: 'refresh', label: t('seerr.recheck'), chevron: false, onclick: () => runSeerrCheck() });
+        recheck.disabled = s === 'checking';
+        const out = linkRow({ ico: 'logout', label: t('seerr.disconnect'), danger: true, chevron: false, onclick: disconnect });
+        const expired = s === 'unauthorized';
+        const blocks = [h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, statusRow(s, info), infoRow(t('seerr.address'), z.url, { small: true }), infoRow(t('seerr.signIn'), t('seerr.signInValue', { user: z.userName })), expired ? null : recheck, out), expired ? null : foot(t('seerr.foot')))];
+        // Sitzung abgelaufen: hier neu anmelden, aufgebaut wie beim ersten Verbinden (Konto, Passwort, Hauptknopf); Jellyfin laeuft davon unberuehrt weiter
+        if (expired) blocks.push(h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, t('seerr.expiredHead')), h('div', { class: 'settings-group' }, ...signInRows()), foot(t('seerr.foot'))));
+        box.replaceChildren(...blocks);
+      }
+      focused?.focus();
+    }
+    paint();
+    const onState = () => paint();
+    document.addEventListener('connection-state', onState);
+    cleanups.push(() => document.removeEventListener('connection-state', onState));
+    // Beim Oeffnen pruefen (still, wenn schon verbunden) und, solange die Seite offen ist, alle 20 s still nachsehen: die Anzeige folgt dem Stand von selbst
+    if (state.seerr) runSeerrCheck({ quiet: seerrState() === 'connected' });
+    const poll = setInterval(() => {
+      if (state.seerr && document.visibilityState === 'visible') runSeerrCheck({ quiet: true });
+    }, 20000);
+    cleanups.push(() => clearInterval(poll));
+    return box;
   }
   // ---------- Discord Rich Presence ----------
   function discordPanel() {

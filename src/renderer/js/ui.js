@@ -171,13 +171,15 @@ export function skeletonRow(variant = 'poster', n = 9) {
  * Platzhaltern in der Form ihres Inhalts (skeletonRow, Platzhalter-Karten).
  * - kind 'empty': Symbol, Ueberschrift, Text. 'failed': Warnsymbol, Ueberschrift (sonst "Das konnte nicht geladen werden"), Meldung und mit `retry` der Knopf
  *   "Erneut versuchen" (zweiter Knopf; waehrend der Versuch laeuft, ist er gesperrt, ein zweiter Klick bleibt ohne Wirkung). 'action': Hinweis mit Hauptaktion
- *   (`action`: { label, href } oder { label, run }).
+ *   (`action`: { label, href } oder { label, run }). 'loading': ein Zustand, der erst geklaert wird (etwa die Pruefung von Seerr), mit Kreisel statt Symbol;
+ *   er erscheint erst nach einem Augenblick, so dass eine schnelle Antwort nichts aufblitzen laesst.
  * - Als ganze Seite (Standard) liegt der Hinweis in der Mitte des Inhaltsbereichs, der Knopf haengt darunter und verschiebt ihn nicht. Er gehoert dann in die Seite
  *   selbst (showPageStatus) oder in einen Behaelter ohne eigene Lage (position: static, etwa das Raster der Mediathek). `inline`: im Inhalt, der Knopf in der Folge.
  * - `more`: weitere, leisere Wege unter dem Knopf (etwa "Anderes Profil waehlen" beim Start ohne Verbindung).
  */
 export function pageStatus({ kind = 'empty', symbol, title, text = '', retry = null, action = null, inline = false, more = [] } = {}) {
-  const notice = h('div', { class: 'ps-notice' }, icon(symbol ?? (kind === 'failed' ? 'warning' : 'info'), 40), h('h3', null, title ?? t('error.loadFailed')), text ? h('p', null, text) : null);
+  const mark = kind === 'loading' ? h('span', { class: 'spinner lg', 'aria-hidden': 'true' }) : icon(symbol ?? (kind === 'failed' ? 'warning' : 'info'), 40);
+  const notice = h('div', { class: 'ps-notice' }, mark, h('h3', null, title ?? t('error.loadFailed')), text ? h('p', null, text) : null);
   let button = null;
   if (kind === 'failed' && retry) {
     button = h('button', { class: 'btn glass', type: 'button' }, t('action.retry'));

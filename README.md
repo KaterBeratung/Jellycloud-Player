@@ -81,7 +81,8 @@ Bibliotheken einhalten.
   - *Filme* und *Serien* zeigen **alle Bibliotheken ihrer Art** mit einer Wahl neben dem Titel (nur bei mehr als einer; gemerkt je Reiter): Filme mit Bibliotheken
     ohne Art und gemischten, dahinter Heim- und Musikvideos (bleiben unter Windows und Android erreichbar, Entscheidung E6) und zuletzt die **Kollektionen**; Serien mit
     gemischten. Eine von der Startseite geöffnete Mediathek („Neu in …“) zeigt weiter genau diese, mit dem Ambient Glow der Mediatheken.
-  - *Anfragen* zeigt ohne Seerr „Seerr nicht verbunden“ mit *Seerr verbinden*; die Übersicht der Anfragen folgt mit Paket P11.
+  - *Anfragen* zeigt ohne Seerr „Seerr nicht verbunden“ mit *Seerr verbinden*, sonst den Stand von Seerr (seit 1.2.9, siehe *Anfragen mit Seerr*); die
+    Übersicht der Anfragen folgt mit Paket P11.
   - **Profilmenü** am Profilsymbol: Profile (Haken beim aktiven, darunter „Aktiv · Adresse“; ein Tipp auf ein anderes wechselt), *Quick Connect*,
     *Server oder Profil hinzufügen*, *Einstellungen*, zuletzt *Abmelden* in Rot mit Rückfrage. Haken und Symbole stehen in einer Spalte.
   - Szenario `nav-shell.js`; die kompakten Größen 412 × 891, 360 × 740 und 800 × 411 prüft `web-mode.js`.
@@ -132,6 +133,7 @@ Angeglichen an die Apple-App (Plan P8; Regeln in `src/shared/quick-connect.js` u
   seiner eigenen Anmeldung am Server ab (Rückfrage). *Abmelden* fragt nach und erklärt, dass nur dieses Profil mit seiner Seerr-Anmeldung geht.
 - **Verbindungsprüfung** (`checkConnection`): Jellyfin `/Users/Me` und Seerr `/status` + `/auth/me` nebeneinander, je Dienst **eine** Frist von 30 s, kein
   Wiederholen, keine Doppelanfragen; bei Netzfehlern wird nichts gelöscht. Anlässe: Start, Profilwechsel, Rückkehr in die App (Fenster wieder sichtbar).
+  Seit 1.2.9 wartet der Start nur auf Jellyfin (`checkConnection({ seerr: false })`), Seerr meldet sich über `seerrCheck` nach.
   Der Stand steht unter *Konto › Verbindung*; eine abgelehnte Anmeldung führt zur Anmeldung wie jedes 401.
 - **Start ohne Server:** statt der Anmeldung „Server nicht erreichbar“ mit *Erneut versuchen* und dem Weg zu einem anderen Profil; die Anmeldung bleibt.
 - Szenario `quick-connect.js`; Unit-Tests `quick-connect.test.js` (13 Fälle der Apple-App), `profiles.test.js`, `server-address.test.js` (7 Fälle der Apple-App).
@@ -149,7 +151,7 @@ Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbiete
 | Sprache & Untertitel | Audiosprache, Untertitel-Modus (Server/Aus/Erzwungen/Immer/Smart), Untertitelsprache, Größe, Position, Farbe, Umrandung, Hintergrundkasten, Fett, Schriftart, ASS-Stil, Live-Vorschau |
 | Wiedergabe | **Trailer** (automatisch, stumm starten, Verzögerung, Text ausblenden, Lautstärke, Qualität bis 4K), nächste Folge automatisch, Intro/Abspann überspringen (Button/Auto/Aus), Countdown an den Knöpfen (6 s), Rücksprung beim Fortsetzen, Vollbild beim Start, Sprungweiten, Mausrad, Pause beim Minimieren, Bildschirm anlassen |
 | Netzwerk | Qualitätsgrenze, Transcoding erlauben, Puffergröße, Vorausladen, selbstsignierte Zertifikate |
-| Anfragen (Seerr) | Verbindung zu Seerr **für das aktive Profil**: Adresse (vorbelegt), Anmeldung mit dem Jellyfin-Konto |
+| Anfragen (Seerr) | Verbindung zu Seerr **für das aktive Profil**: Stand mit Hinweis, Adresse (vorbelegt), Anmeldung mit einem Jellyfin-Konto (vorbelegt, änderbar), *Erneut prüfen*, *Trennen* mit Rückfrage, *Erneut anmelden* bei abgelaufener Sitzung |
 | Discord | **Rich Presence** (zeigt, was du schaust): Schalter, Verbindung testen, Statuszeile, **Name in Discord** (frei wählbar, Knopf *Servername*), Poster-Quelle (Automatisch/TMDB/Server/Kein), Titel verbergen, Link zur Titelseite (Knopf und anklickbarer Titel), optional eine eigene Application-ID mit Anleitung |
 | Allgemein | mpv-Status (nur Anzeige), **mit Windows starten**, **minimiert starten**, Fenster merken, Spoiler-Schutz, Bildcache leeren, alles zurücksetzen |
 | Konto, Info | **Aktuelles Profil** (Server, Benutzer, Adresse, *Verbindung*), **Profile** (höchstens **vier** je Gerät wie in der Apple-App; ein gemerktes Profil meldet sich immer neu an, ältere über der Grenze bleiben; ein Tipp öffnet *Name*, *Serveradresse*, *Wechseln*, *Entfernen*), *Server oder Profil hinzufügen*, *Abmelden* mit Rückfrage (Quick Connect für andere Geräte liegt im Profilmenü); Tastenkürzel |
@@ -270,6 +272,27 @@ YouTube verlangt für Einbettungen einen Referer (sonst Fehler 153). Die Oberfl�
 Titel, die es noch nicht gibt, mit Poster von TMDB (über das App-Protokoll, nur feste Größen) und der Schaltfläche *Anfragen*. Bereits Angefragtes, in Bearbeitung Befindliches oder teilweise Verfügbares
 zeigt seinen Stand als **Tag** statt der Schaltfläche (Bezeichnung und Farbe allein aus `src/shared/seerr-state.js`, gezeichnet mit den Farbpaaren der Tags: grün *Verfügbar*, Türkis-Blau *Teilweise*, blau *Angefragt* / *Genehmigt*, orange *In Bearbeitung*, Orange-Rot *Abgelehnt* / *Fehlgeschlagen*; überall gleich wie in der Apple-App), Verfügbares fehlt (es steht schon in der Bibliothek). Serien werden komplett angefragt. Fehler sind verständlich (Kontingent, schon angefragt, Sitzung abgelaufen);
 eine abgelaufene Seerr-Sitzung führt **nicht** zur Jellyfin-Anmeldung, sondern zu einem Hinweis mit Weg in die Einstellungen.
+
+**Seerr je Profil und vier Zustände (seit 1.2.9, Plan P10, wie die Apple-App):**
+- *Einstellungen › Anfragen (Seerr)* (nach `SeerrSection`): nicht eingerichtet Adresse (die zuletzt verwendete, auch von einem anderen Profil), **Jellyfin-Konto**
+  (vorbelegt mit dem des Profils, änderbar) und Jellyfin-Passwort, *Verbinden* erst mit allen dreien; eingerichtet der **Stand** mit Symbol und Hinweis (*Verbunden*,
+  *Seerr ist nicht erreichbar*, *Anmeldung nicht mehr gültig*, *Verbindung fehlgeschlagen*), *Adresse*, *Anmeldung: Jellyfin-Konto (Name)*, *Erneut prüfen* und
+  *Trennen* mit Rückfrage. Ist die Anmeldung abgelaufen, steht darunter *Anmeldung abgelaufen* mit Konto und Passwort und *Erneut anmelden*. Das Passwort bleibt
+  nach keinem Versuch im Feld. Die Seite prüft beim Öffnen und, solange sie offen ist, still alle 20 s.
+- **Anmeldung:** gemerkt werden nur die Sitzung (`connect.sid`, verschlüsselt), der Name des Jellyfin-Kontos und dessen Kennung, wie Seerr sie unter `/auth/me`
+  nennt; eine Anmeldung, zu der Seerr kein Jellyfin-Konto nennt, gilt nicht. Erneutes Anmelden meldet die alte Sitzung bei Seerr ab.
+- **Fremde Sitzung:** meldet Seerr später unter der gespeicherten Sitzung ein anderes Jellyfin-Konto als das gemerkte (bei Einträgen ohne gemerktes Konto: das des
+  Profils), meldet die App sie bei Seerr ab, verwirft sie und bietet *Erneut anmelden* an; Adresse und Konto bleiben. Ohne Sitzung geht keine Anfrage mehr an Seerr.
+- **Rechte** kommen allein aus `/auth/me` (Nummer, Name, Bitfeld), bei jeder Prüfung neu und nur im Speicher; unbekannte Rechte schalten nichts frei.
+- **Zustände im Reiter *Anfragen*:** nicht eingerichtet (*Seerr verbinden*), verbunden, nicht erreichbar (*Erneut versuchen*), Anmeldung abgelaufen (*Erneut
+  anmelden*, führt in die Einstellungen); ein Ausfall oder Ablauf löscht nichts, Jellyfin läuft unberührt weiter. Der Reiter sieht beim Öffnen nach.
+- **Prüfung** (`connection.js`): beim Start wartet die App nur auf Jellyfin; Seerr meldet seinen Stand nach (ein hängendes Seerr hielt den Start bis 1.2.8 bis zu
+  30 s auf). Profilwechsel, Trennen und Verbinden verwerfen Sitzung, Rechte und die gemerkte Trend-Liste des vorigen Stands; eine Antwort, die noch zum vorigen
+  Profil gehört, kommt nicht mehr an (`SEERR_STALE`). Abmelden, Profil entfernen und Trennen melden die Sitzung auch bei Seerr ab.
+- **Sprache:** Titel, Suche, Trends und Personen fragt die App mit `language=<Kurzform>` (Sprache der App, bei *automatisch* die des Systems); Anmeldung, Rechte
+  und Anfragen ohne. Alle Anfragen an Seerr ohne Cookie-Speicher und ohne Zwischenspeicher der Antworten (`cache: no-store`), Frist 20 s.
+- Tests: `test/seerr-profile.test.js` (Fälle aus `SeerrProfileTests` und die plattformunabhängigen Fälle 1, 2, 9 bis 11), Szenario `seerr-states.js` (Port 8993).
+  Nur gegen den Mock-Seerr geprüft, nicht gegen einen echten Seerr-Server.
 
 **Details beim Anklicken:** Ein Klick auf eine Anfrage-Karte (Poster oder Beschriftung, per Tastatur Enter oder Leertaste auf dem Poster) öffnet ein Detailfenster (`src/renderer/js/views/request-detail.js`): sofort mit
 dem, was die Suche schon kennt (Titel, Poster, Beschreibung), dann nachgeladen aus Seerr (`/movie/{id}` bzw. `/tv/{id}`): Hintergrundbild, Jahr, Laufzeit, Bewertung, Genres, Tagline, Regie bzw. *Erstellt von*, Erscheinungsdatum,
@@ -636,7 +659,7 @@ Dazu gibt es dieselben HTTP-Schalter wie beim Testserver der Apple-App (`Tools/m
 | `/__debug/quickconnect?hold=1\|0&gone=1\|0&disabled=1\|0` | Bestätigung zurückhalten, Code abgelaufen (404), Quick Connect am Server aus; `POST /QuickConnect/Authorize?code=&userId=` bestätigt den Code von einem anderen Gerät (wie Jellyfin: 401 aus, 404 unbekannt oder älter als zehn Minuten, 500 schon bestätigt) |
 | `/__debug/session?device=&item=&at=<s>&user=other&control=0&idle=<s>&client=`, `?clear=1` | Wiedergabe auf einem anderen Gerät desselben Kontos; `GET /Sessions` nennt sie, `POST /Sessions/<Id>/Playing/Stop` merkt sich die Stelle |
 | Seerr: `/__debug/mode?set=ok\|down\|expired` | 503 bei jeder Anfrage bzw. alle bisherigen Sitzungen ungültig (erst eine neue Anmeldung gilt) |
-| Seerr: `/__debug/permissions?set=<Bits>`, `/__debug/identity?jellyfin=<Kennung>` | Rechte des Benutzers (ohne Wert: `MOCK_SEERR_PERMISSIONS`, sonst 1072 = anfragen, verwalten, 4K) und die Jellyfin-Kennung, die `/auth/me` nennt |
+| Seerr: `/__debug/permissions?set=<Bits>`, `/__debug/identity?jellyfin=<Kennung>\|none` | Rechte des Benutzers (ohne Wert: `MOCK_SEERR_PERMISSIONS`, sonst 1072 = anfragen, verwalten, 4K) und die Jellyfin-Kennung, die `/auth/me` für `demo` nennt (`none`: keine; eine andere: fremde Sitzung). `demo2` (Passwort `demo`) hat eine eigene Sitzung und das Jellyfin-Konto `jf-demo2` |
 | Seerr: `/__debug/request?id=&status=`, `/__debug/requests?count=&open=`, `/__debug/season?id=&season=`, `/__debug/media?tmdb=&status=[&type=tv]` | Stand einer Anfrage, viele Anfragen (die ältesten `open` warten), eine Staffel geliefert, Stand eines Titels (5 verfügbar, 6 gesperrt, 7 gelöscht) |
 
 Mock-Seerr kann außerdem: `GET /request` mit `take`, `skip`, `filter`, `sort`, `requestedBy` und `pageInfo`, `POST /request/<Id>/approve|decline|retry`,
@@ -678,7 +701,8 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
-| `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen, Konsole ohne Skriptfehler (Mock-Seerr) |
+| `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Details-Fenster** (Laden, Besetzung, Fokus, Esc, Anfragen von dort, Fehlerfälle), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `seerr-states.js` | Seerr je Profil und vier Zustände (P10): Stand in den Einstellungen, Reiter *Anfragen* verbunden / nicht erreichbar / abgelaufen, *Erneut prüfen*, *Erneut versuchen*, *Erneut anmelden*, fremde Sitzung (abgemeldet und verworfen), zweites Profil mit anderem Jellyfin-Konto, Wechsel stellt die eigene Sitzung her, `language=de` (eigener Port 8993, zweite Adresse 8992) |
 | `seerr-issue.js` | **Problem melden** (31 Prüfungen, Mock-Seerr, Port 8897): **Warnschild** in der Knopfleiste (Lage, Größe, Beschriftung, öffnet das Fenster; fehlt ohne Seerr, ohne TMDB-Nummer und nach dem Trennen), Eintrag im Menü *Mehr* nur mit Seerr und TMDB-Nummer, vier Arten, Kommentar freiwillig, *Melden* erst nach der Wahl, Film, Serie und Folge (Staffel und Folge gehen mit), Ersatztext ohne Kommentar, Esc sendet nichts, Fehler im Fenster (403, Titel Seerr unbekannt) ohne Textverlust, gewählte Art klar markiert |
 | `compact-audit.js` | **Handy-Ansicht auf Abgeschnittenes absuchen** (Web-Fassung, 22 Seiten und Menüs in 412×891, 360×740 und 800×411): Text und Knöpfe außerhalb des Fensters oder von einem Rahmen mit `overflow: hidden` gekappt, Tab-Beschriftungen nur mit „…“, Seitenende unter der Tab-Leiste, Menüs, die herausragen, waagerechtes Scrollen; Aufnahmen bei 412 px |
 | `android-host.js` | **Hülle der Android-App ohne Handy** (23 Prüfungen, Mock-Server): Web-Bau mit `--host`, Nachbildung der **echten Capacitor-Brücke** (`nativePromise`, `PluginHeaders`, ohne `registerPlugin`; `CapacitorHttp`, `JellycloudPlayer`) per Debug-Protokoll eingeschleust, dazu ein Lauf mit der echten Laufzeit `@capacitor/core`, Diagnose-Zeile unter Einstellungen > Info; Hülle meldet Plattform/Version/Gerätename, Anmeldung und 401 über die „native“ Schicht, **Wiedergabe-Plan** (Direct Play, Token nur im Header, Startstelle aus „Weiterschauen“, Dauer, Titel, Geräteprofil ohne AC3/DTS), „Von vorn“, **Rückfall auf Transcode** ab der erreichten Stelle bei Decoder-Fehler, Fehlermeldung bei Serverfehler, Ereignisse (aktiv, geschlossen), Folgen-Titel, Links nur http(s) |

@@ -18,7 +18,7 @@ export const state = {
   seerr: null, // Seerr des aktiven Profils ({ url, userName }), nie mit Zugangsdaten
   seerrAddress: null, // Seerr-Adresse zum Vorbelegen (letzte Verbindung des Profils oder aus der Zeit vor Version 10)
   maxProfiles: 4, // hoechstens so viele Profile je Geraet (wie in der Apple-App)
-  connection: null, // Ergebnis der letzten Verbindungspruefung { profileId, jellyfin: { state, isAdmin }, seerr: { state } } (app.js: runConnectionCheck)
+  connection: null, // Ergebnis der letzten Verbindungspruefung { profileId, jellyfin: { state, isAdmin }, seerr: { state, reason?, detail?, user? } } (connection.js); user: Seerr-Benutzer mit Rechten aus /auth/me
   audioOut: null // erkanntes Ausgabegeraet und gewaehlte Kanaele (Hauptprozess, audio-output.js)
 };
 

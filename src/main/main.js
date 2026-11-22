@@ -272,7 +272,7 @@ function registerIpc() {
   // Profile (eigener Name, Adresse, entfernen), Verbindungspruefung und Quick Connect fuer andere Geraete (der Code wird nirgends protokolliert)
   ipcMain.handle('profile:update', wrap((p) => backend.updateProfile(p)));
   ipcMain.handle('profile:remove', wrap((id) => backend.removeProfile(id)));
-  ipcMain.handle('conn:check', wrap(() => backend.checkConnection()));
+  ipcMain.handle('conn:check', wrap((o) => backend.checkConnection({ seerr: o?.seerr !== false })));
   ipcMain.handle('qc:available', wrap((id) => backend.quickConnectAvailable(id)));
   ipcMain.handle('qc:authorize', wrap((p) => backend.quickConnectAuthorize(p)));
   ipcMain.handle('jf:call', wrap((method, args) => backend.api(method, args)));
@@ -280,6 +280,7 @@ function registerIpc() {
   // ---------- Seerr (Anfragen) ----------
   ipcMain.handle('seerr:connect', wrap((p) => backend.seerrConnect(p)));
   ipcMain.handle('seerr:disconnect', wrap(() => backend.seerrDisconnect()));
+  ipcMain.handle('seerr:check', wrap(() => backend.seerrCheck()));
   ipcMain.handle('seerr:search', wrap((query, page) => backend.seerrSearch(query, page)));
   ipcMain.handle('seerr:trending', wrap(() => backend.seerrTrending()));
   ipcMain.handle('seerr:details', wrap((req) => backend.seerrDetails(req)));

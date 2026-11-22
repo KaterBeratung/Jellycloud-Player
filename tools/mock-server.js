@@ -591,6 +591,14 @@ SEERR.people = new Map(
 }
 
 const seerrPermissions = () => SEERR.permissions ?? (Number(process.env.MOCK_SEERR_PERMISSIONS) || 1072); // 1072 = anfragen (32) + verwalten (16) + 4K (1024)
+/**
+ * Seerr-Benutzer einer Sitzung wie /auth/me: "demo" gehoert zum Jellyfin-Testbenutzer (oder zu der Kennung, die /__debug/identity stellt: eine
+ * fremde Sitzung), "demo2" zu einem zweiten Jellyfin-Konto.
+ */
+const seerrMe = (user) =>
+  user === 'demo2'
+    ? { id: 2, displayName: 'Demo Zwei', jellyfinUserId: 'jf-demo2', jellyfinUsername: 'demo2', permissions: seerrPermissions() }
+    : { id: 1, displayName: 'Demo', jellyfinUserId: SEERR.identity ?? USER.Id, jellyfinUsername: USER.Name, permissions: seerrPermissions() };
 const SEERR_SID = SEERR.sid;
 const SEERR_INITIAL = { statuses: [...SEERR.statuses], quota: JSON.stringify(SEERR.quota) };
 
@@ -685,7 +693,7 @@ function seerrDebug(p, q) {
     return [200, { permissions: seerrPermissions() }];
   }
   if (p === '/__debug/identity') {
-    SEERR.identity = q.get('jellyfin') || null;
+    SEERR.identity = q.get('jellyfin') === 'none' ? '' : q.get('jellyfin') || null; // "none": der Seerr-Benutzer hat kein Jellyfin-Konto
     return [200, { jellyfinUserId: SEERR.identity ?? USER.Id }];
   }
   if (p === '/__debug/request') {
@@ -725,19 +733,22 @@ async function handleSeerr(req, res, p, q, method) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
     res.end(JSON.stringify(body));
   };
-  state.log.push({ at: `seerr:${method} ${sub}` });
+  state.log.push({ at: `seerr:${method} ${sub}`, ...(q.get('language') ? { language: q.get('language') } : {}) });
   SEERR.counters.apiRequests++;
   const cookie = req.headers.cookie ?? '';
-  const sessionOk = cookie.includes(`connect.sid=${SEERR.sid}`);
+  // Jede Anmeldung hat ihre eigene Sitzung: "demo" die Grundsitzung, "demo2" eine zweite (anderer Seerr-Benutzer, anderes Jellyfin-Konto)
+  const sidValue = /(?:^|;\s*)connect\.sid=([^;]+)/.exec(cookie)?.[1] ?? '';
+  const sessionUser = sidValue === SEERR.sid ? 'demo' : sidValue === `${SEERR.sid}-zwei` ? 'demo2' : null;
+  const sessionOk = !!sessionUser;
   if (sessionOk && sub !== '/auth/logout') SEERR.counters.sessionRequests++;
   if (SEERR.mode === 'down') return json(503, { message: 'Service Unavailable' });
   if (sub === '/status') return json(200, { version: '2.7.0-mock', commitTag: 'mock', updateAvailable: false });
   if (sub === '/auth/jellyfin' && method === 'POST') {
     const b = await readBody(req);
-    // "demo" (das Konto des Testbenutzers) und "demo2" (ein zweites Jellyfin-Konto, etwa fuer ein anderes Profil; gleiche Sitzung, anderer Name)
+    // "demo" (das Konto des Testbenutzers) und "demo2" (ein zweites Jellyfin-Konto, etwa fuer ein anderes Profil), Passwort jeweils "demo"
     if ((b.username === 'demo' || b.username === 'demo2') && b.password === 'demo') {
       const second = b.username === 'demo2';
-      return json(200, { id: second ? 2 : 1, displayName: second ? 'Demo Zwei' : 'Demo', jellyfinUserId: second ? 'jf-demo2' : (SEERR.identity ?? USER.Id), jellyfinUsername: b.username, permissions: seerrPermissions() }, { 'set-cookie': `connect.sid=${SEERR.sid}; Path=/; HttpOnly` });
+      return json(200, seerrMe(b.username), { 'set-cookie': `connect.sid=${SEERR.sid}${second ? '-zwei' : ''}; Path=/; HttpOnly` });
     }
     return json(401, { message: 'Invalid credentials' });
   }
@@ -750,7 +761,7 @@ async function handleSeerr(req, res, p, q, method) {
     SEERR.counters.logouts++;
     return json(200, { status: 'ok' });
   }
-  if (sub === '/auth/me') return json(200, { id: 1, displayName: viaKey ? 'Schluessel-Konto' : 'Demo', jellyfinUserId: SEERR.identity ?? USER.Id, jellyfinUsername: USER.Name, permissions: seerrPermissions() });
+  if (sub === '/auth/me') return json(200, viaKey ? { id: 1, displayName: 'Schluessel-Konto', permissions: seerrPermissions() } : seerrMe(sessionUser));
   let um;
   if ((um = /^\/user\/(\d+)\/quota$/.exec(sub)) && method === 'GET') {
     const part = (k) => {

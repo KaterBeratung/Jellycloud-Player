@@ -10,7 +10,7 @@
   'use strict';
 
   const { JellyfinClient, JellyfinError, probeServer, CALLABLE_METHODS } = Jelly;
-  const { SeerrClient, SeerrError, probeSeerr, loginWithJellyfin } = Seerr;
+  const { SeerrClient, SeerrError, probeSeerr, loginWithJellyfin, seerrLanguage } = Seerr;
 
   /** Bitratengrenze des Servers fuer diese Verbindung: kurz zwischengespeichert, beim Wechsel des Servers oder Kontos verworfen. */
   const LIMITS_TTL_MS = 60 * 1000;
@@ -48,6 +48,20 @@
   const sameUser = (a, b) => String(a ?? '').replace(/-/g, '').toLowerCase() === String(b ?? '').replace(/-/g, '').toLowerCase();
 
   /**
+   * Gehoert der Seerr-Benutzer, den Seerr unter der gespeicherten Sitzung meldet, zu dem Jellyfin-Konto, mit dem sich das Profil bei Seerr angemeldet
+   * hat (wie die Apple-App, SeerrAccount.accepts)? Gemerkt ist die Kennung seit Version 10 (jellyfinUserId aus /auth/me); fuer Eintraege ohne sie gilt
+   * das Jellyfin-Konto des Profils. Ein Seerr-Benutzer ohne Jellyfin-Konto gehoert nie dazu.
+   */
+  function acceptsSeerrUser(user, account, profileUserId) {
+    const mine = String(user?.jellyfinUserId ?? '');
+    const expected = String(account?.jellyfinUserId || profileUserId || '');
+    return !!mine && !!expected && sameUser(mine, expected);
+  }
+
+  /** Ein Fehler von Seerr mit Code SEERR_AUTH (Anmeldung abgelaufen oder verworfen): die Oberflaeche bietet "Erneut anmelden" an, Jellyfin bleibt angemeldet. */
+  const seerrAuthError = (message = 'Seerr-Anmeldung abgelaufen') => Object.assign(new SeerrError(message), { status: 0, code: 'SEERR_AUTH' });
+
+  /**
    * @param {object} deps
    * @param {import('./config-core').ConfigCore} deps.config Konfiguration (Server, Einstellungen, Seerr)
    * @param {typeof fetch} deps.fetch Abruffunktion (Hauptprozess: net.fetch, Handy: native HTTP-Schicht, Browser: fetch)
@@ -61,8 +75,13 @@
   function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS }) {
     /** @type {InstanceType<typeof JellyfinClient>|null} */
     let client = null;
-    /** @type {InstanceType<typeof SeerrClient>|null} */
+    /** @type {InstanceType<typeof SeerrClient>|null} Seerr des aktiven Profils, nur mit gueltiger Sitzung */
     let seerr = null;
+    let seerrAccount = null; // eingerichtetes Seerr des aktiven Profils { url, userName, jellyfinUserId } (auch ohne Sitzung), sonst null
+    let seerrUser = null; // der angemeldete Seerr-Benutzer mit Rechten aus der letzten Pruefung (/auth/me); nur im Speicher
+    let seerrEpoch = 0; // zaehlt jeden Wechsel der Seerr-Sitzung (Profil, Verbinden, Trennen): aeltere Pruefungen und Abfragen verfallen
+    let seerrCheckRun = null; // laufende Pruefung von Seerr { epoch, run } (Verbindungspruefung und Einstellungen teilen sie)
+    const foreignDropped = new Set(); // Profile, deren Sitzung als fremde verworfen wurde: der Grund bleibt bis zur neuen Anmeldung sichtbar
     let limits = null;
     let limitsAt = 0;
     let limitsRun = null;
@@ -81,16 +100,32 @@
     }
 
     // ---------- Seerr ----------
-    /** Seerr des aktiven Profils (seit Version 10 je Profil, nur mit der Sitzung des Jellyfin-Kontos). */
+    /** Sprache der Seerr-Texte: die der App (Einstellung), bei "automatisch" die des Systems. */
+    const contentLanguage = () => {
+      const l = config.data.settings?.language;
+      return seerrLanguage(l && l !== 'auto' ? l : locale());
+    };
+    const seerrClient = (url, cookie) => new SeerrClient({ baseUrl: url, cookie, fetch, language: contentLanguage });
+
+    /**
+     * Seerr des aktiven Profils (seit Version 10 je Profil, nur mit der Sitzung des Jellyfin-Kontos). Jeder Aufbau verwirft Sitzung, Rechte und laufende
+     * Pruefungen des vorigen Stands (wie die Apple-App beim Profilwechsel); ohne gueltige Sitzung bleibt Seerr eingerichtet, aber ohne Client.
+     */
     function buildSeerr() {
       const s = config.getSeerr();
-      seerr = s ? new SeerrClient({ baseUrl: s.url, cookie: s.secret, fetch }) : null;
+      seerrEpoch++;
+      seerrUser = null;
+      seerrCheckRun = null;
+      seerrAccount = s ? { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId } : null;
+      seerr = s?.secret ? seerrClient(s.url, s.secret) : null;
       return !!seerr;
     }
 
     function requireSeerr() {
-      if (!seerr) throw new SeerrError('Seerr ist nicht verbunden');
-      return seerr;
+      if (seerr) return seerr;
+      // Eingerichtet, aber ohne Sitzung (verworfen oder nicht lesbar): wie eine abgelaufene Anmeldung, nicht wie "nicht verbunden"
+      if (seerrAccount) throw seerrAuthError();
+      throw new SeerrError('Seerr ist nicht verbunden');
     }
 
     /**
@@ -101,9 +136,75 @@
       try {
         return await fn();
       } catch (e) {
-        if (e instanceof SeerrError && e.status === 401) throw Object.assign(new SeerrError(e.message), { status: 0, code: 'SEERR_AUTH' });
+        if (e instanceof SeerrError && e.status === 401) throw seerrAuthError(e.message);
         throw e;
       }
+    }
+
+    /**
+     * Lesende Abfrage an das Seerr des aktiven Profils. Wechselt waehrenddessen die Sitzung (Profilwechsel, Trennen, neu angemeldet), kommt weder die
+     * Antwort noch ihr Fehler an (Code SEERR_STALE): sie gehoeren zum vorigen Profil. Schreibende Aufrufe laufen dagegen mit ihrer Sitzung zu Ende.
+     */
+    async function seerrRead(fn) {
+      const epoch = seerrEpoch;
+      const stale = () => Object.assign(new SeerrError('Das Profil wurde inzwischen gewechselt'), { status: 0, code: 'SEERR_STALE' });
+      let r;
+      try {
+        r = await seerrCall(() => fn(requireSeerr()));
+      } catch (e) {
+        throw epoch === seerrEpoch ? e : stale();
+      }
+      if (epoch !== seerrEpoch) throw stale();
+      return r;
+    }
+
+    /** Meldet eine Sitzung bei Seerr ab, ohne darauf zu warten oder an Fehlern zu scheitern (Trennen, Abmelden, Entfernen, fremde Sitzung). */
+    const seerrLogout = (url, cookie) => (cookie ? seerrClient(url, cookie).logout() : Promise.resolve());
+
+    /**
+     * Prueft das Seerr des aktiven Profils: /status (erreichbar?) und /auth/me (Sitzung gueltig, welches Konto, welche Rechte?) unter EINER Frist.
+     * Meldet Seerr ein anderes Jellyfin-Konto als das, mit dem sich das Profil angemeldet hat (fremde Sitzung), wird die Sitzung bei Seerr abgemeldet und
+     * verworfen; Adresse und Konto bleiben fuer "Erneut anmelden". Netzfehler und eine abgelaufene Anmeldung loeschen nichts.
+     * @returns {Promise<{state:'none'|'connected'|'unauthorized'|'unreachable'|'failed', detail?:string, reason?:string, user?:object}>}
+     */
+    function checkSeerr() {
+      const epoch = seerrEpoch;
+      if (seerrCheckRun?.epoch === epoch) return seerrCheckRun.run;
+      const s = seerr;
+      const account = seerrAccount;
+      const owner = config.data.activeServerId;
+      const profileUserId = config.getServer(owner)?.userId ?? '';
+      const run = (async () => {
+        if (!account) return { state: 'none' };
+        if (!s) return { state: 'unauthorized', reason: foreignDropped.has(owner) ? 'foreign' : 'noSession' };
+        let me;
+        try {
+          me = await withDeadline(checkTimeoutMs, async (signal) => {
+            await s.request('GET', '/status', { signal, timeout: checkTimeoutMs });
+            return s.me({ signal, timeout: checkTimeoutMs });
+          });
+        } catch (e) {
+          return serviceState(e);
+        }
+        if (epoch !== seerrEpoch) return checkSeerr(); // inzwischen andere Sitzung: deren Stand zaehlt
+        if (!acceptsSeerrUser(me, account, profileUserId)) {
+          s.logout();
+          foreignDropped.add(owner);
+          config.dropSeerrSession(owner);
+          buildSeerr();
+          return { state: 'unauthorized', reason: 'foreign' };
+        }
+        seerrUser = { id: me.id, displayName: me.displayName, permissions: me.permissions };
+        return { state: 'connected', user: { ...seerrUser } };
+      })();
+      const mine = { epoch, run };
+      seerrCheckRun = mine;
+      run
+        .finally(() => {
+          if (seerrCheckRun === mine) seerrCheckRun = null;
+        })
+        .catch(() => {}); // der Fehler geht an den Aufrufer, nicht noch einmal ins Leere
+      return run;
     }
 
     // ---------- Bitratengrenze ----------
@@ -175,10 +276,11 @@
       return { url: r.url, name: r.info.ServerName, version: r.info.Version, id: typeof r.info.Id === 'string' ? r.info.Id : '' };
     }
 
-    /** Meldet das aktive Profil ab (auch am Server) und entfernt nur dieses Profil samt seiner Seerr-Sitzung; das naechste gemerkte wird aktiv. */
+    /** Meldet das aktive Profil ab (am Jellyfin-Server und bei Seerr) und entfernt nur dieses Profil samt seiner Seerr-Sitzung; das naechste gemerkte wird aktiv. */
     async function logout() {
       const id = config.data.activeServerId;
-      await client?.logout();
+      const z = id ? config.getSeerr(id) : null;
+      await Promise.all([client?.logout(), z ? seerrLogout(z.url, z.secret) : null]);
       if (id) config.removeServer(id);
       client = null;
       check = null;
@@ -198,26 +300,16 @@
       }
     }
 
-    /** Seerr des aktiven Profils: /status (erreichbar?) und /auth/me (Sitzung gueltig?) unter EINER Frist. */
-    async function checkSeerr(s) {
-      if (!s) return { state: 'none' };
-      try {
-        await withDeadline(checkTimeoutMs, async (signal) => {
-          await s.request('GET', '/status', { signal, timeout: checkTimeoutMs });
-          await s.request('GET', '/auth/me', { signal, timeout: checkTimeoutMs });
-        });
-        return { state: 'connected' };
-      } catch (e) {
-        return serviceState(e);
-      }
-    }
-
     return {
       get client() {
         return client;
       },
       get seerr() {
         return seerr;
+      },
+      /** Der angemeldete Seerr-Benutzer des aktiven Profils aus der letzten Pruefung ({ id, displayName, permissions }), sonst null. */
+      get seerrUser() {
+        return seerrUser ? { ...seerrUser } : null;
       },
       get limits() {
         return limits;
@@ -306,7 +398,8 @@
         if (id && id === config.data.activeServerId) return logout();
         const server = config.getServer(id);
         if (!server) return publicState();
-        if (server.token) await newClient({ baseUrl: server.url, token: server.token, userId: server.userId }).logout();
+        const z = config.getSeerr(id);
+        await Promise.all([server.token ? newClient({ baseUrl: server.url, token: server.token, userId: server.userId }).logout() : null, z ? seerrLogout(z.url, z.secret) : null]);
         config.removeServer(id);
         return publicState();
       },
@@ -317,18 +410,19 @@
        * geloescht; eine abgelehnte Anmeldung meldet "unauthorized" (die Oberflaeche zeigt dann die Anmeldung, wie bei jedem 401).
        * Laeuft fuer dasselbe Profil schon eine Pruefung, kommt deren Ergebnis (keine Doppelanfragen).
        */
-      checkConnection() {
+      checkConnection({ seerr: withSeerr = true } = {}) {
         const id = config.data.activeServerId;
         if (!client || !id) return Promise.resolve({ profileId: id, jellyfin: { state: 'none' }, seerr: { state: 'none' } });
-        if (check?.client === client) return check.run;
-        const mine = { client };
-        mine.run = Promise.all([checkJellyfin(client), checkSeerr(seerr)])
-          .then(([jellyfin, seerrState]) => ({ profileId: id, jellyfin, seerr: seerrState }))
-          .finally(() => {
+        // Mit seerr: false nur Jellyfin: die Oberflaeche wartet beim Start nur darauf, Seerr meldet sich ueber seerrCheck nach (ein haengendes Seerr haelt
+        // den Start nicht bis zum Ende seiner Frist auf)
+        if (check?.client !== client) {
+          const mine = { client };
+          mine.run = checkJellyfin(client).finally(() => {
             if (check === mine) check = null;
           });
-        check = mine;
-        return mine.run;
+          check = mine;
+        }
+        return Promise.all([check.run, withSeerr ? checkSeerr() : null]).then(([jellyfin, seerrState]) => ({ profileId: id, jellyfin, ...(seerrState ? { seerr: seerrState } : {}) }));
       },
 
       // ---------- Quick Connect fuer andere Geraete ----------
@@ -385,30 +479,62 @@
       },
 
       // ---------- Seerr (Anfragen) ----------
-      /** Seerr fuer das aktive Profil anmelden: nur mit dem Jellyfin-Konto (kein API-Schluessel, Entscheidung E12); gespeichert wird nur die Sitzung. */
+      /**
+       * Seerr fuer das aktive Profil anmelden: nur mit einem Jellyfin-Konto (vorbelegt mit dem des Profils, aenderbar; kein API-Schluessel, Entscheidung
+       * E12). Gespeichert werden nur die Sitzung und das Jellyfin-Konto, das Seerr dazu nennt (/auth/me); eine Anmeldung ohne Jellyfin-Konto gilt nicht.
+       * Eine vorige Sitzung des Profils (erneutes Anmelden) wird bei Seerr abgemeldet.
+       */
       seerrConnect: ({ url, username, password }) =>
         seerrCall(async () => {
           const owner = config.data.activeServerId;
           if (!owner) throw new SeerrError('Zuerst bei Jellyfin anmelden');
+          const name = String(username ?? '').trim().slice(0, 200);
+          if (!name) throw new SeerrError('Jellyfin-Konto fehlt');
           const probed = await probeSeerr(url, fetch);
-          const r = await loginWithJellyfin(probed.url, String(username ?? ''), String(password ?? ''), fetch);
+          const r = await loginWithJellyfin(probed.url, name, String(password ?? ''), fetch);
+          const fresh = seerrClient(probed.url, r.cookie);
+          let me;
+          try {
+            me = await fresh.me();
+          } catch (e) {
+            fresh.logout();
+            throw e;
+          }
+          if (!me.jellyfinUserId) {
+            fresh.logout();
+            throw new SeerrError('Seerr nennt zu dieser Anmeldung kein Jellyfin-Konto');
+          }
           // Wurde waehrend der Anmeldung das Profil gewechselt, gehoert die Sitzung keinem: sonst landete sie beim falschen Profil
-          if (config.data.activeServerId !== owner) throw new SeerrError('Das Profil wurde inzwischen gewechselt. Bitte noch einmal verbinden.');
-          const userName = r.user?.displayName ?? r.user?.jellyfinUsername ?? String(username ?? '');
-          const jellyfinUserId = typeof r.user?.jellyfinUserId === 'string' ? r.user.jellyfinUserId : '';
-          config.saveSeerr({ url: probed.url, userName, jellyfinUserId, secret: r.cookie });
+          if (config.data.activeServerId !== owner) {
+            fresh.logout();
+            throw new SeerrError('Das Profil wurde inzwischen gewechselt. Bitte noch einmal verbinden.');
+          }
+          const before = config.getSeerr(owner);
+          config.saveSeerr({ url: probed.url, userName: name, jellyfinUserId: me.jellyfinUserId, secret: r.cookie });
+          if (before?.secret && before.secret !== r.cookie) seerrLogout(before.url, before.secret);
+          foreignDropped.delete(owner);
           buildSeerr();
+          seerrUser = { id: me.id, displayName: me.displayName, permissions: me.permissions };
           return publicState();
         }),
+      /** Trennt Seerr vom aktiven Profil: die Sitzung wird bei Seerr abgemeldet und entfernt; die Adresse bleibt zum erneuten Verbinden vorbelegt. */
       seerrDisconnect: () =>
         seerrCall(() => {
+          const z = config.getSeerr();
           config.clearSeerr();
-          seerr = null;
+          foreignDropped.delete(config.data.activeServerId);
+          buildSeerr();
+          if (z) seerrLogout(z.url, z.secret);
           return publicState();
         }),
-      seerrSearch: (query, page) => seerrCall(() => requireSeerr().search(String(query ?? '').slice(0, 200), Number(page) || 1)),
-      seerrTrending: () => seerrCall(() => requireSeerr().trending()),
-      seerrDetails: (req) => seerrCall(() => requireSeerr().details(req?.mediaType, req?.mediaId)),
+      /** Prueft nur Seerr (Einstellungen > Seerr: beim Oeffnen und alle 20 s); dasselbe Ergebnis wie in checkConnection. */
+      async seerrCheck() {
+        const profileId = config.data.activeServerId;
+        return { profileId, seerr: await checkSeerr() };
+      },
+      seerrSearch: (query, page) => seerrRead((s) => s.search(String(query ?? '').slice(0, 200), Number(page) || 1)),
+      seerrTrending: () => seerrRead((s) => s.trending()),
+      seerrDetails: (req) => seerrRead((s) => s.details(req?.mediaType, req?.mediaId)),
       seerrRequest: (req) => seerrCall(() => requireSeerr().requestMedia({ mediaType: req?.mediaType, mediaId: req?.mediaId })),
       // Problem zu einem Titel melden (Video, Ton, Untertitel, Sonstiges; Kommentar freiwillig). Die Werte werden hier einzeln gepruft und gekuerzt, nichts wird als Ganzes durchgereicht.
       seerrIssue: (req) =>
@@ -426,5 +552,5 @@
     };
   }
 
-  return { createBackend, LIMITS_TTL_MS, CHECK_TIMEOUT_MS, withDeadline };
+  return { createBackend, LIMITS_TTL_MS, CHECK_TIMEOUT_MS, withDeadline, acceptsSeerrUser };
 });

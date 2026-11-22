@@ -58,8 +58,10 @@ function candidateSeerrUrls(input) {
  * credentials "omit": Der Cookie-Speicher von Chromium (Electron net.fetch) bleibt aussen vor. Sonst legte er das Seerr-Cookie selbst ab und
  * haengte es spaeter an jede Anfrage: eine falsche Anmeldung wuerde durch das alte Cookie akzeptiert, "Trennen" liesse es liegen, und ein Profil saehe das Seerr eines anderen.
  * Die Anmeldung wird ausschliesslich ueber unseren eigenen Header (Cookie) mitgegeben.
+ * cache "no-store": keine Antwort aus dem Zwischenspeicher; die Sitzung steht in einer Kopfzeile, die nicht zu dessen Schluessel gehoert, ein Profil bekaeme
+ * sonst womoeglich die Antwort eines anderen (wie die Apple-App: eine Sitzung fuer alle Profile, ohne Zwischenspeicher, Frist 20 s).
  */
-async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 15000) {
+async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   // Ein Abbruch von aussen (Frist der Verbindungspruefung) bricht diese Anfrage mit ab
@@ -67,7 +69,7 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 15000) {
   const onOuter = () => ctrl.abort();
   if (outer) outer.aborted ? ctrl.abort() : outer.addEventListener('abort', onOuter, { once: true });
   try {
-    return await fetchImpl(url, { credentials: 'omit', ...init, signal: ctrl.signal });
+    return await fetchImpl(url, { credentials: 'omit', cache: 'no-store', ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
     outer?.removeEventListener('abort', onOuter);
@@ -202,13 +204,39 @@ function tmdbImageUrl(size, file) {
   return TMDB_SIZES.has(size) && TMDB_FILE.test(String(file ?? '')) ? `https://image.tmdb.org/t/p/${size}/${file}` : null;
 }
 
+/** Abfragen, deren Texte von der Sprache abhaengen (Titel, Handlung, Personen); Anmeldung, Anfragen und Rechte nicht (wie die Apple-App). */
+const CONTENT_PATHS = ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/'];
+
+/** Kurzform einer Sprache fuer Seerr ("de-DE" -> "de"); Unbrauchbares ergibt '' (dann nimmt Seerr die Anzeigesprache des Seerr-Kontos). */
+function seerrLanguage(value) {
+  const m = /^([a-z]{2,3})(?:[-_]|$)/i.exec(String(value ?? '').trim());
+  return m ? m[1].toLowerCase() : '';
+}
+
+/**
+ * Der angemeldete Seerr-Benutzer, wie Seerr ihn meldet (/auth/me): Nummer, Name, Rechte (Bitfeld) und das Jellyfin-Konto, zu dem er gehoert.
+ * Nur im Speicher, bei jeder Pruefung neu; unbekannte Rechte ergeben 0 (nichts freigeschaltet). Ohne Nummer null.
+ */
+function normalizeUser(d) {
+  if (!d || typeof d !== 'object' || !Number.isInteger(+d.id)) return null;
+  const perms = Number(d.permissions);
+  return {
+    id: Number(d.id),
+    displayName: text(d.displayName || d.jellyfinUsername || d.username, 120),
+    permissions: Number.isInteger(perms) && perms >= 0 ? perms : 0,
+    jellyfinUserId: typeof d.jellyfinUserId === 'string' ? d.jellyfinUserId.slice(0, 64) : ''
+  };
+}
+
 class SeerrClient {
   /** Nur mit der Sitzung des Jellyfin-Kontos (Cookie connect.sid); einen API-Schluessel gibt es seit Version 10 nicht mehr (Entscheidung E12).
-   * @param {{baseUrl:string, cookie?:string|null, fetch?:typeof fetch}} o */
-  constructor({ baseUrl, cookie = null, fetch = globalThis.fetch }) {
+   * language: Sprache der Texte (Kurzform oder eine Funktion, die sie liefert), geht als language= an die Abfragen von Titeln, Suche und Personen.
+   * @param {{baseUrl:string, cookie?:string|null, fetch?:typeof fetch, language?:string|(() => string)}} o */
+  constructor({ baseUrl, cookie = null, fetch = globalThis.fetch, language = '' }) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.cookie = cookie;
     this.fetch = fetch;
+    this.language = language;
   }
 
   headers(extra = {}) {
@@ -218,6 +246,11 @@ class SeerrClient {
   }
 
   async request(method, path, { query, body, timeout = 20000, signal } = {}) {
+    // Ohne Angabe liefert Seerr Titel und Handlung in der Anzeigesprache des Seerr-Kontos, die zur App nicht passen muss (Apple: Build 92)
+    if (method === 'GET' && CONTENT_PATHS.some((p) => path.startsWith(p)) && !query?.language) {
+      const lang = seerrLanguage(typeof this.language === 'function' ? this.language() : this.language);
+      if (lang) query = { ...query, language: lang };
+    }
     const q = query ? `?${Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')}` : '';
     const init = { method, headers: this.headers(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(signal ? { signal } : {}) };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -246,9 +279,17 @@ class SeerrClient {
     return res.status === 204 ? null : res.json();
   }
 
-  /** Angemeldeter Benutzer (prueft zugleich, ob Cookie bzw. Schluessel gueltig sind). */
-  me() {
-    return this.request('GET', '/auth/me');
+  /** Angemeldeter Benutzer mit seinen Rechten (prueft zugleich, ob die Sitzung gilt), siehe normalizeUser; ohne Nummer ein Fehler. */
+  async me({ signal, timeout } = {}) {
+    const u = normalizeUser(await this.request('GET', '/auth/me', { signal, timeout }));
+    if (!u) throw new SeerrError('Seerr hat keinen Benutzer gemeldet');
+    return u;
+  }
+
+  /** Meldet die Sitzung bei Seerr ab (beim Trennen, Abmelden, Entfernen des Profils und bei einer fremden Sitzung); Fehler zaehlen nicht. */
+  async logout() {
+    if (!this.cookie) return;
+    await this.request('POST', '/auth/logout', { timeout: 5000 }).catch(() => {});
   }
 
   /** @returns {Promise<ReturnType<typeof normalizeResult>[]>} nur Filme und Serien */
@@ -346,5 +387,5 @@ class SeerrClient {
   }
 }
 
-return { MEDIA_STATUS, ISSUE_TYPES, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, tmdbImageUrl };
+return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, seerrLanguage, tmdbImageUrl };
 });

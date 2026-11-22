@@ -157,11 +157,11 @@ const THEMES = ['midnight', 'graphite', 'amoled', 'midnightBlue'];
 /** Hoechstens vier Profile je Geraet. */
 const MAX_PROFILES = 4;
 const cleanLabel = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40) : '');
-/** Ein gespeichertes Profil tolerant: eigener Name und Seerr-Sitzung nur, wenn sie lesbar sind. */
+/** Ein gespeichertes Profil tolerant: eigener Name und Seerr nur, wenn sie lesbar sind (eine leere Sitzung heisst: eingerichtet, aber abgemeldet). */
 function readProfile(s) {
   const out = { ...s, label: cleanLabel(s.label) };
   const z = s.seerr;
-  if (z && typeof z === 'object' && typeof z.url === 'string' && z.url && typeof z.secret === 'string' && z.secret) out.seerr = { url: z.url, userName: String(z.userName ?? ''), jellyfinUserId: typeof z.jellyfinUserId === 'string' ? z.jellyfinUserId : '', secret: z.secret };
+  if (z && typeof z === 'object' && typeof z.url === 'string' && z.url && typeof z.secret === 'string') out.seerr = { url: z.url, userName: String(z.userName ?? ''), jellyfinUserId: typeof z.jellyfinUserId === 'string' ? z.jellyfinUserId : '', secret: z.secret };
   else delete out.seerr;
   return out;
 }
@@ -418,15 +418,29 @@ class ConfigCore {
     const s = this.data.servers.find((x) => x.id === this.data.activeServerId);
     if (!s) throw Object.assign(new Error('Kein Profil angemeldet'), { code: 'NO_PROFILE' });
     s.seerr = { url, userName: String(userName ?? ''), jellyfinUserId: String(jellyfinUserId ?? ''), secret: this._encode(secret) };
+    this.data.seerrAddress = String(url).slice(0, 300); // zuletzt verwendete Adresse: ein anderes Profil findet sie vorbelegt (wie die Apple-App), keine Zugangsdaten
     this._save();
   }
 
-  /** @returns {{url:string, userName:string, jellyfinUserId:string, secret:string}|null} null, wenn nicht verbunden oder nicht entschluesselbar */
+  /**
+   * Seerr eines Profils; null, wenn keines eingerichtet ist. secret ist leer, wenn die Sitzung verworfen wurde (fremde Sitzung) oder sich nicht
+   * entschluesseln laesst: dann bleibt Seerr eingerichtet, und die Oberflaeche bietet "Erneut anmelden" an (die Einrichtung geht nicht verloren).
+   * @returns {{url:string, userName:string, jellyfinUserId:string, secret:string}|null}
+   */
   getSeerr(id = this.data.activeServerId) {
     const s = this.data.servers.find((x) => x.id === id)?.seerr;
     if (!s) return null;
-    const secret = this._decode(s.secret);
-    return secret ? { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId || '', secret } : null;
+    const secret = s.secret ? this._decode(s.secret) : null;
+    return { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId || '', secret: secret || '' };
+  }
+
+  /** Verwirft nur die Sitzung eines Profils (Adresse und Konto bleiben fuer "Erneut anmelden"). */
+  dropSeerrSession(id = this.data.activeServerId) {
+    const s = this.data.servers.find((x) => x.id === id);
+    if (!s?.seerr) return false;
+    s.seerr = { ...s.seerr, secret: '' };
+    this._save();
+    return true;
   }
 
   clearSeerr() {

@@ -29,6 +29,8 @@ const paths = {
   qc: `<g ${S}><rect x="8.5" y="3.5" width="7" height="17" rx="1.8"/><path d="M11 17.5h2M5.6 9a5 5 0 0 0 0 6M3.2 6.8a8.4 8.4 0 0 0 0 10.4M18.4 9a5 5 0 0 1 0 6M20.8 6.8a8.4 8.4 0 0 1 0 10.4"/></g>`,
   // Ablage mit Inhalt (Reiter Anfragen, wie tray.full der Apple-App)
   tray: `<g ${S}><path d="M3.5 13.5 6 5.5h12l2.5 8V18a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 13.5h4.6l1.2 2.2h5.4l1.2-2.2h4.6M8.5 9h7M9.5 11.5h5"/></g>`,
+  // Schluessel, durchgestrichen (Anmeldung abgelaufen, wie key.slash der Apple-App)
+  'key-off': `<g ${S}><circle cx="7" cy="12" r="3.4"/><path d="M10.4 12h10.1M17.6 12v3M14.6 12v2.2M3.5 4.5l17 15"/></g>`,
   // zwei Pfeile gegeneinander (wechseln)
   swap: `<g ${S}><path d="M4 8.5h14M14.5 5 18 8.5 14.5 12"/><path d="M20 15.5H6M9.5 12 6 15.5 9.5 19"/></g>`,
   star: `<path ${F} d="m12 2.8 2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/>`,

@@ -28,7 +28,7 @@ export function searchView({ query }) {
     try {
       list = (await window.jc.seerrSearch(q)).filter((r) => r.status !== SEERR_AVAILABLE); // "verfuegbar" steht schon in den Treffern der Bibliothek
     } catch (e) {
-      if (my !== gen || destroyed) return;
+      if (my !== gen || destroyed || e.code === 'SEERR_STALE') return; // SEERR_STALE: die Antwort gehoert zu einem vorigen Profil
       const msg = e.code === 'SEERR_AUTH' ? t('seerr.authExpired') : t('seerr.error', { msg: e.message });
       results.append(h('p', { class: 'seerr-note' }, msg, e.code === 'SEERR_AUTH' ? h('a', { class: 'link-btn', href: '#/settings/seerr' }, ` ${t('toast.openSettings')}`) : null));
       return;
