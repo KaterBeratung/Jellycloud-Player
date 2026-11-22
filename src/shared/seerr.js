@@ -34,8 +34,9 @@ function normalizeSeerrUrl(input) {
   try {
     u = new URL(s);
   } catch {
-    throw new SeerrError('Ungueltige Seerr-Adresse');
+    throw new SeerrError('Ungültige Seerr-Adresse');
   }
+  if (!u.hostname) throw new SeerrError('Ungültige Seerr-Adresse');
   return `${u.origin}${u.pathname.replace(/\/api(\/v1)?\/?$/i, '').replace(/\/+$/, '')}`;
 }
 
@@ -61,10 +62,15 @@ function candidateSeerrUrls(input) {
 async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  // Ein Abbruch von aussen (Frist der Verbindungspruefung) bricht diese Anfrage mit ab
+  const outer = init.signal;
+  const onOuter = () => ctrl.abort();
+  if (outer) outer.aborted ? ctrl.abort() : outer.addEventListener('abort', onOuter, { once: true });
   try {
     return await fetchImpl(url, { credentials: 'omit', ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
+    outer?.removeEventListener('abort', onOuter);
   }
 }
 
@@ -211,9 +217,9 @@ class SeerrClient {
     return h;
   }
 
-  async request(method, path, { query, body, timeout = 20000 } = {}) {
+  async request(method, path, { query, body, timeout = 20000, signal } = {}) {
     const q = query ? `?${Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')}` : '';
-    const init = { method, headers: this.headers(body !== undefined ? { 'Content-Type': 'application/json' } : {}) };
+    const init = { method, headers: this.headers(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(signal ? { signal } : {}) };
     if (body !== undefined) init.body = JSON.stringify(body);
     let res;
     try {

@@ -1118,6 +1118,11 @@ const server = http.createServer(async (req, res) => {
     if (state.limits.serverForbidden) return send(res, 403, { Message: 'Forbidden' });
     return send(res, 200, { ServerName: 'Mock Jellyfin', RemoteClientBitrateLimit: state.limits.server });
   }
+  // Abmelden am Server (wie Jellyfin: 204); protokolliert, damit sich "Profil entfernen meldet es am Server ab" pruefen laesst
+  if (p === '/Sessions/Logout' && method === 'POST') {
+    state.log.push({ at: '/Sessions/Logout' });
+    return send(res, 204, '');
+  }
   if (p === '/Users/Me') {
     state.log.push({ at: '/Users/Me' });
     return send(res, 200, { ...USER, ServerId: SERVER_ID, Policy: { IsAdministrator: !!state.admin, RemoteClientBitrateLimit: state.limits.user }, Configuration: { AudioLanguagePreference: 'ger', SubtitleMode: 'Default' } });

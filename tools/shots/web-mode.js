@@ -220,7 +220,7 @@ module.exports = async (ctx) => {
   const out1 = await ev(`window.jc.logout().then((s) => ({ loggedIn: s.loggedIn, servers: s.servers.length }))`);
   check('Abmelden: kein Konto mehr', out1.loggedIn === false && out1.servers === 0, JSON.stringify(out1));
   await ev(`document.dispatchEvent(new CustomEvent('relogin'))`);
-  check('Anmeldeseite im schmalen Fenster: Karte liegt ganz im Bild', await waitFor(`(() => { const c = document.querySelector('.login-card')?.getBoundingClientRect(); return !!c && c.left >= 0 && c.right <= innerWidth && c.width > 250; })()`, 6000));
+  check('Anmeldeseite im schmalen Fenster: Marke und Felder liegen ganz im Bild', await waitFor(`(() => { const c = document.querySelector('.login .connect-col')?.getBoundingClientRect(); const f = document.querySelector('.login-fields .field')?.getBoundingClientRect(); return !!c && !!f && c.left >= 0 && c.right <= innerWidth && c.width > 250 && f.left >= 0 && f.right <= innerWidth && Math.round(f.height) === 48; })()`, 6000));
   await ctx.wait(900);
   await shot('W-08-handy-anmeldung.png');
 

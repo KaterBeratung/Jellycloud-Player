@@ -269,6 +269,12 @@ function registerIpc() {
   ipcMain.handle('auth:qc-poll', wrap((p) => backend.quickConnectPoll(p)));
   ipcMain.handle('auth:logout', wrap(() => backend.logout()));
   ipcMain.handle('auth:switch', wrap((id) => backend.switchServer(id)));
+  // Profile (eigener Name, Adresse, entfernen), Verbindungspruefung und Quick Connect fuer andere Geraete (der Code wird nirgends protokolliert)
+  ipcMain.handle('profile:update', wrap((p) => backend.updateProfile(p)));
+  ipcMain.handle('profile:remove', wrap((id) => backend.removeProfile(id)));
+  ipcMain.handle('conn:check', wrap(() => backend.checkConnection()));
+  ipcMain.handle('qc:available', wrap((id) => backend.quickConnectAvailable(id)));
+  ipcMain.handle('qc:authorize', wrap((p) => backend.quickConnectAuthorize(p)));
   ipcMain.handle('jf:call', wrap((method, args) => backend.api(method, args)));
 
   // ---------- Seerr (Anfragen) ----------

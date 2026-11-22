@@ -4,7 +4,8 @@ import { state, refreshState, SUPPORTED_COLLECTIONS, activeServer, updateSetting
 import { applyAppearance } from './theme.js';
 import { api } from './api.js';
 import { route, start, refresh, navigate, invalidate } from './router.js';
-import { toast, closeMenu, initialsOf } from './ui.js';
+import { toast, closeMenu, initialsOf, pageStatus } from './ui.js';
+import { closeQuickConnect } from './views/quick-connect.js';
 import { syncAmbient } from './ambient.js';
 import { syncGlow } from './glow.js';
 import { homeView } from './views/home.js';
@@ -41,7 +42,9 @@ function localeFromSettings() {
 
 function showLogin({ cancellable = false, message = '' } = {}) {
   currentLogin?.destroy?.();
+  currentLogin = null;
   closeMenu();
+  closeQuickConnect();
   shellCleanup?.(); // der Rahmen weicht der Anmeldung
   shellCleanup = null;
   const done = async () => {
@@ -92,7 +95,10 @@ let paintUpdateDot = () => {};
 let shellCleanup = null; // raeumt die Zuhoerer des zuletzt gebauten Rahmens ab (buildShell)
 
 function buildShell() {
-  const brand = h('a', { class: 'brand', href: '#/home', 'aria-label': 'Jellycloud Player' }, h('span', { class: 'brand-mark sm' }, icon('cloud-logo', 30)), h('span', { class: 'brand-name' }, 'Jellycloud'));
+  closeQuickConnect(); // eine offene Maske gehoert zum alten Rahmen
+  currentLogin?.destroy?.(); // die Anmeldung (oder der Hinweis "nicht erreichbar") weicht dem Rahmen
+  currentLogin = null;
+  const brand = h('a',{ class: 'brand', href: '#/home', 'aria-label': 'Jellycloud Player' }, h('span', { class: 'brand-mark sm' }, icon('cloud-logo', 30)), h('span', { class: 'brand-name' }, 'Jellycloud'));
   const nav = h('nav', { class: 'nav', 'aria-label': 'Hauptnavigation' });
   const indicator = h('span', { class: 'nav-indicator hidden' });
   nav.append(indicator);
@@ -217,12 +223,18 @@ async function boot() {
     if (!state.devNoSplash) playSplash(); // darunter baut sich die Oberflaeche ganz normal auf (devNoSplash: nur in den Szenarien, main.js)
   }
   if (!state.loggedIn) return showLogin();
+  let conn;
   try {
-    // Bibliotheken und Rechte des Kontos zusammen holen; ob es Administrator ist, steht in seiner Richtlinie (ein Fehler dabei heisst: kein Administrator)
-    [state.views, state.isAdmin] = await Promise.all([api.getViews(), api.getMe().then((me) => !!me?.Policy?.IsAdministrator).catch(() => false)]);
+    // Bibliotheken und Verbindungspruefung zusammen (Start und Profilwechsel); die Pruefung liest /Users/Me und damit auch, ob das Konto Administrator ist.
+    // Scheitern die Bibliotheken, geht es sofort weiter (die Pruefung wirft nie und haelt den Start nicht auf).
+    [state.views, conn] = await Promise.all([api.getViews(), runConnectionCheck({ quiet: true })]);
   } catch (e) {
-    return showLogin({ message: e.status === 401 ? t('toast.sessionExpired') : e.message });
+    // Nur eine abgelaufene Anmeldung fuehrt zur Anmeldung; ein Netz- oder Serverfehler zeigt den Zustand mit "Erneut versuchen" und loescht nichts
+    if (e.status === 401) return showLogin({ message: t('toast.sessionExpired') });
+    return showStartFailure(e);
   }
+  if (conn.jellyfin.state === 'unauthorized') return showLogin({ message: t('toast.sessionExpired') });
+  state.isAdmin = !!conn.jellyfin.isAdmin;
   buildShell();
   if (state.justUpdated && !announcedUpdate) {
     announcedUpdate = true;
@@ -238,6 +250,74 @@ async function boot() {
   // Ein Update, das schon vor der Anmeldung oder dem Aufbau gefunden wurde, meldet sich jetzt (der Punkt am Zahnrad ist ohnehin da)
   afterSplash(() => setTimeout(announceUpdate, 1500));
 }
+
+/**
+ * Start ohne Verbindung (wie die Apple-App): statt der Anmeldung der Zustand mit "Erneut versuchen"; die Anmeldung bleibt gespeichert. Daneben fuehrt
+ * ein Weg zu einem anderen gemerkten Profil oder Server.
+ */
+function showStartFailure(e) {
+  currentLogin?.destroy?.();
+  currentLogin = null;
+  closeMenu();
+  closeQuickConnect();
+  shellCleanup?.();
+  shellCleanup = null;
+  const srv = activeServer();
+  const offline = !e.status || (e.status >= 502 && e.status <= 504);
+  const other = h('button', { class: 'link-btn', type: 'button', onclick: () => showLogin({ cancellable: true }) }, t('start.otherProfile'));
+  const el = h('div', { class: 'page start-status', 'data-glow': 'signIn' });
+  el.append(
+    pageStatus({
+      kind: 'failed',
+      symbol: offline ? 'server' : 'warning',
+      title: offline ? t('start.unreachableTitle') : t('start.failedTitle'),
+      text: offline ? t('start.unreachableText', { server: srv?.name || srv?.url || '' }) : e.message,
+      retry: () => boot(),
+      more: [other]
+    })
+  );
+  currentLogin = { el };
+  root.replaceChildren(h('div', { class: 'drag-strip' }), el);
+  syncGlow(el);
+}
+
+// ---------- Verbindungspruefung ----------
+
+let checkSeq = 0;
+/**
+ * Prueft Jellyfin und Seerr des aktiven Profils (Rueckseite: checkConnection, je Dienst 30 s, ohne Wiederholung, loescht nie etwas) und legt den Stand
+ * in state.connection ab; Einstellungen > Konto zeigt ihn als "Verbindung". Anlaesse wie in der Apple-App: Start und Profilwechsel (boot) und die
+ * Rueckkehr in die App (Fenster wieder sichtbar). quiet: eine abgelehnte Anmeldung nicht selbst melden (boot entscheidet dann).
+ */
+async function runConnectionCheck({ quiet = false } = {}) {
+  const seq = ++checkSeq;
+  const id = state.activeServerId;
+  state.connection = { profileId: id, jellyfin: { state: 'checking' }, seerr: { state: state.seerr ? 'checking' : 'none' } };
+  document.dispatchEvent(new CustomEvent('connection-state'));
+  let r;
+  try {
+    r = await window.jc.checkConnection();
+  } catch (e) {
+    r = { profileId: id, jellyfin: { state: 'failed', detail: e.message }, seerr: { state: 'none' } };
+  }
+  if (seq !== checkSeq || r.profileId !== state.activeServerId) return r; // von einer neueren Pruefung oder einem Profilwechsel ueberholt
+  state.connection = r;
+  document.dispatchEvent(new CustomEvent('connection-state'));
+  if (!quiet && r.jellyfin.state === 'unauthorized' && state.loggedIn && $('#view')) document.dispatchEvent(new CustomEvent('session-expired'));
+  return r;
+}
+
+// Rueckkehr in die App: das Fenster war verdeckt (minimiert, Handy im Hintergrund) und ist wieder sichtbar
+let hiddenSince = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    hiddenSince = Date.now();
+    return;
+  }
+  if (!hiddenSince) return;
+  hiddenSince = 0;
+  if (state.loggedIn && $('#view')) runConnectionCheck();
+});
 
 // ---------- Neu laden ----------
 
@@ -313,7 +393,8 @@ window.jc.onPlayerClosed(() => {
 
 document.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
-  if (!state.loggedIn || !$('#view')) return;
+  // Liegt eine Maske ueber der App (Quick Connect), ruhen die Tastenkuerzel der App darunter
+  if (!state.loggedIn || !$('#view') || document.documentElement.classList.contains('covered')) return;
   if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
     e.preventDefault();
     reloadData({ hard: e.shiftKey });
@@ -336,7 +417,7 @@ document.addEventListener('jc-back', (e) => {
   const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
   document.dispatchEvent(esc);
   if (esc.defaultPrevented) return e.preventDefault();
-  if (!state.loggedIn || !$('#view')) return;
+  if (!state.loggedIn || !$('#view') || document.documentElement.classList.contains('covered')) return;
   const path = location.hash.slice(1).split('?')[0];
   if (!path || path === '/' || path === '/home') return;
   e.preventDefault();

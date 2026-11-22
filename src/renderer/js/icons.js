@@ -21,6 +21,14 @@ const paths = {
   'heart-fill': `<path ${F} d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/>`,
   check: `<path ${S} d="m5 12.5 4.6 4.6L19.5 7"/>`,
   'check-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12.4 2.8 2.8L16.2 9.6"/></g>`,
+  // ausgefuellter Kreis mit Haken (aktives Profil, bestaetigtes Geraet)
+  'check-circle-fill': `<path ${F} fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm4.75 6.6a1 1 0 0 0-1.41-.04l-4.6 4.4-2.06-2.02a1 1 0 1 0-1.4 1.43l2.75 2.7a1 1 0 0 0 1.39.01l5.29-5.07a1 1 0 0 0 .04-1.41z"/>`,
+  // Person im Kreis (gemerktes Profil)
+  'person-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.7 18.2c1.1-2 3-3.1 5.3-3.1s4.2 1.1 5.3 3.1"/></g>`,
+  // Telefon mit Funkwellen links und rechts (Quick Connect, wie das Symbol der Apple-App)
+  qc: `<g ${S}><rect x="8.5" y="3.5" width="7" height="17" rx="1.8"/><path d="M11 17.5h2M5.6 9a5 5 0 0 0 0 6M3.2 6.8a8.4 8.4 0 0 0 0 10.4M18.4 9a5 5 0 0 1 0 6M20.8 6.8a8.4 8.4 0 0 1 0 10.4"/></g>`,
+  // zwei Pfeile gegeneinander (wechseln)
+  swap: `<g ${S}><path d="M4 8.5h14M14.5 5 18 8.5 14.5 12"/><path d="M20 15.5H6M9.5 12 6 15.5 9.5 19"/></g>`,
   star: `<path ${F} d="m12 2.8 2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/>`,
   plus: `<path ${S} d="M12 5v14M5 12h14"/>`,
   x: `<path ${S} d="M6 6l12 12M18 6 6 18"/>`,

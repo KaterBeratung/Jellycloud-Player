@@ -174,8 +174,9 @@ export function skeletonRow(variant = 'poster', n = 9) {
  *   (`action`: { label, href } oder { label, run }).
  * - Als ganze Seite (Standard) liegt der Hinweis in der Mitte des Inhaltsbereichs, der Knopf haengt darunter und verschiebt ihn nicht. Er gehoert dann in die Seite
  *   selbst (showPageStatus) oder in einen Behaelter ohne eigene Lage (position: static, etwa das Raster der Mediathek). `inline`: im Inhalt, der Knopf in der Folge.
+ * - `more`: weitere, leisere Wege unter dem Knopf (etwa "Anderes Profil waehlen" beim Start ohne Verbindung).
  */
-export function pageStatus({ kind = 'empty', symbol, title, text = '', retry = null, action = null, inline = false } = {}) {
+export function pageStatus({ kind = 'empty', symbol, title, text = '', retry = null, action = null, inline = false, more = [] } = {}) {
   const notice = h('div', { class: 'ps-notice' }, icon(symbol ?? (kind === 'failed' ? 'warning' : 'info'), 40), h('h3', null, title ?? t('error.loadFailed')), text ? h('p', null, text) : null);
   let button = null;
   if (kind === 'failed' && retry) {
@@ -192,7 +193,7 @@ export function pageStatus({ kind = 'empty', symbol, title, text = '', retry = n
   } else if (kind === 'action' && action) {
     button = action.href ? h('a', { class: 'btn primary', href: action.href }, action.label) : h('button', { class: 'btn primary', type: 'button', onclick: action.run }, action.label);
   }
-  if (button) notice.append(h('div', { class: 'ps-action' }, button));
+  if (button || more.length) notice.append(h('div', { class: 'ps-action' }, button, ...more));
   return h('div', { class: `page-status${inline ? ' inline' : ''}`, 'data-kind': kind, role: kind === 'failed' ? 'alert' : 'status' }, notice);
 }
 

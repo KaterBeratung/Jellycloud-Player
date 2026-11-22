@@ -2,8 +2,9 @@ import { h, icon } from '../dom.js';
 import { t, setLocale, getLocale } from '../i18n.js';
 import { state, updateSettings, activeServer } from '../state.js';
 import { applyAppearance, THEMES, SWATCHES, DEFAULT_ACCENT, isHexColor } from '../theme.js';
-import { openMenu, segmented, slider, toast, toggle } from '../ui.js';
+import { openMenu, segmented, slider, toast, toggle, confirmDialog } from '../ui.js';
 import { glowSection } from './glow-settings.js';
+import { openQuickConnect } from './quick-connect.js';
 import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
@@ -87,7 +88,7 @@ const MOBILE_GROUPS = [
 function sectionList(sections) {
   const icons = Object.fromEntries(sections);
   const sub = {
-    account: activeServer()?.userName ?? '',
+    account: activeServer()?.label || activeServer()?.userName || '',
     seerr: state.seerr?.userName ?? '',
     about: state.appVersion ? `${t('set.version')} ${state.appVersion}` : ''
   };
@@ -116,8 +117,9 @@ function sectionList(sections) {
   );
 }
 
-export function settingsView({ section }) {
+export function settingsView({ section, query: q }) {
   section = ALIASES[section] ?? section;
+  let query = q ?? new URLSearchParams(); // Konto: ?profile=<Kennung> oeffnet das Bearbeiten eines Profils
   const el = h('div', { class: 'page settings', 'data-glow': 'settings' });
   const nav = h('nav', { class: 'settings-nav' });
   const panel = h('div', { class: 'settings-panel' });
@@ -775,45 +777,200 @@ export function settingsView({ section }) {
     );
   }
 
-  // ---------- Konto ----------
+  // ---------- Konto (wie die Apple-App: SettingsView+Account, ProfileEditor) ----------
+  const displayName = (s) => s?.label || s?.userName || '';
+  /** Zeile mit Wert (Server, Benutzer, Adresse, Verbindung). */
+  const infoRow = (label, value, { small = false } = {}) => h('div', { class: 'setting info-row' }, h('div', { class: 'setting-label' }, label), h('div', { class: `info-value${small ? ' small' : ''}` }, value));
+  /** Zeile, die etwas oeffnet oder ausloest (Profil, Hinzufuegen, Quick Connect, Abmelden); mit href ein Link, sonst ein Knopf. */
+  function linkRow({ ico, label, sub = '', trail = null, href = null, onclick = null, danger = false, chevron = true, cls = '' }) {
+    const body = [icon(ico, 20), h('span', { class: 'link-row-text' }, h('span', { class: 'link-row-label' }, label), sub ? h('span', { class: 'link-row-sub' }, sub) : null), trail, chevron ? icon('chevron-right', 18, 'link-row-chev') : null];
+    const c = `link-row${danger ? ' danger' : ''}${cls ? ` ${cls}` : ''}`;
+    return href ? h('a', { class: c, href }, body) : h('button', { class: c, type: 'button', onclick }, body);
+  }
+  const foot = (text) => h('p', { class: 'group-foot' }, text);
+  const connLabel = () => {
+    const c = state.connection;
+    const s = c && c.profileId === state.activeServerId ? c.jellyfin?.state : 'checking';
+    return t(`conn.${['connected', 'unreachable', 'unauthorized', 'failed'].includes(s) ? s : 'checking'}`);
+  };
+
   function accountPanel() {
+    const editing = query?.get('profile');
+    if (editing) {
+      if (state.servers.some((s) => s.id === editing)) return profileEditor(editing);
+      history.replaceState(null, '', '#/settings/account'); // das Profil gibt es nicht mehr (entfernt, Adresse geaendert): die Uebersicht
+    }
     const active = activeServer();
-    const list = h('div', { class: 'server-list' });
-    state.servers.forEach((s) => {
-      const isActive = s.id === state.activeServerId;
-      const switchBtn = h('button', { class: 'btn glass sm', type: 'button', disabled: isActive }, isActive ? t('set.active') : t('set.switch'));
-      switchBtn.addEventListener('click', async () => {
+    const conn = h('span', null, connLabel());
+    const paintConn = () => (conn.textContent = connLabel());
+    document.addEventListener('connection-state', paintConn);
+    cleanups.push(() => document.removeEventListener('connection-state', paintConn));
+
+    const full = state.servers.length >= (state.maxProfiles ?? 4);
+    const rows = state.servers.map((s) => {
+      const on = s.id === state.activeServerId;
+      return linkRow({
+        ico: on ? 'check-circle-fill' : 'person-circle',
+        label: displayName(s),
+        sub: `${s.name || s.url} · ${s.url}`,
+        trail: on ? h('span', { class: 'link-row-tag' }, t('set.active')) : null,
+        href: `#/settings/account?profile=${encodeURIComponent(s.id)}`,
+        cls: on ? 'on' : ''
+      });
+    });
+    // Voll (vier Profile): der Hinweis gleich hier, statt erst nach der Anmeldung (die der Server dann wieder abmelden muesste)
+    const add = linkRow({ ico: 'plus', label: t('acct.add'), chevron: false, onclick: () => (full ? toast(t('login.profileLimit', { n: state.maxProfiles ?? 4 }), { type: 'error' }) : document.dispatchEvent(new CustomEvent('add-server'))) });
+    // Quick Connect fuer andere Geraete; mit P9 kommt der Eintrag ins Profilmenue
+    const qc = linkRow({ ico: 'qc', label: t('qc.title'), sub: t('qc.entryDesc'), onclick: () => openQuickConnect({ onSignedOut: () => document.dispatchEvent(new CustomEvent('session-expired')) }) });
+    const out = linkRow({
+      ico: 'logout',
+      label: t('set.signOut'),
+      danger: true,
+      chevron: false,
+      onclick: async () => {
+        if (!(await confirmDialog({ title: t('acct.signOutTitle'), text: t('acct.signOutText'), confirmLabel: t('set.signOut'), danger: true }))) return;
         try {
-          await window.jc.switchServer(s.id);
+          await window.jc.logout();
           document.dispatchEvent(new CustomEvent('relogin'));
         } catch (e) {
           toast(e.message, { type: 'error' });
         }
-      });
-      list.append(h('div', { class: `server-row${isActive ? ' on' : ''}` }, icon('server', 20), h('div', { class: 'grow' }, h('div', { class: 'setting-label' }, s.name || s.url), h('div', { class: 'setting-desc' }, `${s.userName} · ${s.url}`)), switchBtn));
-    });
-    const add = h('button', { class: 'btn glass', type: 'button' }, icon('plus', 18), h('span', null, t('set.addServer')));
-    add.addEventListener('click', () => document.dispatchEvent(new CustomEvent('add-server')));
-    const out = h('button', { class: 'btn danger', type: 'button' }, icon('logout', 18), h('span', null, t('set.signOut')));
-    out.addEventListener('click', async () => {
-      try {
-        await window.jc.logout();
-        document.dispatchEvent(new CustomEvent('relogin'));
-      } catch (e) {
-        toast(e.message, { type: 'error' });
       }
     });
     return h(
       'div',
       { class: 'settings-stack' },
+      group(
+        t('acct.current'),
+        infoRow(t('acct.server'), active?.name || '—'),
+        infoRow(t('acct.user'), active?.userName ?? '—'),
+        infoRow(t('acct.address'), active?.url ?? '—', { small: true }),
+        infoRow(t('acct.connection'), conn)
+      ),
+      h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, t('acct.profiles')), h('div', { class: 'settings-group' }, rows, add), foot(t(full ? 'acct.profilesFootFull' : 'acct.profilesFoot', { n: state.maxProfiles ?? 4 }))),
+      group(null, qc),
+      h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, out), foot(t('acct.signOutFoot')))
+    );
+  }
+
+  /** Ein Profil bearbeiten: eigener Name (nur auf dem Geraet), Serveradresse (derselbe Server, das Profil bleibt angemeldet), wechseln, entfernen. */
+  function profileEditor(startId) {
+    let id = startId;
+    let busy = false;
+    let saved = false;
+    const current = () => state.servers.find((s) => s.id === id);
+    const s0 = current();
+    const title = h('h2', { class: 'sub-title' }, displayName(s0));
+    const name = h('input', { class: 'field', type: 'text', maxlength: 40, spellcheck: 'false', placeholder: t('profile.namePh', { user: s0.userName }), 'aria-label': t('profile.name') });
+    name.value = s0.label || '';
+    const addr = h('input', { class: 'field', type: 'text', spellcheck: 'false', autocapitalize: 'off', inputmode: 'url', autocomplete: 'off', 'aria-label': t('profile.address') });
+    addr.value = s0.url;
+    const err = h('p', { class: 'form-error left', role: 'alert' });
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, h('span', null, t('profile.save')));
+    const changed = () => {
+      const s = current();
+      return !!s && (name.value.trim() !== (s.label || '') || addr.value.trim() !== s.url);
+    };
+    const paint = () => {
+      const dirty = changed();
+      saveBtn.disabled = busy || !dirty;
+      saveBtn.classList.toggle('loading', busy);
+      saveBtn.firstChild.textContent = saved && !dirty ? t('profile.saved') : t('profile.save');
+    };
+    for (const f of [name, addr]) {
+      f.addEventListener('input', () => {
+        f.removeAttribute('aria-invalid');
+        paint();
+      });
+      f.addEventListener('keydown', (e) => e.key === 'Enter' && save());
+    }
+    const profileError = (e) => (e.code === 'OTHER_SERVER' ? t('profile.otherServer') : e.code === 'PROFILE_EXISTS' ? t('profile.exists') : e.code === 'NO_PROFILE' ? t('profile.missing') : e.message);
+    async function save() {
+      if (busy || !changed()) return;
+      busy = true;
+      saved = false;
+      err.textContent = '';
+      paint();
+      const wasActive = id === state.activeServerId;
+      const oldUrl = current()?.url;
+      try {
+        const r = await window.jc.updateProfile({ id, label: name.value, url: addr.value });
+        Object.assign(state, { servers: r.state.servers, activeServerId: r.state.activeServerId });
+        if (r.id !== id) history.replaceState(null, '', `#/settings/account?profile=${encodeURIComponent(r.id)}`);
+        id = r.id;
+        const s = current();
+        name.value = s?.label || '';
+        addr.value = s?.url ?? '';
+        title.textContent = displayName(s);
+        saved = true;
+        if (wasActive && s && s.url !== oldUrl) invalidate(); // Seiten im Speicher kennen noch die alte Adresse (Bilder)
+      } catch (e) {
+        if (e.code !== 'NO_PROFILE' && e.code !== 'PROFILE_EXISTS') addr.setAttribute('aria-invalid', 'true');
+        err.textContent = profileError(e);
+      } finally {
+        busy = false;
+        paint();
+      }
+    }
+    saveBtn.addEventListener('click', save);
+
+    const isActive = () => id === state.activeServerId;
+    const switchRow = isActive()
+      ? null
+      : linkRow({
+          ico: 'swap',
+          label: t('profile.switch'),
+          chevron: false,
+          onclick: async () => {
+            try {
+              await window.jc.switchServer(id);
+              history.replaceState(null, '', '#/settings/account');
+              document.dispatchEvent(new CustomEvent('relogin'));
+            } catch (e) {
+              toast(e.message, { type: 'error' });
+            }
+          }
+        });
+    const removeRow = linkRow({
+      ico: 'trash',
+      label: t('profile.remove'),
+      danger: true,
+      chevron: false,
+      onclick: async () => {
+        const active = isActive();
+        const ok = await confirmDialog({ title: t('profile.removeTitle'), text: active ? t('profile.removeActive') : t('profile.removeOther', { name: displayName(current()) }), confirmLabel: t('profile.removeConfirm'), danger: true });
+        if (!ok) return;
+        try {
+          const next = await window.jc.removeProfile(id);
+          history.replaceState(null, '', '#/settings/account');
+          if (active) return document.dispatchEvent(new CustomEvent('relogin')); // abgemeldet: das naechste Profil oder die Anmeldung
+          Object.assign(state, { servers: next.servers, activeServerId: next.activeServerId });
+          toast(t('profile.removed'));
+          panel.replaceChildren(accountPanelFresh());
+        } catch (e) {
+          toast(e.message, { type: 'error' });
+        }
+      }
+    });
+    paint();
+    return h(
+      'div',
+      { class: 'settings-stack' },
+      h('div', { class: 'sub-head' }, h('a', { class: 'settings-back sub', href: '#/settings/account' }, icon('chevron-left', 20), h('span', null, t('set.sec.account'))), title),
       h(
         'div',
-        { class: 'settings-group' },
-        h('div', { class: 'account-card' }, h('div', { class: 'avatar-lg' }, icon('user', 28)), h('div', null, h('div', { class: 'setting-label' }, active?.userName ?? '—'), h('div', { class: 'setting-desc' }, active ? `${active.name || ''} · ${active.url}` : ''))),
-        list,
-        h('div', { class: 'btn-row' }, add, out)
-      )
+        { class: 'settings-block' },
+        h('h3', { class: 'group-title' }, t('profile.section')),
+        h('div', { class: 'settings-group' }, setting(t('profile.name'), null, name), setting(t('profile.address'), null, addr), infoRow(t('acct.server'), s0.name || '—'), infoRow(t('acct.user'), s0.userName), h('div', { class: 'setting save-row' }, err, saveBtn)),
+        foot(t('profile.foot'))
+      ),
+      h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, switchRow, removeRow), foot(t('profile.removeFoot')))
     );
+  }
+  /** Die Uebersicht neu (nach dem Entfernen eines anderen Profils): ohne die alte Adresse mit ?profile=. */
+  function accountPanelFresh() {
+    query = new URLSearchParams();
+    return accountPanel();
   }
 
   // ---------- Anfragen (Seerr) ----------

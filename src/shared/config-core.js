@@ -441,16 +441,20 @@ class ConfigCore {
   getServer(id = this.data.activeServerId) {
     const s = this.data.servers.find((x) => x.id === id);
     if (!s) return null;
-    return { id: s.id, url: s.url, name: s.name, userId: s.userId, userName: s.userName, label: s.label || '', token: this._decode(s.token) };
+    return { id: s.id, url: s.url, name: s.name, serverId: typeof s.serverId === 'string' ? s.serverId : '', userId: s.userId, userName: s.userName, label: s.label || '', token: this._decode(s.token) };
   }
 
-  /** Legt ein Profil (Server und Benutzer) an oder aktualisiert es und macht es aktiv; eigener Name und Seerr bleiben. Ueber der Grenze: Fehler PROFILE_LIMIT. */
-  saveServer({ url, name, userId, userName, token }) {
+  /**
+   * Legt ein Profil (Server und Benutzer) an oder aktualisiert es und macht es aktiv; eigener Name und Seerr bleiben. serverId: Kennung des Servers
+   * (/System/Info/Public), damit eine neue Adresse spaeter als derselbe Server erkannt wird. Ueber der Grenze: Fehler PROFILE_LIMIT.
+   */
+  saveServer({ url, name, serverId = '', userId, userName, token }) {
     const id = this.profileId(url, userId);
     const i = this.data.servers.findIndex((s) => s.id === id);
     if (i < 0 && !this.mayAddProfile(id)) throw Object.assign(new Error(`Höchstens ${MAX_PROFILES} Profile`), { code: 'PROFILE_LIMIT' });
     const prev = i >= 0 ? this.data.servers[i] : {};
-    const entry = { id, url, name, userId, userName, token: this._encode(token), label: prev.label || '', ...(prev.seerr ? { seerr: prev.seerr } : {}) };
+    const sid = typeof serverId === 'string' && serverId ? serverId : typeof prev.serverId === 'string' ? prev.serverId : '';
+    const entry = { id, url, name, ...(sid ? { serverId: sid } : {}), userId, userName, token: this._encode(token), label: prev.label || '', ...(prev.seerr ? { seerr: prev.seerr } : {}) };
     if (i >= 0) this.data.servers[i] = entry;
     else this.data.servers.push(entry);
     this.data.activeServerId = id;
@@ -464,6 +468,30 @@ class ConfigCore {
     this.data.activeServerId = id;
     this._save();
     return true;
+  }
+
+  /**
+   * Neue Adresse fuer ein Profil (derselbe Server, geprueft von der Rueckseite): die Kennung des Profils haengt an der Adresse und aendert sich mit;
+   * Anmeldung, eigener Name, Seerr-Sitzung und Reihen der Startseite ziehen mit, ein aktives Profil bleibt aktiv. Gibt die neue Kennung zurueck.
+   * Ist dasselbe Konto unter der neuen Adresse schon gemerkt: Fehler PROFILE_EXISTS (zwei Eintraege lassen sich nicht stillschweigend zusammenlegen).
+   */
+  moveProfile(id, { url, name, serverId }) {
+    const s = this.data.servers.find((x) => x.id === id);
+    if (!s) throw Object.assign(new Error('Unbekanntes Profil'), { code: 'NO_PROFILE' });
+    const next = this.profileId(url, s.userId);
+    if (next !== id && this.data.servers.some((x) => x.id === next)) throw Object.assign(new Error('Dieses Profil ist unter der Adresse schon gemerkt'), { code: 'PROFILE_EXISTS' });
+    s.id = next;
+    s.url = url;
+    if (typeof name === 'string' && name) s.name = name;
+    if (typeof serverId === 'string' && serverId) s.serverId = serverId;
+    if (this.data.activeServerId === id) this.data.activeServerId = next;
+    const rows = this.data.homeRowsByProfile;
+    if (next !== id && Object.prototype.hasOwnProperty.call(rows, id)) {
+      rows[next] = rows[id];
+      delete rows[id];
+    }
+    this._save();
+    return next;
   }
 
   /** Entfernt ein Profil samt seiner Seerr-Sitzung; seine Reihen der Startseite bleiben (bei erneuter Anmeldung wieder da). */

@@ -211,8 +211,8 @@ export function createTrailer({ host, controlsHost = null, videoId, muted = true
     { passive: false }
   );
 
-  /** Laeuft gerade etwas, das den Ton des Trailers stoeren wuerde (mpv ueber der Oberflaeche)? */
-  const blocked = () => document.hidden || document.documentElement.classList.contains('playing');
+  /** Laeuft gerade etwas, das den Ton des Trailers stoeren wuerde (mpv ueber der Oberflaeche, eine Maske wie Quick Connect ueber der ganzen App)? */
+  const blocked = () => document.hidden || document.documentElement.classList.contains('playing') || document.documentElement.classList.contains('covered');
 
   // ---------- Trailer im Vordergrund: nach einer Weile ohne Bedienung sinken Poster, Titel und Angaben langsam ab und blenden aus ----------
   const idleSec = Math.max(0, Number(focusSec) || 0);
@@ -468,7 +468,14 @@ export function createTrailer({ host, controlsHost = null, videoId, muted = true
   // Beginnt ein Film (Klasse "playing" an der Wurzel, gesetzt vom Hauptprozess), endet der Trailer. Der Ton ist sofort aus, das Bild aber bleibt stehen und die Seite unveraendert:
   // der Abbau (Trailer-Ebene weg, Hintergrundbild und Normalzustand der Seite kommen zurueck) geschieht erst, wenn der schwarze Vorhang (#play-curtain) zu ist. Sonst sah man beim Klick auf
   // "Abspielen" kurz das Hintergrundbild, solange mpv noch nichts gezeichnet hatte.
+  // Eine Maske ueber der ganzen App (html.covered, Quick Connect) haelt den Trailer an, ihr Schliessen setzt ihn fort (nur beim Wechsel, nicht bei jeder Klasse)
+  let wasCovered = document.documentElement.classList.contains('covered');
   const mo = new MutationObserver(() => {
+    const covered = document.documentElement.classList.contains('covered');
+    if (covered !== wasCovered) {
+      wasCovered = covered;
+      onVisibility();
+    }
     if (handoverTimer || !document.documentElement.classList.contains('playing')) return;
     post('pauseVideo');
     handoverTimer = setTimeout(giveUp, PLAY_HANDOVER_MS);

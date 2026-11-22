@@ -40,7 +40,7 @@ module.exports = async (ctx) => {
   const layer = () => ctx.run(LAYER);
 
   // ---------- Anmeldung ----------
-  await waitFor(`!!document.querySelector('.login-card')`, 8000);
+  await waitFor(`!!document.querySelector('.login .connect-col')`, 8000);
   await ctx.wait(500);
   const login = await layer();
   check('Anmeldung: Bereich Anmeldung, Schein oben und unten', login?.scope === 'signIn' && login.top && login.bottom, JSON.stringify(login));

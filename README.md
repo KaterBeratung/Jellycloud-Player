@@ -20,6 +20,9 @@ PGS-/ASS-Untertitel.
 - **Anpassbar:** Designs wie in der Apple-App (Midnight, Graphite, AMOLED, Midnight Blue; nur dunkle), **Akzentfarbe für Buttons usw.** (Farbfelder,
   Farbwähler, Hex-Code), Postergröße, Glas-Effekte, Sprache (DE/EN). Ecken (18 px) und Bewegung sind fest: Bewegung nimmt allein die Systemeinstellung *Bewegung reduzieren* (Windows: *Animationseffekte*) zurück (src/renderer/js/motion.js).
 - **Konto:** Anmeldung mit Benutzer/Passwort oder Quick Connect, mehrere Server, Token per Windows-DPAPI verschlüsselt.
+  Seit 1.2.7 wie die Apple-App: Anmeldung mit Marke (Logo, Schriftzug), Kapselfeldern und dem Quick-Connect-Code in Ziffernkacheln; **Quick Connect für
+  andere Geräte** (den Code eines anderen Geräts eingeben und bestätigen, ohne Passwort); Profile mit eigenem Namen, neuer Serveradresse (nur derselbe
+  Server, das Profil bleibt angemeldet) und Entfernen; **Verbindungsprüfung** beim Start, Profilwechsel und bei der Rückkehr in die App.
   Fortschritt, „gesehen“ und Favoriten werden mit dem Server synchronisiert.
 - **Trailer:** Auf der Detailseite und im Banner der Startseite läuft der Trailer im Hintergrund, sofort und leise (siehe *Trailer*).
 - **Verwaltung für Administratoren:** Server (Info, Bibliotheken durchsuchen, Neustart, Herunterfahren), Aufgaben, Aktivität, Benutzer, Metadaten bearbeiten, identifizieren, Einträge löschen (siehe *Verwaltung*).
@@ -98,6 +101,30 @@ Bibliotheken einhalten.
     Mediathek: scheitert das Nachladen, bleibt das Geladene und der Fehler steht am Ende der Liste; nach einem Fehler lädt nichts von selbst nach.
   - Szenario `page-status.js`; Farbfelder und Schalter in `accent-look.js`.
 
+## Konto, Profile und Quick Connect (seit 1.2.7)
+
+Angeglichen an die Apple-App (Plan P8; Regeln in `src/shared/quick-connect.js` und `src/shared/backend.js`, Oberfläche in `views/login.js`, `views/quick-connect.js`,
+`views/connect-parts.js` und *Einstellungen › Konto*):
+
+- **Anmeldung:** Marke (Logo 132, Schriftzug *JELLYCLOUD*, ein Satz), drei Kapselfelder ohne Beschriftung darüber, *Anmelden* erst mit Adresse und Benutzer,
+  *Mit Quick Connect anmelden* als zweiter Knopf. Ein Fehler markiert das betroffene Feld (Adresse oder Benutzer und Passwort). Quick Connect ersetzt die Maske:
+  Glaskarte (Rundung 22) mit dem Code in sechs Ziffernkacheln (42 × 54), „Warte auf Bestätigung …“, *Zurück* bringt die Maske mit den Eingaben wieder.
+  Beim Hinzufügen steht *Abbrechen* oben links.
+- **Quick Connect für andere Geräte** (*Einstellungen › Konto › Quick Connect*; mit P9 im Profilmenü): den sechsstelligen Code eingeben, den ein anderes Gerät
+  unter „Mit Quick Connect anmelden“ zeigt, und *Bestätigen* (`POST /QuickConnect/Authorize?code=&userId=`). Die Maske liegt über der ganzen App (darunter
+  verdeckt, gesperrt und ohne Tastenkürzel, der Trailer der Startseite hält an), zeigt immer, **als wer und wo** angemeldet wird, und meldet: Code ungültig oder
+  abgelaufen, schon bestätigt, Quick Connect am Server aus (mit *Erneut prüfen*), Server nicht erreichbar, keine Antwort in der Frist, Anmeldung abgelaufen.
+  Eine Bestätigung zur Zeit; ein spätes Ergebnis nach dem Schließen ändert nichts. **Der Code wird nirgends gespeichert oder protokolliert** und ist nach dem
+  Erfolg und beim Schließen weg.
+- **Profile:** eigener Name (nur auf diesem Gerät), neue Serveradresse nur für **denselben** Server (gleiche Kennung aus `/System/Info/Public`, die Anmeldung gilt
+  dort; die Anmeldung geht nie an einen Server mit anderer Kennung); Name, Seerr-Sitzung und Reihen der Startseite ziehen mit. Entfernen meldet das Profil mit
+  seiner eigenen Anmeldung am Server ab (Rückfrage). *Abmelden* fragt nach und erklärt, dass nur dieses Profil mit seiner Seerr-Anmeldung geht.
+- **Verbindungsprüfung** (`checkConnection`): Jellyfin `/Users/Me` und Seerr `/status` + `/auth/me` nebeneinander, je Dienst **eine** Frist von 30 s, kein
+  Wiederholen, keine Doppelanfragen; bei Netzfehlern wird nichts gelöscht. Anlässe: Start, Profilwechsel, Rückkehr in die App (Fenster wieder sichtbar).
+  Der Stand steht unter *Konto › Verbindung*; eine abgelehnte Anmeldung führt zur Anmeldung wie jedes 401.
+- **Start ohne Server:** statt der Anmeldung „Server nicht erreichbar“ mit *Erneut versuchen* und dem Weg zu einem anderen Profil; die Anmeldung bleibt.
+- Szenario `quick-connect.js`; Unit-Tests `quick-connect.test.js` (13 Fälle der Apple-App), `profiles.test.js`, `server-address.test.js` (7 Fälle der Apple-App).
+
 ## Einstellungen
 
 Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbieten:
@@ -114,7 +141,7 @@ Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbiete
 | Anfragen (Seerr) | Verbindung zu Seerr **für das aktive Profil**: Adresse (vorbelegt), Anmeldung mit dem Jellyfin-Konto |
 | Discord | **Rich Presence** (zeigt, was du schaust): Schalter, Verbindung testen, Statuszeile, **Name in Discord** (frei wählbar, Knopf *Servername*), Poster-Quelle (Automatisch/TMDB/Server/Kein), Titel verbergen, Link zur Titelseite (Knopf und anklickbarer Titel), optional eine eigene Application-ID mit Anleitung |
 | Allgemein | mpv-Status (nur Anzeige), **mit Windows starten**, **minimiert starten**, Fenster merken, Spoiler-Schutz, Bildcache leeren, alles zurücksetzen |
-| Konto, Info | Server und Profile (höchstens **vier** je Gerät wie in der Apple-App; ein gemerktes Profil meldet sich immer neu an, ältere über der Grenze bleiben), Abmelden, Tastenkürzel |
+| Konto, Info | **Aktuelles Profil** (Server, Benutzer, Adresse, *Verbindung*), **Profile** (höchstens **vier** je Gerät wie in der Apple-App; ein gemerktes Profil meldet sich immer neu an, ältere über der Grenze bleiben; ein Tipp öffnet *Name*, *Serveradresse*, *Wechseln*, *Entfernen*), *Server oder Profil hinzufügen*, **Quick Connect** für andere Geräte, *Abmelden* mit Rückfrage; Tastenkürzel |
 
 ## Ton-Ausgabe und Kanalerkennung
 
@@ -337,7 +364,7 @@ die gemerkten Seiten in Ruhe. Das Szenario `tools/shots/settings-live.js` prüft
 
 ## Verwaltung (Administratoren)
 
-Ist das Jellyfin-Konto **Administrator** (`Policy.IsAdministrator` aus `GET /Users/Me`, wird beim Start zusammen mit den Bibliotheken geholt; ein Fehler dabei heißt „kein Administrator“), erscheint in der Kopfzeile ein
+Ist das Jellyfin-Konto **Administrator** (`Policy.IsAdministrator` aus `GET /Users/Me`; seit 1.2.7 liest es die Verbindungsprüfung beim Start mit, neben den Bibliotheken; ein Fehler dabei heißt „kein Administrator“), erscheint in der Kopfzeile ein
 Schild-Knopf vor den Einstellungen (`#/admin`). Alle anderen sehen nichts davon, und die Adresse zeigt nur „Nur für Administratoren“. Der Server prüft die Rechte ohnehin: Ohne sie antwortet er auf jede dieser Anfragen mit 403,
 die Oberfläche meldet es verständlich. Bereiche (Seitenleiste wie in den Einstellungen):
 
@@ -647,6 +674,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `no-scrollbar.js` | **Kein Scrollbalken** (20 Prüfungen): auf Startseite, Film, Einstellungen und Bibliothek ist `scrollbar-width` aus, es bleibt kein Streifen am Rand (Inhalt so breit wie das Fenster), und **Mausrad und Bild-runter-Taste scrollen trotzdem**; kein scrollbares Element, keine Stylesheet-Regel (`thin`/`auto`, `::-webkit-scrollbar`) schaltet einen Balken ein; geöffnetes Sortier-Menü ohne Balken; Eingaben mit Fokus-Wiederholung (die VM verschluckt sie zwischendurch) |
 | `hover-audit.js` | **Hover-Prüfung** (Port 9197, echte Mausereignisse per `sendInputEvent`, ohne Trailer): fährt auf den unteren und linken Rand von 100 bedienbaren Elementen auf sieben Seiten und misst, ob der Hover stabil bleibt (kein Zittern, kein Verlust), ob **Knöpfe, Reiter (Staffeln) und Auswahlfelder ohne Weichzeichner** sind (sonst Streifen am Rand), ob ein **Klick ganz am Rand** ankommt, ob bei Animationen *aus* nichts abhebt, ob jedes bedienbare Element den Zeiger zeigt, Karten nach dem Wegfahren wieder in Ruhe sind, **Menü bei Tastatur und Maus nur einen hervorgehobenen Eintrag** hat, die Knöpfe im **Player-Overlay** und „Weiter“ des Pausenbildschirms am Rand stabil sind und der Text beim Zeigen in allen vier Themes mindestens 4,5 : 1 Kontrast hat |
 | `discord.js` | **Discord Rich Presence** (49 Prüfungen, **Fake-Discord** auf eigener Pipe über `JC_DISCORD_PIPE`, Mock-Seerr, Port 9097): Einstellungen (nur Ziffern in der eigenen ID, Test mit falscher und richtiger ID, Status), **eingebaute Anwendung** (Feld nur optional, Einschalten genügt, Test ohne ID) und **eigener Name** (Feld, Servername, leer, auf 128 gekürzt), Anzeige für Film und Folge (Titel, Jahr und Genres, S1E2, Poster von TMDB über Seerr, Fortschritt, Knopf), Pause, Weiterspielen, Sprung, keine Flut bei normalem Weiterlaufen, Titel verbergen, Poster-Quellen (Server im Heimnetz = kein Bild), Ende (Schonfrist, dann weg), Neustart von Discord, Ausschalten; nichts Vertrauliches auf dem Draht |
+| `quick-connect.js` | **Konto, Profile, Quick Connect** (48 Prüfungen, Port 8995): Anmeldung (Marke, Kapselfelder, Fehler am richtigen Feld, Code in Kacheln, *Zurück*), *Konto* (Verbindung, Profile, Abmelden mit Rückfrage), Maske für andere Geräte (verdeckt die App, als wer und wo, Eingabe bereinigt, falscher und schon bestätigter Code, Erfolg, ausgeschaltet, Escape, Code nicht in der Konfiguration), Profil umbenennen, neue Adresse desselben Servers, fremder Server abgelehnt, Profil entfernen, Rückkehr in die App prüft, Start ohne Server; Aufnahmen `QC-*.png` |
 | `page-status.js` | **Zustände und Grundmaße** (21 Prüfungen, Port 8996): Leer- und Fehlerhinweis in der Mitte des Inhaltsbereichs, Knopf 18 darunter ohne den Hinweis zu verschieben, Fläche fängt keine Klicks ab, *Erneut versuchen* während des Versuchs gesperrt, Fehler beim Nachladen am Listenende ohne ungefragten neuen Versuch, Detailseite ohne Titel, Suche; Drücken (Knopf 0,94 und blasser, Karte 0,95 und dunkler), Feld so hoch wie der Knopf, Fehlerkontur; Aufnahmen `PS-*.png` |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Trend-Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, neue Bibliothek hinten, alles ausgeblendet, Schalter der Trend-Reihe, Überstehen eines Neustarts |
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |

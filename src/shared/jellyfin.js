@@ -9,16 +9,21 @@
   const os = nodeRequire ? nodeRequire('node:os') : null;
 const TICKS_PER_SECOND = 10_000_000;
 
+/**
+ * Fehler von Jellyfin. code: "OFFLINE" (Server nicht erreicht) oder "TIMEOUT" (keine Antwort in der Frist), sonst null; er geht als einziges Merkmal
+ * neben status ueber die IPC-Grenze und trennt in der Oberflaeche "nicht erreichbar" von einer Antwort des Servers.
+ */
 class JellyfinError extends Error {
-  constructor(message, { status = 0, body = null } = {}) {
+  constructor(message, { status = 0, body = null, code = null } = {}) {
     super(message);
     this.name = 'JellyfinError';
     this.status = status;
     this.body = body;
+    this.code = code;
   }
 }
 
-/** Entfernt Pfad-Reste wie /web/index.html und schliessende Schraegstriche. */
+/** Schema ergaenzen (http), Host klein, Standardport, Anfrage, Fragment und Zugangsdaten weg (new URL), Pfad-Reste wie /web/index.html und schliessende Schraegstriche weg. */
 function normalizeServerUrl(input) {
   let s = String(input ?? '').trim();
   if (!s) throw new JellyfinError('Server-Adresse fehlt');
@@ -27,8 +32,9 @@ function normalizeServerUrl(input) {
   try {
     u = new URL(s);
   } catch {
-    throw new JellyfinError('Ungueltige Server-Adresse');
+    throw new JellyfinError('Ungültige Server-Adresse');
   }
+  if (!u.hostname) throw new JellyfinError('Ungültige Server-Adresse');
   const p = u.pathname.replace(/\/web(\/.*)?$/i, '').replace(/\/+$/, '');
   return `${u.origin}${p}`;
 }
@@ -62,20 +68,28 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 20000) {
 /** Findet einen erreichbaren Jellyfin-Server und liefert die oeffentlichen Infos. */
 async function probeServer(input, fetchImpl = globalThis.fetch) {
   let lastErr = null;
+  let answered = false; // unter einer der Adressen hat etwas geantwortet (auch etwas, das kein Jellyfin ist): dann ist es kein Netzfehler
   for (const url of candidateUrls(input)) {
     try {
       const res = await fetchWithTimeout(fetchImpl, `${url}/System/Info/Public`, { headers: { Accept: 'application/json' } }, 6000);
+      answered = true;
       if (!res.ok) throw new JellyfinError(`Server antwortet mit ${res.status}`, { status: res.status });
-      const info = await res.json();
+      let info = null;
+      try {
+        info = await res.json();
+      } catch {
+        /* kein JSON: kein Jellyfin */
+      }
       if (!info || !info.Id) throw new JellyfinError('Das ist kein Jellyfin-Server');
       return { url, info };
     } catch (e) {
       lastErr = e;
     }
   }
-  throw new JellyfinError(
-    lastErr && lastErr.name === 'AbortError' ? 'Zeitueberschreitung beim Verbinden' : `Server nicht erreichbar${lastErr ? `: ${lastErr.message}` : ''}`
-  );
+  const timedOut = !answered && !!lastErr && lastErr.name === 'AbortError';
+  throw new JellyfinError(timedOut ? 'Zeitueberschreitung beim Verbinden' : `Server nicht erreichbar${lastErr ? `: ${lastErr.message}` : ''}`, {
+    code: answered ? null : timedOut ? 'TIMEOUT' : 'OFFLINE'
+  });
 }
 
 function toQuery(query) {
@@ -186,8 +200,8 @@ class JellyfinClient {
     try {
       res = await fetchWithTimeout(this.fetch, this.url(path, query), init, timeout);
     } catch (e) {
-      if (e && e.name === 'AbortError') throw new JellyfinError('Zeitueberschreitung bei der Anfrage');
-      throw new JellyfinError(`Netzwerkfehler: ${e && e.message ? e.message : e}`);
+      if (e && e.name === 'AbortError') throw new JellyfinError('Zeitueberschreitung bei der Anfrage', { code: 'TIMEOUT' });
+      throw new JellyfinError(`Netzwerkfehler: ${e && e.message ? e.message : e}`, { code: 'OFFLINE' });
     }
     if (raw) return res;
     if (!res.ok) {
@@ -225,13 +239,23 @@ class JellyfinClient {
     return this._adoptAuth(r);
   }
 
-  async quickConnectEnabled() {
+  /** Bietet der Server Quick Connect an? strict: Netz- und Serverfehler werfen (statt "nein"), damit "ausgeschaltet" nur heisst, was der Server sagt. */
+  async quickConnectEnabled({ strict = false } = {}) {
     try {
-      const r = await this.request('GET', '/QuickConnect/Enabled');
+      const r = await this.request('GET', '/QuickConnect/Enabled', { timeout: 10000 });
       return r === true;
-    } catch {
+    } catch (e) {
+      if (strict) throw e;
       return false;
     }
+  }
+
+  /**
+   * Bestaetigt den Code eines ANDEREN Geraets mit dem Konto dieses Clients (Quick Connect fuer andere Geraete). Der Code steht nur in dieser einen
+   * Anfrage, wie Jellyfin ihn verlangt; hier wird er weder gemerkt noch protokolliert.
+   */
+  quickConnectAuthorize(code) {
+    return this.request('POST', '/QuickConnect/Authorize', { query: { code, userId: this.userId }, timeout: 15000 });
   }
 
   quickConnectInitiate() {
