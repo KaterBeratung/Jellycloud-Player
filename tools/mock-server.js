@@ -65,6 +65,24 @@ const people = [
   ['Daniel Okafor', 'Writer', '']
 ].map(([Name, Type, Role]) => ({ Id: id32(Name), Name, Type, Role }));
 
+/**
+ * Personen der Mediathek (GET /Items?ids=, /Persons, personIds): wie Jellyfin mit Biografie, Lebensdaten (Mitternacht beim Server, in UTC geliefert: der 7. April
+ * kommt als "...-04-06T23:00:00Z"), Geburtsort und TMDB-Nummer. "Mara Ellison" ist bei Seerr Person 9202 (verbunden nur ueber diese Nummer) und hat ein Foto;
+ * "Jonas Whitfield" hat nichts, bis ein Administrator nachladen laesst (POST /Items/<id>/Refresh); "Elise Fontaine" ist gestorben; "Nadia Gast" spielt nur in einer
+ * Folge mit (Gastrolle).
+ */
+const persons = new Map(
+  [
+    ['Mara Ellison', { Overview: 'Mara Ellison ist eine Testperson der Mediathek.', PremiereDate: '1980-04-06T23:00:00.0000000Z', ProductionLocations: ['Norwood, London, England, UK'], ProviderIds: { Tmdb: '9202' }, ImageTags: { Primary: 'mara0001' } }],
+    ['Jonas Whitfield', { refill: { Overview: 'Vom Server nachgeladen.', PremiereDate: '1975-09-30T23:00:00.0000000Z' } }],
+    ['Priya Nandakumar', { Overview: 'Priya Nandakumar spielt Lena.', PremiereDate: '1990-01-14T23:00:00.0000000Z' }],
+    ['Tomas Berg', {}],
+    ['Elise Fontaine', { Overview: 'Elise Fontaine war Regisseurin.', PremiereDate: '1918-04-06T23:00:00.0000000Z', EndDate: '1996-12-18T23:00:00.0000000Z', ProductionLocations: ['Lyon, Auvergne-Rhône-Alpes, France'] }],
+    ['Daniel Okafor', {}],
+    ['Nadia Gast', { Overview: 'Gaststar einer einzigen Folge.' }]
+  ].map(([Name, extra]) => [id32(Name), { Id: id32(Name), Name, Type: 'Person', ServerId: SERVER_ID, ImageTags: {}, ProviderIds: {}, ...extra }])
+);
+
 function streamsFor(kind) {
   const uhd = kind.startsWith('4k');
   const video = uhd
@@ -303,6 +321,7 @@ SERIES_DATA.forEach(([name, year, genres, seasons, eps], si) => {
       ep.ParentBackdropImageTags = [s.BackdropImageTags[0]];
       ep.SeriesPrimaryImageTag = s.ImageTags.Primary;
       ep.MediaStreams = [...streamsFor(si === 0 ? '4k-hdr' : 'hd'), extSub(ep.Id)];
+      if (name === 'Starfall Station' && sn === 1 && e === 2) ep.People = [...ep.People, { Id: id32('Nadia Gast'), Name: 'Nadia Gast', Type: 'GuestStar', Role: 'Botschafterin' }]; // Gastrolle: nur diese Folge
       ep.MediaSources = [{ Id: ep.Id, Name: ep.Name, Container: 'mkv', Size: 3_000_000_000, Bitrate: 9_000_000, SupportsDirectPlay: true, SupportsDirectStream: true, SupportsTranscoding: true, ETag: ep.Id.slice(0, 12), RunTimeTicks: ep.RunTimeTicks, DefaultAudioStreamIndex: 1, DefaultSubtitleStreamIndex: -1, MediaStreams: ep.MediaStreams }];
       add(ep, season.Id);
     }
@@ -445,7 +464,7 @@ function listItems(q) {
   let list = [...items.values()].filter((i) => !['CollectionFolder'].includes(i.Type));
   if (q.get('ids')) {
     const ids = q.get('ids').split(',');
-    list = ids.map((i) => items.get(i)).filter(Boolean);
+    list = ids.map((i) => items.get(i) ?? persons.get(i)).filter(Boolean);
     return { Items: list.map((i) => decorate(i, { detail: true })), TotalRecordCount: list.length };
   }
   const parentId = q.get('parentId');
@@ -456,6 +475,8 @@ function listItems(q) {
   }
   const types = q.get('includeItemTypes')?.split(',');
   if (types) list = list.filter((i) => types.includes(i.Type));
+  const pids = q.get('personIds')?.split(','); // Titel einer Person (Besetzung, Regie, Gastrollen in Folgen)
+  if (pids) list = list.filter((i) => (i.People ?? []).some((x) => pids.includes(x.Id)));
   const pid = q.get('anyProviderIdEquals'); // "tmdb.4242": Anbieter und Nummer, ohne Beachtung der Gross-/Kleinschreibung des Anbieters
   if (pid) {
     const [prov, val] = pid.split('.');
@@ -592,7 +613,19 @@ SEERR.people = new Map(
     [9103, 'Mock Actor Drei', 'Acting', [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Morpheus' }], []],
     [9104, 'Mock Regisseurin', 'Directing', [], [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', job: 'Director', department: 'Directing' }]],
     [9105, 'Mock Kamera', 'Camera', [], [{ id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', job: 'Director of Photography', department: 'Camera' }]],
-    [9106, 'Mock Darsteller', 'Acting', [{ id: 1399, mediaType: 'tv', name: 'Mock Thrones', firstAirDate: '2011-04-17', posterPath: '/mockposter0002.jpg', character: 'Held' }], []]
+    [9106, 'Mock Darsteller', 'Acting', [{ id: 1399, mediaType: 'tv', name: 'Mock Thrones', firstAirDate: '2011-04-17', posterPath: '/mockposter0002.jpg', character: 'Held' }], []],
+    // Dieselbe Person wie "Mara Ellison" der Mediathek (dort ProviderIds.Tmdb 9202): Filmografie mit Titeln, die es dort gibt (4242 = Paper Moons, 1399 = Starfall
+    // Station: fallen weg), einem Titel in zwei Rollen (zusammengefasst), Stimmen fuer die Reihenfolge, einem Eintrag ohne Art und Arbeit hinter der Kamera
+    [9202, 'Mara Ellison', 'Acting',
+      [{ id: 7003, mediaType: 'movie', title: 'Trend Film Drei', releaseDate: '2026-03-01', posterPath: '/trendposter0003.jpg', character: 'Wirtin', voteCount: 10 },
+        { id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Captain Reyes', voteCount: 900 },
+        { id: 603, mediaType: 'movie', title: 'Mock Matrix Resurrection', releaseDate: '2021-12-16', posterPath: '/mockposter0001.jpg', character: 'Erzählerin', voteCount: 900 },
+        { id: 4242, mediaType: 'movie', title: 'Mock Arrival', releaseDate: '2016-11-10', posterPath: '/mockposter0003.jpg', character: 'Linguistin', voteCount: 500 },
+        { id: 2001, mediaType: 'tv', name: 'Wintersignale', firstAirDate: '2025-10-01', character: 'Ärztin', voteCount: 90 },
+        { id: 1399, mediaType: 'tv', name: 'Mock Thrones', firstAirDate: '2011-04-17', posterPath: '/mockposter0002.jpg', character: 'Ritterin', voteCount: 2000 },
+        { id: 8, name: 'Ohne Art', character: '?' }],
+      [{ id: 7001, mediaType: 'movie', title: 'Trend Film Eins', releaseDate: '2026-02-01', posterPath: '/trendposter0001.jpg', job: 'Director', department: 'Directing', voteCount: 40 },
+        { id: 7001, mediaType: 'movie', title: 'Trend Film Eins', releaseDate: '2026-02-01', posterPath: '/trendposter0001.jpg', job: 'Screenplay', department: 'Writing', voteCount: 40 }]]
   ].map(([id, name, dept, cast, crew]) => [id, { id, name, knownForDepartment: dept, biography: `${name} ist eine Testperson des Mock-Seerr.`, birthday: '1980-05-01', deathday: null, placeOfBirth: 'Mockstadt', profilePath: id === 777 ? '/mockperson0001.jpg' : null, cast, crew }])
 );
 
@@ -1134,7 +1167,7 @@ const server = http.createServer(async (req, res) => {
     await sleep(state.delays.images);
     const how = takeFault('images');
     if (how) return sendFault(how, req, res);
-    const item = items.get(m[1]);
+    const item = items.get(m[1]) ?? persons.get(m[1]);
     if (!item) return send(res, 404, '');
     return send(res, 200, imageSvg(item, m[2]), 'image/svg+xml');
   }
@@ -1208,6 +1241,13 @@ const server = http.createServer(async (req, res) => {
     const body = JSON.stringify(listItems(q));
     state.bytes.items += Buffer.byteLength(body);
     return send(res, 200, body);
+  }
+  // Personen nach Namen (wie Jellyfin: searchTerm, mit ProviderIds); die Seite einer Seerr-Person sucht so die Person der Mediathek und prueft die TMDB-Nummer
+  if (p === '/Persons' && method === 'GET') {
+    const term = (q.get('searchTerm') ?? '').toLowerCase();
+    state.log.push({ at: '/Persons', searchTerm: q.get('searchTerm') ?? '', fields: q.get('fields') ?? '' });
+    const list = [...persons.values()].filter((x) => !term || x.Name.toLowerCase().includes(term)).slice(0, Number(q.get('limit') ?? 100));
+    return send(res, 200, { Items: list.map((x) => ({ Id: x.Id, Name: x.Name, Type: 'Person', ServerId: SERVER_ID, ProviderIds: x.ProviderIds })), TotalRecordCount: list.length });
   }
   if (p === '/Items/Latest') {
     if (await listPrelude(req, res)) return;
@@ -1429,7 +1469,13 @@ const server = http.createServer(async (req, res) => {
   }
   if ((m = /^\/Items\/([0-9a-f]+)\/Refresh$/.exec(p)) && method === 'POST') {
     state.log.push({ at: 'Refresh', itemId: m[1], query: Object.fromEntries(q) });
-    if (state.refreshForbidden) return send(res, 403, { Message: 'Forbidden' });
+    if (state.refreshForbidden) return send(res, 403, { Message: 'Forbidden' });    // Person ohne Angaben: der Server holt sie (bei Jellyfin von TMDB) und liefert sie beim naechsten Lesen
+    const person = persons.get(m[1]);
+    if (person?.refill) {
+      Object.assign(person, person.refill);
+      delete person.refill;
+    }
+
     return send(res, 204, '');
   }
   if (p.startsWith('/Sessions/')) {
@@ -1458,4 +1504,4 @@ function setAdmin(on) {
   state.adminData = on ? freshAdminData() : null;
 }
 
-module.exports = { server, TOKEN, USER, PORT, state, items, children, add, MOVIES_VIEW, SHOWS_VIEW, addMovies, SEERR, effectiveRemoteLimit, setAdmin, resetSeerr };
+module.exports = { server, TOKEN, USER, PORT, state, items, persons, children, add, MOVIES_VIEW, SHOWS_VIEW, addMovies, SEERR, effectiveRemoteLimit, setAdmin, resetSeerr };

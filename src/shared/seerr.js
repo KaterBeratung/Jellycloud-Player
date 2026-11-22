@@ -324,6 +324,92 @@ function normalizeDetails(mediaType, d) {
   };
 }
 
+// ---------- Personen (wie SeerrPeople der Apple-App): Quelle ist allein Seerr (/person/<n>, /person/<n>/combined_credits; Form nach server/models/Person.ts
+// von Seerr 3.5.1), zugeordnet wird nur ueber Nummern, nie ueber Namen ----------
+
+/** Aufgaben im Stab, die die Oberflaeche uebersetzt (seerr.crew.<Schluessel>); die Gewerke nur, wenn Seerr keine Aufgabe nennt. */
+const CREW_JOBS = {
+  Director: 'director', 'Co-Director': 'director', Screenplay: 'writer', Writer: 'writer', Story: 'writer', Teleplay: 'writer', Novel: 'source', Characters: 'source',
+  Producer: 'producer', 'Executive Producer': 'producer', 'Co-Producer': 'producer', 'Original Music Composer': 'music', Music: 'music', 'Director of Photography': 'camera',
+  Editor: 'editing', Creator: 'creator'
+};
+const CREW_DEPARTMENTS = {
+  Directing: 'director', Writing: 'writer', Production: 'producer', Sound: 'sound', Camera: 'camera', Editing: 'editing', Art: 'art', 'Costume & Make-Up': 'costume',
+  'Visual Effects': 'effects', Lighting: 'lighting', Acting: 'acting', Crew: 'crew'
+};
+
+/**
+ * Aufgabe im Stab: { key } fuer die gaengigen Aufgaben (sonst das Gewerk, wenn Seerr keine Aufgabe nennt), sonst { text } unveraendert, wie Seerr es nennt (nichts
+ * Erfundenes); ohne beides null.
+ */
+function crewRole(job, department) {
+  const j = text(job, 120).trim();
+  const d = text(department, 120).trim();
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  if (own(CREW_JOBS, j)) return { key: CREW_JOBS[j] };
+  if (!j && own(CREW_DEPARTMENTS, d)) return { key: CREW_DEPARTMENTS[d] };
+  const raw = j || d;
+  return raw ? { text: raw } : null;
+}
+
+/** Eine Person, wie Seerr sie nennt (GET /person/<n>); Fehlendes bleibt leer (nichts wird ergaenzt). Ohne Namen null. */
+function normalizePerson(id, d) {
+  const name = text(d?.name, 200).trim();
+  if (!name || !Number.isInteger(+id) || +id <= 0) return null;
+  const pic = d.profilePath;
+  return {
+    id: Number(id),
+    name,
+    biography: text(d.biography, 12000).trim(),
+    birthday: nonEmpty(d.birthday, 10),
+    deathday: nonEmpty(d.deathday, 10),
+    placeOfBirth: nonEmpty(d.placeOfBirth, 200),
+    profilePath: TMDB_PATH.test(pic ?? '') ? pic : null,
+    department: nonEmpty(d.knownForDepartment, 60)
+  };
+}
+
+/**
+ * Filmografie einer Person (GET /person/<n>/combined_credits): vor der Kamera Filme und Serien, dahinter die Mitwirkung. Je Titel ein Eintrag (ein Titel kommt je
+ * Rolle oder Aufgabe einmal: die Rollen zusammengefasst), das Bekannteste zuerst (Zahl der Stimmen), bei gleicher Zahl die Reihenfolge von Seerr. Eintraege ohne Art
+ * (Film, Serie) oder Titel fallen weg. Jeder Eintrag ist ein Titel wie ein Suchergebnis (mit seinem Stand) und traegt roles: [{ text }] (Figur) bzw. [{ key }|{ text }]
+ * (Aufgabe, crewRole). Das ist, was Seerr (TMDB) kennt, ohne Gewaehr auf Vollstaendigkeit.
+ */
+function buildFilmography(raw) {
+  const merged = (list, roleOf) => {
+    const order = [];
+    const byKey = new Map();
+    for (const r of Array.isArray(list) ? list : []) {
+      const n = normalizeResult(r && typeof r === 'object' ? r : null);
+      if (!n) continue;
+      const k = `${n.mediaType}-${n.id}`;
+      const role = roleOf(r);
+      if (!byKey.has(k)) {
+        order.push(k);
+        byKey.set(k, { ...n, roles: [], votes: intOf(r.voteCount) ?? 0 });
+      }
+      const e = byKey.get(k);
+      if (role && !e.roles.some((x) => (role.key ? x.key === role.key : x.text === role.text))) e.roles.push(role);
+    }
+    return order
+      .map((k, index) => ({ e: byKey.get(k), index }))
+      .sort((a, b) => b.e.votes - a.e.votes || a.index - b.index)
+      .map(({ e }) => {
+        const { votes, ...credit } = e;
+        return credit;
+      });
+  };
+  const acting = merged(raw?.cast, (r) => {
+    const c = text(r.character, 200).trim();
+    return c ? { text: c } : null;
+  });
+  return {
+    movies: acting.filter((c) => c.mediaType === 'movie'),
+    series: acting.filter((c) => c.mediaType === 'tv'),
+    crew: merged(raw?.crew, (r) => crewRole(r.job, r.department))
+  };
+}
+
 /** Titel einer Liste (empfohlene, aehnliche, Filmreihe): ohne Personen, jeder einmal; nennt ein Eintrag seine Art nicht, gilt type. */
 function titleList(raw, type) {
   const seen = new Set();
@@ -620,6 +706,20 @@ class SeerrClient {
     return { score, votes: votes && votes > 0 ? votes : null };
   }
 
+  /** Eine Person mit Biografie, Lebensdaten und Bild (normalizePerson); ohne Namen ein Fehler. */
+  async person(id) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Person');
+    const p = normalizePerson(Number(id), await this.request('GET', `/person/${Number(id)}`));
+    if (!p) throw new SeerrError('Unerwartete Antwort von Seerr');
+    return p;
+  }
+
+  /** Filmografie einer Person mit dem Stand jedes Titels (buildFilmography). */
+  async filmography(id) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Person');
+    return buildFilmography(await this.request('GET', `/person/${Number(id)}/combined_credits`));
+  }
+
   /** Kontingent des Benutzers fuer Filme und Serien (normalizeQuota). */
   async quota(userId) {
     if (!Number.isInteger(+userId) || +userId <= 0) throw new SeerrError('Unbekannter Benutzer');
@@ -646,5 +746,5 @@ class SeerrClient {
   }
 }
 
-return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, normalizeQuota, seerrLanguage, tmdbImageUrl };
+return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, normalizeQuota, normalizePerson, buildFilmography, crewRole, seerrLanguage, tmdbImageUrl };
 });

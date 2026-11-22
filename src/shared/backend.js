@@ -541,6 +541,9 @@
       seerrRelated: (req) => seerrRead((s) => s.related(req?.mediaType, Number(req?.tmdbId), req?.kind)),
       seerrCollection: (id) => seerrRead((s) => s.collection(Number(id))),
       seerrImdb: (tmdbId) => seerrRead((s) => s.imdbRating(Number(tmdbId))),
+      /** Eine Person und ihre Filmografie (Seite einer Person); verbunden mit der Mediathek wird nur ueber die TMDB-Nummer. */
+      seerrPerson: (id) => seerrRead((s) => s.person(Number(id))),
+      seerrFilmography: (id) => seerrRead((s) => s.filmography(Number(id))),
       /** Kontingent des angemeldeten Seerr-Benutzers (Nummer aus /auth/me; ohne bekannten Benutzer erst die Pruefung); null, wenn er nicht feststeht. */
       async seerrQuota() {
         if (!seerrUser && seerr) await checkSeerr();

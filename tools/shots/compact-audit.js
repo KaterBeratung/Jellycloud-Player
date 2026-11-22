@@ -4,7 +4,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { BrowserWindow } = require('electron');
-const { server, items, setAdmin } = require('../mock-server');
+const { server, items, persons, setAdmin } = require('../mock-server');
 
 const CHECK = `(() => {
   const issues = [];
@@ -111,6 +111,7 @@ module.exports = async (ctx) => {
     ['movie-mehr-menu', `#/item/${movie.Id}`, `document.querySelector('.detail-actions .btn[title]:last-of-type')?.click()`],
     ['series', `#/item/${show.Id}`, null],
     ['search', '#/search?q=a', null],
+    ['person', `#/person/${[...persons.values()].find((p) => p.Name === 'Elise Fontaine').Id}`, null], // Seite einer Person (P13)
     ['settings-liste', '#/settings', null],
     ['settings-appearance', '#/settings/appearance', null],
     ['settings-home', '#/settings/home', null],

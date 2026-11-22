@@ -336,6 +336,25 @@ allen Aufgaben, dann die Darsteller mit Rolle, hinten Produktion und Musik), **w
 - Tests: `test/seerr-title.test.js` (die acht Fälle aus `SeerrDetailsTests`, die Fälle 5 bis 8 und 11 aus `seerr-integration.md`), Szenarien `seerr-title.js`
   (Port 8990) und `seerr.js`. Nur gegen den Mock-Seerr geprüft.
 
+**Personen (seit 1.2.12, Plan P13, wie `PersonView` und `CastRow` der Apple-App):** Die Besetzung der Detailseite (Schauspiel, Regie, Gastrollen, höchstens 30)
+und der Seite eines Seerr-Titels ist **eine** Reihe (`views/cast-row.js`): jede Person mit Kennung ist ein Verweis auf ihre Seite (Druck wie die Karten, per
+Tastatur erreichbar), ohne Kennung wird sie nur angezeigt. Bis 1.2.11 suchte ein Klick in der Mediathek nur den Namen, unter Seerr-Titeln ging gar nichts.
+- **Seite einer Person** (`views/person.js`, `#/person/<kennung>` aus der Mediathek, `#/person/tmdb/<nummer>` aus Seerr; Hintergrund wie die Mediatheken): Foto oder
+  Initialen, Name, Lebensdaten („Geboren am 7. April 1980 in Norwood, London“, „46 Jahre alt“ bzw. „Gestorben am … (78 Jahre)“), die Zahl der Titel in der
+  Mediathek, Biografie (*Mehr*); darunter die Titel der Mediathek (*Filme*, *Serien*, *Folgen* für Gastrollen in Serien, die nicht als Ganzes dastehen) und, mit
+  Seerr, die übrige **Filmografie** ohne diese Titel (*Weitere Filme*, *Weitere Serien*, *Hinter der Kamera*; ohne Titel der Mediathek heißen die ersten beiden
+  *Filme* und *Serien*). Je Titel eine Karte mit Jahr und Rolle bzw. Aufgabe und dem Stand bei Seerr, das Bekannteste zuerst, gleiche Titel einmal.
+- **Zwei Quellen, eine Seite:** Mediathek (Jellyfin) und Seerr werden **nur über die TMDB-Nummer** der Person verbunden, nie über den Namen (`/Persons` sucht nach
+  dem Namen, zugeordnet wird über `ProviderIds.Tmdb`). Fehlen der Mediathek Biografie, Geburtstag oder Bild, ergänzt Seerr sie; Vorhandenes bleibt. Hat die
+  Person bei Jellyfin gar keine Angaben, bittet ein Administrator den Server **einmal** je Sitzung, sie nachzuladen (nichts wird ersetzt), und die Seite zeigt sie,
+  sobald sie da sind. Jellyfins Tage (Mitternacht beim Server, in UTC) landen mit zwölf Stunden Aufschlag auf dem richtigen Tag.
+- Eine Anfrage aus der Filmografie aktualisiert nur die Stände der Karten; die Reihen bleiben stehen. Eine unbekannte Person zeigt „Person nicht geladen“ mit
+  *Erneut versuchen*.
+- Code: `src/shared/person.js` (Lebensdaten, Reihen, Abgleich, Besetzung), `src/shared/seerr.js` (`person`, `filmography`, `crewRole`), `src/shared/jellyfin.js`
+  (`getPerson`, `getPersonItems`, `personByTmdb`, `refreshPerson`).
+- Tests: `test/person.test.js` (die sieben Fälle aus `SeerrPeopleTests`, die Regeln der Seite, die Person der Mediathek gegen den Test-Server; 13 Gegenproben),
+  Szenario `person-page.js` (Port 8989). Nur gegen den Mock-Server geprüft.
+
 **Filme im Trend auf der Startseite:** Ganz unten auf der Startseite (unter Weiterschauen, Als Nächstes, Neuzugängen und Favoriten) steht die Reihe *Filme im Trend, über Seerr*. Sie holt `GET /discover/trending` (Seerr mischt dort Filme, Serien und Personen) und behält nur
 die **Filme**: ohne Serien, Personen, Doppelte und gesperrte Titel (Stand 6; gelöschte, Stand 7, bleiben und lassen sich wieder anfragen), bis zu 20, gelesen über höchstens drei Seiten; scheitert eine spätere Seite, bleibt es bei dem, was da ist. Die Karten sind dieselben wie in der Suche (`views/request-card.js`): Poster von TMDB,
 *Anfragen*-Knopf bei offenen Titeln, sonst der Stand als Tag (*Angefragt*, *In Bearbeitung*, *Teilweise*, grün *Verfügbar*); ein Klick auf das Poster öffnet die Seite des Titels. Die Liste bleibt zehn Minuten im Speicher der Oberfläche (die Startseite wird etwa nach
@@ -703,9 +722,10 @@ der Sitzung, wie Seerr), `POST /request/<Id>/approve|decline|retry`, `DELETE /re
 wie Seerr 3.5.1); Anfragen tragen den Benutzer ihrer Sitzung (demo 1, demo2 2); die Angaben eines Titels nennen `mediaInfo.seasons` und `mediaInfo.requests`
 (Serie „Wintersignale“, TMDB 2001: Staffel 1 da, 2 und 3 offen; eine schon vergebene Staffel noch einmal anfragen gibt 409), dazu `/movie|tv/<Id>/recommendations|similar`,
 `/collection/<Id>` (Filmreihe 77) und `/movie/<Id>/ratingscombined` (IMDb für 603), `/user/<Id>/quota` (Grenze im Prozess über `SEERR.quota`), `/person/<Id>` und
-`/person/<Id>/combined_credits`, `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
+`/person/<Id>/combined_credits` (Person 9202 „Mara Ellison“ ist dieselbe wie in der Mediathek), `/discover/trending` mit `mediaType` und `timeWindow` (je Art eine Liste mit 14 Filmen und 12 Serien, die ersten
 gibt es in der Mediathek; `MOCK_SEERR_OLD=1` oder `SEERR.old` wie ein älteres Seerr gemischt), `/auth/logout`. Jellyfin: `GET /Playback/BitrateTest?Size=`
-(`MOCK_BITRATE_MBPS` bremst). Die Fälle stehen in `test/mock-server.test.js`.
+(`MOCK_BITRATE_MBPS` bremst); Personen mit Biografie, Lebensdaten, Geburtsort und TMDB-Nummer (`GET /Items?ids=`, `personIds`, `GET /Persons?searchTerm=`;
+„Jonas Whitfield“ bekommt seine Angaben erst nach `POST /Items/<Id>/Refresh`, „Nadia Gast“ spielt nur in einer Folge). Die Fälle stehen in `test/mock-server.test.js`.
 
 Die UI-Szenarien (Screenshots, Layout-Prüfung auf Überlappungen, Wiedergabe mit simuliertem mpv) laufen mit
 `JC_DEV=1`, siehe `tools/shots/`:
@@ -741,6 +761,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
 | `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
 | `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Seite eines Titels** (Laden, Angabenzeile mit FSK, Besetzung, weitere Titel, Informationen, Anfragen von dort, Fehlerfälle, Zurück), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
+| `person-page.js` | Personen (P13): Besetzung der Mediathek und eines Seerr-Titels als Verweise, Seite aus beiden Wegen (Lebensdaten, Kapsel, Biografie, Foto oder Initialen), Mediathek zuerst und Filmografie ohne ihre Titel (TMDB-Nummer), Rollen zusammengefasst, Anfrage aus der Filmografie, Gastrolle, gestorben, unbekannte Person, Nachladen nur als Administrator (eigener Port 8989) |
 | `seerr-title.js` | Seite eines Seerr-Titels (P12): Serie mit Staffeln und Stand, Staffelauswahl (vorhandene gesperrt, Fokus auf der ersten offenen), nur gewählte Staffel angefragt, Kontingent (Hinweis, erschöpft gesperrt), fehlendes Recht, weitere Titel öffnen ihre Seite bzw. die Mediathek, doppelter Klick (eigener Port 8990) |
 | `requests-tab.js` | Reiter *Anfragen* (P11): Meine Anfragen, Offen/Abgeschlossen, Stand-Tags, nachgeladene Titel, Zurückziehen mit Rückfrage, Antippen öffnet den Titel, Kontextmenü-Taste, Verwalten mit fremden Anfragen (Genehmigen, Ablehnen, Entfernen), entzogenes Recht, Blättern hinter 120 Anfragen, Neuladen in einem Abruf, Seerr aus (eigener Port 8991) |
 | `seerr-states.js` | Seerr je Profil und vier Zustände (P10): Stand in den Einstellungen, Reiter *Anfragen* verbunden / nicht erreichbar / abgelaufen, *Erneut prüfen*, *Erneut versuchen*, *Erneut anmelden*, fremde Sitzung (abgemeldet und verworfen), zweites Profil mit anderem Jellyfin-Konto, Wechsel stellt die eigene Sitzung her, `language=de` (eigener Port 8993, zweite Adresse 8992) |

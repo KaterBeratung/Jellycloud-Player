@@ -543,12 +543,16 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .person { flex: none; width: 112px; text-align: center; animation: rise calc(520ms * var(--dur)) var(--ease) both; animation-delay: calc(var(--i, 0) * 32ms); }
 /* Feste Kreisgroesse: nichts darf sie dehnen (Hoehe und Breite gleich, kein Innenabstand) */
 .avatar { flex: none; width: 96px; height: 96px; padding: 0; margin: 0 auto 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line2); transition: transform var(--t-med) var(--ease), box-shadow var(--t-med); }
-.person:hover .avatar { transform: scale(1.08); box-shadow: 0 0 0 2px var(--accent), 0 14px 30px -10px rgb(0 0 0 / 0.7); }
+/* Nur Personen mit Seite (a.person, views/cast-row.js) heben sich und geben beim Druck nach wie die Karten; ohne Kennung (div) bleiben sie still */
+a.person:hover .avatar { transform: scale(1.08); box-shadow: 0 0 0 2px var(--accent), 0 14px 30px -10px rgb(0 0 0 / 0.7); }
+a.person:active .avatar { transform: scale(0.94); transition-duration: var(--t-fast); }
+a.person:focus-visible { outline: none; }
+a.person:focus-visible .avatar { box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--accent); }
 /* Ohne Foto: Kreis in der Akzentfarbe mit Initialen. Die Initialen gibt es immer, sichtbar sind sie nur, wenn das Foto fehlt oder nicht laedt. */
 .avatar .initial { position: absolute; inset: 0; display: none; place-items: center; font: 800 28px var(--font-display); letter-spacing: 0.02em; color: var(--text); text-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
 .avatar.noimg .initial, .avatar.failed .initial { display: grid; }
 .avatar.noimg, .avatar.failed { background: linear-gradient(150deg, rgb(255 255 255 / 0.16), transparent 55%), linear-gradient(145deg, rgb(var(--accent-rgb) / 0.55), rgb(var(--accent-rgb) / 0.2)), var(--surface2); box-shadow: 0 0 0 1px var(--lg-edge), inset 0 1px 0 var(--lg-edge-top); }
-.person:hover .avatar.noimg, .person:hover .avatar.failed { box-shadow: 0 0 0 2px var(--accent), 0 14px 30px -10px rgb(0 0 0 / 0.7), inset 0 1px 0 var(--lg-edge-top); }
+a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 2px var(--accent), 0 14px 30px -10px rgb(0 0 0 / 0.7), inset 0 1px 0 var(--lg-edge-top); }
 .person .l1 { font-weight: 650; font-size: 13px; line-height: 1.3; }
 .person .l2 { color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tech { margin: 36px var(--pad) 0; max-width: 1180px; border: 1px solid var(--line); border-radius: calc(var(--radius) * 1.1); background: var(--glass2); }
@@ -1142,6 +1146,27 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .seerr-season:last-child { border-bottom: 0; }
 .seerr-season-name { font-weight: 650; }
 .seerr-season-sub { color: var(--muted); font-size: 13px; }
+/* Seite einer Person (views/person.js, wie PersonView der Apple-App): Foto (oder Initialen wie in der Besetzung) und Name unten buendig, darunter die
+   Biografie und die Reihen; Hintergrund wie die Mediatheken (data-glow="movies") */
+.person-page { padding-top: calc(var(--topbar-h) + 20px); }
+.person-head { display: flex; align-items: flex-end; gap: clamp(18px, 2.2vw, 28px); padding: 0 var(--pad); animation: rise calc(600ms * var(--dur)) var(--ease) backwards; }
+.person-photo { position: relative; flex: none; width: clamp(124px, 12vw, 190px); aspect-ratio: 2 / 3; border-radius: 18px; overflow: hidden; background: var(--surface2); box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 18px 36px -14px rgb(0 0 0 / 0.6); }
+.person-photo-img { position: absolute; inset: 0; }
+.person-photo-img + .person-photo-img { background: transparent; } /* das schaerfere Bild legt sich ohne Flaeche ueber das erste, bis es geladen ist */
+.person-photo-img .initial { position: absolute; inset: 0; display: none; place-items: center; font: 800 clamp(36px, 3.6vw, 54px) var(--font-display); letter-spacing: 0.02em; color: var(--text); text-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+.person-photo-img.noimg .initial, .person-photo-img.failed .initial { display: grid; }
+.person-photo-img.noimg, .person-photo-img.failed { background: linear-gradient(150deg, rgb(255 255 255 / 0.16), transparent 55%), linear-gradient(145deg, rgb(var(--accent-rgb) / 0.55), rgb(var(--accent-rgb) / 0.2)), var(--surface2); }
+.person-info { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-bottom: 6px; }
+.person-name { font: 800 clamp(30px, 3.2vw, 44px)/1.08 var(--font-display); letter-spacing: -0.03em; text-wrap: balance; overflow-wrap: anywhere; }
+.person-fact { color: var(--muted); font-size: 15px; }
+.person-badge { margin-top: 4px; padding: 5px 10px; border-radius: 999px; background: color-mix(in srgb, var(--text) 10%, transparent); font-size: 13px; font-weight: 650; }
+.person-badge[hidden], .person-bio[hidden], .person-head[hidden] { display: none; }
+.person-bio { padding: 30px var(--pad) 0; max-width: calc(74ch + var(--pad) * 2); animation: rise calc(600ms * var(--dur)) var(--ease) 80ms backwards; }
+.person-bio h2 { font: 700 22px var(--font-display); letter-spacing: -0.02em; margin-bottom: 8px; }
+.person-bio .overview { color: var(--muted); }
+.person-rows { padding-top: 4px; }
+.person-empty { padding: 30px var(--pad) 0; color: var(--muted); }
+html[data-compact='on'] .person-page { padding-top: calc(var(--topbar-h) + 12px); }
 /* Informationsblock: Gruppen nebeneinander, so viele die Breite fasst; Beschriftung ueber dem Wert */
 .info-block { padding: 10px var(--pad) 40px; }
 .info-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 40px; }

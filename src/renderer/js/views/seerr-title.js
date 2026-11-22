@@ -2,7 +2,7 @@ import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { state, updateSettings } from '../state.js';
 import { api, mapImage } from '../api.js';
-import { lazyImage, pageStatus, showPageStatus, row, initialsOf } from '../ui.js';
+import { lazyImage, pageStatus, showPageStatus, row } from '../ui.js';
 import { seerrTitleTag } from '../tags.js';
 import { invalidate } from '../router.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
@@ -11,6 +11,7 @@ import { seerrState, runSeerrCheck } from '../connection.js';
 import { takeKnownTitle } from '../seerr-open.js';
 import { requestCard } from './request-card.js';
 import { chooseSeasons } from './season-chooser.js';
+import { castRow } from './cast-row.js';
 
 const SeerrState = window.JCSeerrState; // Staende und Rechte (src/shared/seerr-state.js)
 const Requests = window.JCSeerrRequests; // was sich noch anfragen laesst, Kontingent (src/shared/seerr-requests.js)
@@ -178,23 +179,10 @@ export function seerrTitleView({ type, id }) {
       });
       parts.push(h('section', { class: 'seerr-seasons' }, h('h2', null, t('seerr.page.seasons')), h('div', { class: 'seerr-season-list' }, rows)));
     }
-    // Besetzung wie auf der Detailseite: vorn Regie bzw. die Schoepfer und Drehbuch, dann die Darsteller mit Rolle, hinten Produktion und Musik
-    const people = [
-      ...details.crew.map((c) => ({ ...c, role: c.roles.map((r) => t(`seerr.crew.${r}`)).join(', ') })),
-      ...details.cast.map((c) => ({ ...c, role: c.character })),
-      ...details.furtherCrew.map((c) => ({ ...c, role: c.roles.map((r) => t(`seerr.crew.${r}`)).join(', ') }))
-    ];
-    if (people.length) {
-      const list = h('div', { class: 'scroller people' });
-      people.forEach((p, i) => {
-        const av = lazyImage(tmdb('w185', p.profilePath), { cls: 'avatar' });
-        av.append(h('span', { class: 'initial', 'aria-hidden': 'true' }, initialsOf(p.name)));
-        const person = h('div', { class: 'person' }, av, h('div', { class: 'l1' }, p.name), p.role ? h('div', { class: 'l2' }, p.role) : null);
-        person.style.setProperty('--i', Math.min(i, 14));
-        list.append(person);
-      });
-      parts.push(h('section', { class: 'row' }, h('div', { class: 'row-head' }, h('h2', null, t('detail.cast'))), list));
-    }
+    // Besetzung wie auf der Detailseite (dieselbe Reihe): vorn Regie bzw. die Schoepfer und Drehbuch, dann die Darsteller mit Rolle, hinten Produktion und Musik;
+    // jede Person mit Nummer fuehrt auf ihre Seite
+    const cast = castRow(window.JCPerson.seerrCast(details));
+    if (cast) parts.push(cast);
     parts.push(relatedHost);
     const groups = Facts.informationGroups(details, { imdb: extras.imdb, lang: getLocale(), region: regionOf() });
     if (groups.length) {

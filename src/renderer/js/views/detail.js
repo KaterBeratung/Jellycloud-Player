@@ -1,8 +1,8 @@
 import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
-import { api, backdropOf, landscapeOf, posterOf, logoOf, personImage, isFolder } from '../api.js';
+import { api, backdropOf, landscapeOf, posterOf, logoOf, isFolder } from '../api.js';
 import { state, updateSettings } from '../state.js';
-import { card, initialsOf, lazyImage, openMenu, pageStatus, row, showPageStatus, titleOf, toast, closeMenu } from '../ui.js';
+import { card, lazyImage, openMenu, pageStatus, row, showPageStatus, titleOf, toast, closeMenu } from '../ui.js';
 import { mediaTagRow } from '../tags.js';
 import { setAmbient } from '../ambient.js';
 import { endsAt, fmtBitrate, fmtDate, fmtDuration, fmtSize, langName, ticksToSec } from '../utils.js';
@@ -11,6 +11,7 @@ import { navigate } from '../router.js';
 import { createTrailer } from '../trailer.js';
 import { editMetadata, identifyItem, deleteItem as deleteItemAdmin } from './admin-item.js';
 import { canReportIssue, openIssueDialog } from './issue-dialog.js';
+import { castRow } from './cast-row.js';
 
 const Media = window.JCMedia;
 const Tags = window.JCMediaTags; // Tags der Datei in der Reihenfolge der Detailseite (src/shared/media-tags.js)
@@ -466,22 +467,9 @@ export function detailView({ id, query }) {
       body.append(seasonSection({ Id: item.SeriesId }, [], item.SeasonId, item.Id, item.SeasonName));
     }
 
-    // ----- Besetzung -----
-    const cast = people.filter((p) => ['Actor', 'GuestStar'].includes(p.Type)).slice(0, 24);
-    if (cast.length) {
-      const scroller = h('div', { class: 'scroller people' });
-      cast.forEach((p, i) => {
-        const img = personImage(p);
-        const a = h('a', { class: 'person', href: `#/search?q=${encodeURIComponent(p.Name)}` });
-        a.style.setProperty('--i', Math.min(i, 14));
-        const av = lazyImage(img, { cls: 'avatar' });
-        // Initialen immer anlegen; sichtbar sind sie nur, wenn kein Bild da ist oder es nicht geladen werden kann (siehe .avatar .initial)
-        av.append(h('span', { class: 'initial', 'aria-hidden': 'true' }, initialsOf(p.Name)));
-        a.append(av, h('div', { class: 'l1' }, p.Name), p.Role ? h('div', { class: 'l2' }, p.Role) : null);
-        scroller.append(a);
-      });
-      body.append(h('section', { class: 'row' }, h('div', { class: 'row-head' }, h('h2', null, t('detail.cast'))), scroller));
-    }
+    // ----- Besetzung: Schauspiel, Regie und Gastrollen; jede Person fuehrt auf ihre Seite (views/person.js, wie auf der Seite eines Seerr-Titels) -----
+    const cast = castRow(window.JCPerson.libraryCast(people));
+    if (cast) body.append(cast);
 
     // ----- Aehnliche Titel -----
     if (!isEpisode) {

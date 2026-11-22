@@ -188,6 +188,8 @@
     seerrRelated: (req) => call(() => backend.seerrRelated({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId), kind: String(req?.kind ?? '') })),
     seerrCollection: (id) => call(() => backend.seerrCollection(Number(id))),
     seerrImdb: (tmdbId) => call(() => backend.seerrImdb(Number(tmdbId))),
+    seerrPerson: (id) => call(() => backend.seerrPerson(Number(id))),
+    seerrFilmography: (id) => call(() => backend.seerrFilmography(Number(id))),
     seerrQuota: () => call(() => backend.seerrQuota()),
     seerrRequests: (o) => call(() => backend.seerrRequests({ scope: o?.scope === 'manage' ? 'manage' : 'mine', skip: Number(o?.skip) || 0, take: Number(o?.take) || 50 })),
     seerrMedia: (req) => call(() => backend.seerrMedia({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId) })),

@@ -55,18 +55,25 @@ export async function requestOne(r) {
   }
 }
 
+/** Neuer Stand eines Titels, dessen Karte schon steht (etwa nach einer Anfrage auf einer anderen Karte desselben Titels): die Karte zeigt ihn sofort. */
+export function setCardStatus(r, status) {
+  r.status = status;
+  repaint.get(r)?.();
+}
+
 /**
  * Karte fuer einen Titel, der bei Seerr angefragt werden kann (Poster kommen ueber das App-Protokoll von TMDB). Ein Klick darauf oeffnet die Details.
- * Gebraucht in der Suche (Gruppe "Bei Seerr anfragen") und in der Reihe "Filme im Trend" auf der Startseite.
+ * Gebraucht in der Suche (Gruppe "Bei Seerr anfragen"), in der Reihe "Filme im Trend" auf der Startseite, auf der Seite eines Titels und einer Person.
+ * detail: Zeile unter dem Titel (Seite einer Person: Jahr und Rolle); ohne Angabe Jahr und Art.
  */
-export function requestCard(r, index) {
+export function requestCard(r, index, { detail = null } = {}) {
   const poster = r.posterPath && /^\/[\w-]{8,64}\.(?:jpg|jpeg|png|webp)$/.test(r.posterPath) ? { url: mapImage(`jellycloud://tmdb/w342${r.posterPath}`), hash: null } : null;
   const image = lazyImage(poster, { alt: '', fallback: r.title });
   const chip = h('span', { class: 'req-status', hidden: true });
   const thumb = h('div', { class: 'thumb' }, image, chip);
   const btn = h('button', { class: 'btn primary sm', type: 'button' }, icon('plus', 16), h('span', null, t('seerr.request')));
   const actions = h('div', { class: 'req-actions' }, btn);
-  const meta = h('div', { class: 'meta' }, h('div', { class: 'l1' }, r.title), h('div', { class: 'l2' }, [r.year, t(`seerr.${r.mediaType}`)].filter(Boolean).join(' · ')));
+  const meta = h('div', { class: 'meta' }, h('div', { class: 'l1' }, r.title), h('div', { class: 'l2' }, detail ?? [r.year, t(`seerr.${r.mediaType}`)].filter(Boolean).join(' · ')));
   const el = h('div', { class: 'card poster req-card', title: r.title }, thumb, meta, actions);
   el.style.setProperty('--i', Math.min(index, 18));
 

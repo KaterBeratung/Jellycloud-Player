@@ -361,6 +361,49 @@ class JellyfinClient {
     }
   }
 
+  // ---------- Personen (wie die Apple-App, Seite einer Person) ----------
+
+  /** Eine Person (Schauspiel, Regie ...) mit Biografie, Geburts- und Todestag, Geburtsort und ihren Nummern bei anderen Diensten (TMDB). */
+  async getPerson(id) {
+    const r = await this.getItems({ ids: checkId(id), fields: ['Overview', 'PremiereDate', 'EndDate', 'ProductionLocations', 'ProviderIds'], enableImageTypes: 'Primary,Backdrop' });
+    const person = r.Items?.[0];
+    // Die Kennung eines Films oder einer Serie ist keine Person (Adresse von Hand)
+    if (!person || (person.Type && person.Type !== 'Person')) throw new JellyfinError('Person nicht gefunden', { status: 404 });
+    return person;
+  }
+
+  /** Was es von einer Person in der Mediathek gibt: Filme, Serien und Folgen (Gastrollen), das Neueste zuerst; mit den TMDB-Nummern fuer den Abgleich mit Seerr. */
+  async getPersonItems(id) {
+    const r = await this.getItems({ personIds: checkId(id), recursive: true, includeItemTypes: 'Movie,Series,Episode', sortBy: 'ProductionYear,PremiereDate,SortName', sortOrder: 'Descending', limit: 300, fields: [...LIST_FIELDS, 'ProviderIds'] });
+    return r.Items ?? [];
+  }
+
+  /**
+   * Die Person der Mediathek mit dieser TMDB-Nummer (Seite einer Person aus der Besetzung eines Seerr-Titels). Der Name grenzt nur die Suche ein; zugeordnet wird
+   * allein ueber die Nummer, nie ueber den Namen. Ohne Treffer oder bei einem Fehler null.
+   */
+  async personByTmdb(tmdbId, name) {
+    const n = Number(tmdbId);
+    const term = String(name ?? '').trim().slice(0, 200);
+    if (!Number.isInteger(n) || n <= 0 || !term) return null;
+    const r = await this.request('GET', '/Persons', { query: { searchTerm: term, userId: this.userId, fields: 'ProviderIds', limit: 20, enableImages: false } }).catch(() => null);
+    const tmdbOf = (p) => Object.entries(p?.ProviderIds ?? {}).find(([k]) => k.toLowerCase() === 'tmdb')?.[1];
+    return (r?.Items ?? []).find((p) => String(tmdbOf(p) ?? '') === String(n)) ?? null;
+  }
+
+  /**
+   * Bittet den Server, fehlende Angaben einer Person nachzuladen (Jellyfin holt Biografie und Lebensdaten erst bei Bedarf). Nur fuer Administratoren; sonst lehnt der
+   * Server ab. Vorhandenes bleibt (nichts wird ersetzt). true, wenn der Server den Auftrag angenommen hat.
+   */
+  async refreshPerson(id) {
+    try {
+      await this.request('POST', `/Items/${checkId(id)}/Refresh`, { query: { metadataRefreshMode: 'FullRefresh', imageRefreshMode: 'Default', replaceAllMetadata: false, replaceAllImages: false } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async search(term, limit = 40) {
     const r = await this.getItems({ searchTerm: term, includeItemTypes: 'Movie,Series,Episode,BoxSet', recursive: true, limit });
     return r.Items ?? [];
@@ -613,6 +656,7 @@ function describeStreamingLimits({ endpoint = null, me = null, config = null } =
  */
 const CALLABLE_METHODS = [
   'getViews', 'getItems', 'getItem', 'getResume', 'getNextUp', 'getLatest', 'getSeasons', 'getEpisodes', 'getSimilar', 'getGenres', 'search', 'setPlayed', 'setFavorite', 'refreshItem', 'getMe',
+  'getPerson', 'getPersonItems', 'personByTmdb', 'refreshPerson',
   'getSystemInfo', 'refreshLibrary', 'getScheduledTasks', 'startTask', 'stopTask', 'getSessions', 'getActivity', 'getUsers', 'createUser', 'setUserDisabled', 'resetUserPassword', 'setUserPassword', 'deleteUser',
   'getItemForEdit', 'updateItem', 'deleteItem', 'searchRemote', 'applyRemoteMatch', 'restartServer', 'shutdownServer'
 ];

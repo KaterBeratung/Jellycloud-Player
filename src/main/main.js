@@ -288,6 +288,8 @@ function registerIpc() {
   ipcMain.handle('seerr:related', wrap((req) => backend.seerrRelated({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId), kind: String(req?.kind ?? '') })));
   ipcMain.handle('seerr:collection', wrap((id) => backend.seerrCollection(Number(id))));
   ipcMain.handle('seerr:imdb', wrap((tmdbId) => backend.seerrImdb(Number(tmdbId))));
+  ipcMain.handle('seerr:person', wrap((id) => backend.seerrPerson(Number(id))));
+  ipcMain.handle('seerr:filmography', wrap((id) => backend.seerrFilmography(Number(id))));
   ipcMain.handle('seerr:quota', wrap(() => backend.seerrQuota()));
   ipcMain.handle('seerr:requests', wrap((o) => backend.seerrRequests({ scope: o?.scope === 'manage' ? 'manage' : 'mine', skip: Number(o?.skip) || 0, take: Number(o?.take) || 50 })));
   ipcMain.handle('seerr:media', wrap((req) => backend.seerrMedia({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId) })));

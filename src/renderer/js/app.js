@@ -13,6 +13,7 @@ import { homeView } from './views/home.js';
 import { libraryView } from './views/library.js';
 import { detailView } from './views/detail.js';
 import { seerrTitleView } from './views/seerr-title.js';
+import { personView } from './views/person.js';
 import { searchView } from './views/search.js';
 import { settingsView } from './views/settings.js';
 import { adminView } from './views/admin.js';
@@ -40,6 +41,8 @@ route(/^\/requests$/, () => requestsView(), { nav: 'requests' });
 route(/^\/library\/(?<id>[0-9a-fA-F-]+)$/, (p) => libraryView(p), { cache: true }); // von der Startseite geoeffnet ("Neu in ...")
 route(/^\/item\/(?<id>[0-9a-fA-F-]+)$/, (p) => detailView(p));
 route(/^\/seerr\/(?<type>movie|tv)\/(?<id>\d{1,9})$/, (p) => seerrTitleView(p)); // Seite eines Seerr-Titels (seerr-open.js oeffnet sie)
+route(/^\/person\/tmdb\/(?<tmdb>\d{1,9})$/, (p) => personView(p)); // Seite einer Person aus der Besetzung eines Seerr-Titels (Nummer bei TMDB)
+route(/^\/person\/(?<id>[0-9a-fA-F-]{8,40})$/, (p) => personView(p)); // Seite einer Person der Mediathek
 route(/^\/search$/, (p) => searchView(p), { nav: 'search' });
 route(/^\/settings(?:\/(?<section>\w+))?$/, (p) => settingsView(p), { nav: 'settings' });
 route(/^\/admin(?:\/(?<section>\w+))?$/, (p) => adminView(p), { nav: 'admin' });
@@ -299,7 +302,7 @@ async function boot() {
     announcedUpdate = true;
     afterSplash(() => toast(t('upd.done', { v: state.appVersion }))); // unter der Startanimation sah man ihn nicht
   }
-  if (!/^#\/(home|movies|shows|requests|library|item|seerr|search|settings|admin)/.test(location.hash)) location.hash = '#/home';
+  if (!/^#\/(home|movies|shows|requests|library|item|seerr|person|search|settings|admin)/.test(location.hash)) location.hash = '#/home';
   if (!state.isAdmin && /^#\/admin/.test(location.hash)) location.hash = '#/home';
   if (routerStarted) await refresh();
   else {

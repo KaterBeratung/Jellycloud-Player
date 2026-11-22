@@ -109,6 +109,7 @@ module.exports = async (ctx) => {
     ['settings-about', '#/settings/about'],
     ['search', '#/search?q=a'],
     ['requests', '#/requests'],
+    ['person', `#/person/${require('node:crypto').createHash('md5').update('Elise Fontaine').digest('hex')}`], // Seite einer Person (P13): Kopf mit zwei Zeilen Lebensdaten
     ['admin-server', '#/admin/server'],
     ['admin-tasks', '#/admin/tasks'],
     ['admin-sessions', '#/admin/sessions'],
