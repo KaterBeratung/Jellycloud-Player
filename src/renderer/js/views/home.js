@@ -107,7 +107,9 @@ function heroSlide(entry, first) {
         {
           class: 'btn primary lg',
           type: 'button',
-          onclick: () => playItem({ itemId: item.Id, resume: true })
+          // Eine Serie startet ihre naechste Folge, sonst die erste der ersten richtigen Staffel (wie die Apple-App; vorher ging die Serie selbst an den
+          // Player, der sie nicht abspielen kann)
+          onclick: () => (item.Type === 'Series' ? playSeries(item) : playItem({ itemId: item.Id, resume: true }))
         },
         icon('play', 20),
         playText

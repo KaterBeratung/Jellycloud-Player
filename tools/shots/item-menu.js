@@ -135,6 +135,17 @@ module.exports = async (ctx) => {
   const heroAfter = await heroPlay();
   check('...im Banner, das stehen bleibt, heisst der Knopf des Titels danach "Abspielen" statt "Fortsetzen"', heroBefore === 'Fortsetzen' && heroAfter === 'Abspielen', JSON.stringify({ heroBefore, heroAfter }));
 
+  // "Abspielen" einer Serie im Banner: ihre naechste Folge (vorher ging die Serie selbst an den Player, der sie nicht abspielen kann)
+  const starfallNext = episodeOf(starfall, 1, 4);
+  const clickedSeries = await ctx.run(`(() => { const s = [...document.querySelectorAll('.home .hero .hero-slide')].find((x) => (x.querySelector('.hero-logo')?.alt ?? x.querySelector('.hero-title')?.textContent) === ${JSON.stringify(starfall.Name)}); if (!s) return false; s.querySelector('.hero-actions .btn.primary').click(); return true; })()`);
+  const startedSeries = clickedSeries && (await (async () => { const end = Date.now() + 8000; while (Date.now() < end && ctx.player.cur?.item?.Id !== starfallNext.Id) await ctx.wait(100); return ctx.player.cur?.item?.Id === starfallNext.Id; })());
+  check('Banner: "Abspielen" einer Serie startet ihre naechste Folge (S1 E4)', startedSeries, JSON.stringify({ clickedSeries, playing: ctx.player.cur?.item?.Name ?? null }));
+  await ctx.player.stop();
+  await waitFor(`!document.documentElement.classList.contains('playing')`, 6000);
+  await go('#/home', `!!document.querySelector('.home .rows [data-row="${latestRow}"] .card')`);
+  await ctx.wait(600);
+  await ctx.run(`document.querySelector('.home .hero').__mark = 1`); // nach dem Film baut die App die Startseite neu auf: das neue Banner markieren
+
   // Favorit ueber das Menue: die Reihe "Favoriten" zeigt ihn danach
   const neonLatest = `.home .rows [data-row="${latestRow}"] .card[data-item-id="${neon.Id}"]`;
   await ctx.run(`document.querySelector('${neonLatest}')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })`);
