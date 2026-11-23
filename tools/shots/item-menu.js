@@ -119,6 +119,8 @@ module.exports = async (ctx) => {
   // Vorher: Banner markieren, die Reihe "Neu in Filme" ein Stueck verschieben, Platzhalter beobachten
   await reveal(contCard);
   await ctx.run(`(() => { document.querySelector('.home .hero').__mark = 1; document.querySelector('.home .rows [data-row="${latestRow}"] .scroller').scrollTo({ left: 240, behavior: 'instant' }); window.__sk = 0; const mo = new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && (n.matches('.skeleton, .hero-skeleton, .top10-row.loading') || n.querySelector('.skeleton, .hero-skeleton'))) window.__sk++; }); mo.observe(document.querySelector('.home'), { childList: true, subtree: true }); })()`);
+  const heroPlay = () => ctx.run(`(() => { const s = [...document.querySelectorAll('.home .hero .hero-slide')].find((x) => (x.querySelector('.hero-logo')?.alt ?? x.querySelector('.hero-title')?.textContent) === ${JSON.stringify(aurora.Name)}); return s ? s.querySelector('.hero-actions .btn.primary').textContent.trim() : null; })()`);
+  const heroBefore = await heroPlay();
   const top0 = await ctx.run(`document.querySelector('#view').scrollTop`);
   const left0 = await ctx.run(`document.querySelector('.home .rows [data-row="${latestRow}"] .scroller').scrollLeft`);
   await rightClick(contCard);
@@ -130,6 +132,8 @@ module.exports = async (ctx) => {
   check('Die Startseite baut sich nicht neu auf: das Banner bleibt, keine Platzhalter', after1.hero && after1.sk === 0, JSON.stringify(after1));
   check('Die Seite und jede Reihe bleiben an ihrer Stelle', Math.abs(after1.top - top0) <= 1 && Math.abs(after1.left - left0) <= 2 && left0 > 100, JSON.stringify({ top0, left0, after1 }));
   check('Die neuen Karten steigen nicht noch einmal ein (kein Flackern)', after1.anim === 'none', after1.anim);
+  const heroAfter = await heroPlay();
+  check('...im Banner, das stehen bleibt, heisst der Knopf des Titels danach "Abspielen" statt "Fortsetzen"', heroBefore === 'Fortsetzen' && heroAfter === 'Abspielen', JSON.stringify({ heroBefore, heroAfter }));
 
   // Favorit ueber das Menue: die Reihe "Favoriten" zeigt ihn danach
   const neonLatest = `.home .rows [data-row="${latestRow}"] .card[data-item-id="${neon.Id}"]`;

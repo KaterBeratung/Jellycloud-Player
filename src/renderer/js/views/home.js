@@ -74,8 +74,10 @@ function heroSlide(entry, first) {
   const logo = logoOf(item, 640);
   const label = kind === 'series' ? t('home.newSeries') : t('home.newMovies');
   const hasProgress = (item.UserData?.PlaybackPositionTicks ?? 0) > 0;
+  const playText = h('span', null, hasProgress ? t('action.resume') : t('action.play'));
 
   const slide = h('article', { class: 'hero-slide' });
+  slide._playText = playText; // "Fortsetzen" bzw. "Abspielen", folgt dem Stand (createHero refresh)
   slide._hash = bd?.hash ?? null; // Hintergrundton der Seite (ambient.js)
   const bg = lazyImage(bd, { cls: 'hero-bg', eager: first });
   slide.append(bg, h('div', { class: 'hero-shade' }));
@@ -108,7 +110,7 @@ function heroSlide(entry, first) {
           onclick: () => playItem({ itemId: item.Id, resume: true })
         },
         icon('play', 20),
-        h('span', null, hasProgress ? t('action.resume') : t('action.play'))
+        playText
       ),
       h('a', { class: 'btn glass lg', href: itemHref(item) }, icon('info', 20), h('span', null, t('action.details')))
     )
@@ -226,6 +228,16 @@ function createHero(entries, { autoplay, onActive, trailers = null }) {
   go(0);
   return {
     el,
+    /** Neuer Stand der Eintraege (Neu laden nach einer Aenderung): nur die Beschriftung von Abspielen/Fortsetzen, das Banner selbst bleibt (Folie, Trailer). */
+    refresh(byId) {
+      entries.forEach((e, i) => {
+        const fresh = byId.get(e.item.Id);
+        if (!fresh) return;
+        e.item.UserData = fresh.UserData;
+        const text = (fresh.UserData?.PlaybackPositionTicks ?? 0) > 0 ? t('action.resume') : t('action.play');
+        if (slides[i]._playText.textContent !== text) slides[i]._playText.textContent = text;
+      });
+    },
     /** Die Startseite verschwindet aus dem Bild, bleibt aber im Speicher: Trailer beenden, nicht weiterschalten. */
     pause() {
       paused = true;
@@ -405,7 +417,8 @@ export function homeView() {
       }
     }
     if (soft) {
-      /* Neu laden nach einer Aenderung: das Banner bleibt, wie es ist */
+      // Neu laden nach einer Aenderung: das Banner bleibt stehen, nur "Fortsetzen"/"Abspielen" folgt dem neuen Stand
+      hero?.refresh(new Map(latestPerLib.flatMap((l) => l.items).map((i) => [i.Id, i])));
     } else if (!cfg.hero) {
       /* Banner ausgeschaltet: kein Platzhalter, die Reihen beginnen unter der Kopfleiste (.home.no-hero) */
     } else if (entries.length) {

@@ -239,7 +239,7 @@ bei langsamem Server ein zweites Mal danach). Ein Start, der beim Schließen noc
   *Als gesehen/ungesehen markieren*, *Zu Favoriten*/*Favorit entfernen*. Ordner und Personen haben keines. Ein Klick daneben, Escape, das Mausrad und ein
   Seitenwechsel schließen es.
 - **Danach stimmt der Stand überall, ohne Neuaufbau** (`itemStateChanged` in `actions.js`): die Startseite holt ihre Reihen neu und tauscht sie in einem
-  Zug (Banner, Scrollstelle und die Stelle jeder Reihe bleiben, keine Platzhalter, kein Einsteigen); andere Seiten bauen die Karten des Eintrags an ihrem
+  Zug (Banner, Scrollstelle und die Stelle jeder Reihe bleiben, keine Platzhalter, kein Einsteigen; im Banner folgt nur „Fortsetzen“/„Abspielen“); andere Seiten bauen die Karten des Eintrags an ihrem
   Platz neu; die Detailseite lädt Haken, Tags, *Abspielen* und die Folgen der gezeigten Staffel neu (der Trailer läuft weiter). Seiten im Speicher des
   Routers ziehen nach, die Startseite beim Zurückkehren. Das gilt auch für Gesehen und Favorit auf der Detailseite selbst. Scheitert die Änderung, bleibt alles.
 - Tests: `test/season-choice.test.js` (Fälle aus `SeasonChoiceTests`, „Abspielen“ einer Serie gegen einen Server), `test/format.test.js` (dazu
