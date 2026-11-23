@@ -10,8 +10,10 @@
      codec {encode,decode} eigene Verschluesselung der Zugangsdaten (Standard: "plain:" mit Base64)
      version, platform     Version der App und "ios" | "android" | "web"
      deviceName            Name des Geraets fuer den Server
-     play(req, ctx)        spielt einen Eintrag mit dem nativen Player ab; ctx = { client } mit baseUrl, token (Header: client.authHeader())
-     outlook(req, ctx)     wie der Server diesen Eintrag liefern wuerde, ohne abzuspielen: { method: 'DirectPlay' | 'DirectStream' | 'Transcode' }
+     play(req, ctx)        spielt einen Eintrag mit dem nativen Player ab; ctx = { client, network(), measureBandwidth(o) }: client mit baseUrl, token (Header:
+                           client.authHeader()); network() -> Heimnetz und Grenze des Servers (Plan P21, beim Abspielen neu geprueft), measureBandwidth({ quick })
+                           -> Mbit/s oder null (src/shared/bitrate.js)
+     outlook(req, ctx)     wie der Server diesen Eintrag liefern wuerde, ohne abzuspielen: { method: 'DirectPlay' | 'DirectStream' | 'Transcode' }; ctx wie bei play
      openExternal(url)     Link im Systembrowser oeffnen
      notifyStorage         eigene Ablage der Mitteilungen {get,set,remove,keys} (Standard: localStorage)
      systemNotify          Mitteilungen des Systems (Plan P18): status() und request() -> { supported, permission: 'granted'|'denied'|'prompt'|'unsupported',
@@ -142,7 +144,13 @@
         extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false }),
         notifyIo,
         onNotifications: (summary) => listeners.notices.forEach((cb) => cb(summary)),
-        systemNotify: sysNotify ? { show: (list) => sysNotify.show(list), withdraw: (ids) => sysNotify.withdraw(ids), withdrawProfile: (key) => sysNotify.withdrawProfile(key) } : null
+        systemNotify: sysNotify ? { show: (list) => sysNotify.show(list), withdraw: (ids) => sysNotify.withdraw(ids), withdrawProfile: (key) => sysNotify.withdrawProfile(key) } : null,
+        // Heimnetz-Pruefung (Plan P21): Art der Verbindung laut Browser (Android-WebView: wifi, ethernet, cellular). Ueber Mobilfunk ist das Geraet nie zu
+        // Hause, eine private Adresse erreicht es dann nur ueber ein VPN; ein Wechsel der Art verwirft gemerkte Einstufungen
+        connection: () => {
+          const type = String(navigator.connection?.type ?? '');
+          return { signature: `${type}|${navigator.onLine}`, viaLocalInterface: type === 'cellular' ? false : null };
+        }
       });
       backend.buildSeerr();
       if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
@@ -159,6 +167,12 @@
     }
   }
   const unsupported = (what) => () => call(async () => Promise.reject(new Error(`${what} gibt es in dieser Fassung nicht`)));
+  /** Was die Huelle zum Planen braucht (Plan P21): Client, Heimnetz und Grenze des Servers (beim Abspielen neu geprueft), Bandbreite. */
+  const playContext = (playing) => ({
+    client: backend.client,
+    network: () => backend.refreshLimits(playing),
+    measureBandwidth: (o) => backend.measureBandwidth(o)
+  });
 
   const listeners = { player: new Set(), closed: new Set(), notices: new Set(), open: new Set() };
   const subscribe = (set) => (cb) => {
@@ -294,7 +308,7 @@
         const play = window.JCHost?.play; // erst jetzt gelesen: das Gehaeuse darf sich auch nach dem Start der Seite melden
         if (!play) throw new Error('Die Wiedergabe gibt es in dieser Fassung noch nicht');
         if (!backend.client) throw Object.assign(new Error('Nicht angemeldet'), { status: 401 });
-        await play(req, { client: backend.client });
+        await play(req, playContext(true));
         return true;
       }),
     // Wie der Server liefern wuerde (Wiedergabe-Tag der Detailseite): nur mit einer Huelle, die abspielt (Android); im Browser null
@@ -303,7 +317,7 @@
         if (!req || typeof req.itemId !== 'string' || !GUID.test(req.itemId)) throw new Error('Ungültiger Eintrag');
         const outlook = window.JCHost?.outlook;
         if (!outlook || !backend.client) return null;
-        return outlook(req, { client: backend.client });
+        return outlook(req, playContext(false));
       }),
     openExternal: (url) =>
       call(async () => {

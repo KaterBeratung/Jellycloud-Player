@@ -9,6 +9,7 @@ const { MpvZOrder } = require('./zorder');
 const { buildMpvArgs, findMpv, probeMpv, listAudioDevices } = require('./mpv-args');
 const { buildDeviceProfile, resolvePlayback, mpvTrackId, streamIndexFromMpvId, describeMedia, pickStreams } = require('./profile');
 const { secondsToTicks, ticksToSeconds } = require('./jellyfin');
+const Bitrate = require('../shared/bitrate');
 const { resolveAudioOutput } = require('./audio-output');
 const { buildPauseInfo } = require('./pause-info');
 const { buildEpisodeList, nextEpisode } = require('./episode-list');
@@ -27,6 +28,8 @@ class Cancelled extends Error {}
 const FLUSH_MS = 150;
 const POS_PUSH_MS = 500; // mpv meldet die Zeit bei jedem Bild; die Steuerung rechnet dazwischen selbst weiter
 const STOP_WAIT_MS = 1500; // so lange hoechstens wartet die Oberflaeche auf die Stopped-Meldung, bevor sie ihre Listen neu laedt
+// Heimnetz-Pruefung beim Planen: Endpoint 4 s, Heimadresse 3 s, Grenzen 6 s (src/shared/jellyfin.js getStreamingLimits); danach der letzte bekannte Stand
+const NETWORK_WAIT_MS = 8000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const CHANNEL_MODES = { auto: null, stereo: 'stereo', '5.1': '5.1', '7.1': '7.1' };
 
@@ -41,10 +44,12 @@ class PlayerController extends EventEmitter {
   /**
    * @param {{getClient:()=>import('./jellyfin').JellyfinClient|null, getSettings:()=>any, saveSettings:(patch:any)=>void, paths:{preload:string, playerHtml:string, icon?:string, resources:string, appRoot:string}, fake?:{exe:string, prefix:string[], env:object}|null, audioProbe?:import('./audio-output').AudioOutputProbe|null}} o
    */
-  constructor({ getClient, getSettings, saveSettings, getUi = null, getHostWindow = null, paths, fake = null, audioProbe = null, getLimits = null, refreshLimits = null }) {
+  constructor({ getClient, getSettings, saveSettings, getUi = null, getHostWindow = null, paths, fake = null, audioProbe = null, getLimits = null, refreshLimits = null, measureBandwidth = null }) {
     super();
-    this.getLimits = getLimits; // zuletzt bekannte Bitratengrenze des Servers (nur Internet), siehe JellyfinClient.getStreamingLimits
+    // Heimnetz und Grenze des Servers (JellyfinClient.getStreamingLimits, gemerkt von der Rueckseite): zuletzt bekannter Stand und neue Pruefung (force)
+    this.getLimits = getLimits;
     this.refreshLimits = refreshLimits;
+    this.measureBandwidth = measureBandwidth; // Bandbreite zum Server fuer "Automatisch" ueber das Internet (src/shared/bitrate.js createBandwidthMeter)
     this.getUi = getUi;
     this.getHostWindow = getHostWindow;
     this.getClient = getClient;
@@ -65,7 +70,7 @@ class PlayerController extends EventEmitter {
     this.busy = false;
     this.stopping = false;
     this._session = 0;
-    this.quality = undefined; // Qualitaet dieser Wiedergabe in Mbit/s (0 = Original); undefined = Einstellung "Qualitaetsgrenze"
+    this.quality = undefined; // Qualitaet dieser Wiedergabe in Mbit/s (0 = Automatisch); undefined = Einstellung "Bitratengrenze"
     this._stopPromise = null;
     this._reports = new Set();
     this._pushedPos = { at: 0, value: 0 };
@@ -139,21 +144,36 @@ class PlayerController extends EventEmitter {
     };
   }
 
-  /** Gewaehlte Bitratengrenze in Mbit/s (0 = keine): die Wahl im Player gilt vor der Einstellung. */
+  /** Gewaehlte Bitratengrenze in Mbit/s (0 = Automatisch): die Wahl im Player gilt vor der Einstellung. */
   _qualityMbps() {
     if (this.quality !== undefined) return this.quality;
     const mbps = Number(this.getSettings().player.maxBitrateMbps);
     return mbps > 0 ? mbps : 0;
   }
 
-  /** Die Bitratengrenze des Servers: die laufende Abfrage kurz abwarten, sonst der letzte bekannte Stand. */
-  async _limitsNow() {
-    const p = this._limitsP;
+  /**
+   * Heimnetz oder Internet und die Grenze des Servers fuer die Planung: die Pruefung, die der Start angestossen hat (sonst eine aus dem Speicher der
+   * Rueckseite), abgewartet; dauert sie ungewoehnlich lange (Server antwortet kaum), gilt der zuletzt bekannte Stand.
+   */
+  async _networkNow() {
+    const p = this._limitsP ?? this.refreshLimits?.(false) ?? null;
     if (p) {
-      const fresh = await Promise.race([p.catch(() => null), sleep(1200).then(() => null)]);
+      const fresh = await Promise.race([Promise.resolve(p).catch(() => null), sleep(NETWORK_WAIT_MS).then(() => null)]);
       if (fresh) return fresh;
     }
     return this.getLimits?.() ?? null;
+  }
+
+  /** Zustand des Qualitaetsmenues fuer den Player: { mbps, autoMbps, allowed, choices } (Stufen aus src/shared/bitrate.js qualityChoices). */
+  _qualityState(plan, serverLimit) {
+    const mbps = this._qualityMbps();
+    const autoMbps = plan?.autoMbps ?? null;
+    return {
+      mbps,
+      autoMbps,
+      allowed: this.getSettings().player.allowTranscode !== false,
+      choices: Bitrate.qualityChoices({ qualityMbps: mbps, autoMbps, serverLimit: serverLimit || null })
+    };
   }
 
   async _awaitAudioProbe() {
@@ -180,8 +200,8 @@ class PlayerController extends EventEmitter {
       await this._awaitAudioProbe();
       this._ensure(sid);
       this.audio = this._decideAudio();
-      // Bitratengrenze des Servers parallel erfragen (im lokalen Netz nur eine winzige Anfrage, siehe getStreamingLimits)
-      this._limitsP = this.refreshLimits?.() ?? null;
+      // Heimnetz und Grenze des Servers neu pruefen (die Verbindung kann sich geaendert haben); laeuft parallel zum Start von mpv, die Planung wartet darauf
+      this._limitsP = this.refreshLimits?.(true) ?? null;
       this._limitsP?.catch(() => {});
       const prepared = this._prepare(req);
       prepared.catch(() => {}); // Fehler erst unten auswerten, nicht als "unbehandelt" melden
@@ -219,28 +239,33 @@ class PlayerController extends EventEmitter {
   async _prepare(req, { noRewind = false } = {}) {
     const client = this.getClient();
     const ps = this.getSettings().player;
-    const item = await client.getItem(req.itemId);
+    // Eintrag und Heimnetz-Pruefung zugleich (die Pruefung laeuft meist schon seit dem Start)
+    const [item, network] = await Promise.all([client.getItem(req.itemId), this._networkNow()]);
     const startTicks = req.startTicks ?? (req.resume !== false ? item.UserData?.PlaybackPositionTicks ?? 0 : 0);
-    const mbps = this._qualityMbps();
-    const maxBitrate = mbps > 0 ? Math.round(mbps * 1_000_000) : undefined;
     const lang = this.getUi?.().language?.slice(0, 2);
     const src0 = item.MediaSources?.find((s) => s.Id === req.mediaSourceId) ?? item.MediaSources?.[0];
     const pre = src0 ? pickStreams(src0, ps, lang, this.audio?.outChannels) : {};
     const audioIndex = req.audioIndex ?? pre.audioIndex ?? undefined;
     const subtitleIndex = req.subtitleIndex ?? pre.subtitleIndex ?? undefined;
     const forceTranscode = !!req.forceTranscode;
+    // Obergrenze der Anfrage (Plan P21): immer eine Zahl; ueber das Internet nie mehr als die Grenze des Servers, im Heimnetz keine eigene Grenze;
+    // "Automatisch" ueber das Internet nach der gemessenen Bandbreite (beim Start hoechstens 4 s Messung, meist schon gemessen)
+    const quality = this._qualityMbps();
+    const allowTranscode = ps.allowTranscode !== false;
+    const measured = Bitrate.needsMeasurement({ quality, allowTranscode, network }) ? await (this.measureBandwidth?.({ quick: true }) ?? null) : null;
+    const bitrate = Bitrate.planBitrate({ quality, allowTranscode, network, measured, sourceBitrate: src0?.Bitrate });
     const info = await client.getPlaybackInfo(item.Id, {
-      deviceProfile: buildDeviceProfile({ maxBitrateMbps: mbps, maxAudioChannels: this.audio?.outChannels === 2 ? 2 : 8 }),
+      deviceProfile: buildDeviceProfile({ maxBitrate: bitrate.ceiling, maxAudioChannels: this.audio?.outChannels === 2 ? 2 : 8 }),
       startTicks,
-      maxBitrate,
+      maxBitrate: bitrate.ceiling,
       mediaSourceId: req.mediaSourceId,
       audioIndex,
       subtitleIndex,
-      enableTranscoding: ps.allowTranscode !== false,
+      enableTranscoding: allowTranscode,
       forceTranscode
     });
     const res = resolvePlayback({ info, base: client.baseUrl, itemId: item.Id, mediaSourceId: req.mediaSourceId, deviceId: client.deviceId, forceTranscode });
-    return { item, startTicks, res, audioIndex, subtitleIndex, reqAudio: req.audioIndex, reqSub: req.subtitleIndex, noRewind, forced: forceTranscode };
+    return { item, startTicks, res, audioIndex, subtitleIndex, reqAudio: req.audioIndex, reqSub: req.subtitleIndex, noRewind, forced: forceTranscode, bitrate };
   }
 
   async _openMpv(sid) {
@@ -475,12 +500,13 @@ class PlayerController extends EventEmitter {
     const externalSelect = useIds ? (subStream?.IsExternal ? subIdx : null) : subStream?.DeliveryMethod === 'External' ? subIdx : null;
     const externalSubs = res.isTranscode ? res.externalSubtitles.filter((s) => s.index === subIdx) : res.externalSubtitles;
 
-    // Begrenzt der Server die Bitrate (nur ueber das Internet) und liegt die Datei darueber, ist Direct Play dort nicht moeglich:
-    // das Original laesst sich vom Client nicht erzwingen. Der Grund steht in der Technik-Info und im Qualitaets-Menue, nicht als Einblendung.
-    const lim = await this._limitsNow();
-    this._ensure(sid); // waehrend des Wartens koennte geschlossen worden sein
-    const limitBps = lim?.remote === true ? lim.limitBps : 0;
+    // Grenze des Servers (nur ueber das Internet): sie gilt vor jeder Wahl, die App fragt nie mehr an (Plan P21). Steht in der Technik-Info und begrenzt
+    // das Qualitaetsmenue; eine hoehere Wahl gilt fuer diese Wiedergabe als die Grenze selbst. Beim Abspielen wird nichts eingeblendet.
+    const plan = prepared.bitrate ?? Bitrate.planBitrate({});
+    const limitBps = plan.serverLimit ?? 0;
     const serverLimit = limitBps > 0 ? { mbps: +(limitBps / 1e6).toFixed(1), exceeded: res.isTranscode && Number(res.source.Bitrate) > limitBps } : null;
+    const cap = Bitrate.serverLimitMbps(limitBps);
+    if (cap && this._qualityMbps() > cap) this.quality = cap;
 
     const rewind = startTicks > 0 && !prepared.noRewind ? ps.resumeRewindSec ?? 0 : 0;
     const startSec = Math.max(0, ticksToSeconds(startTicks) - rewind);
@@ -506,7 +532,8 @@ class PlayerController extends EventEmitter {
       started: false,
       retried: !!prepared.forced,
       audioIdx,
-      subIdx
+      subIdx,
+      bitrate: plan // Obergrenze dieser Wiedergabe (planBitrate): das Qualitaetsmenue bietet nichts ueber der Grenze des Servers an
     };
     this.state.position = startSec;
     this._pushedPos = { at: 0, value: startSec };
@@ -526,9 +553,10 @@ class PlayerController extends EventEmitter {
       jfChapters: (item.Chapters ?? []).map((c) => ({ title: c.Name, time: ticksToSeconds(c.StartPositionTicks) })),
       posterTag: item.ImageTags?.Primary ?? null,
       position: startSec,
-      serverLimit, // nur zum Nachsehen (Technik-Info, Qualitaets-Menue): beim Abspielen wird nichts eingeblendet
-      // Qualitaetswahl im Player: aktuelle Grenze, ob Transcoding erlaubt ist, Bitrate der Quelle (nur kleinere Stufen anbieten)
-      quality: { mbps: this._qualityMbps(), allowed: ps.allowTranscode !== false, sourceMbps: media.bitrate ? media.bitrate / 1e6 : null },
+      serverLimit, // nur zum Nachsehen (Technik-Info): beim Abspielen wird nichts eingeblendet
+      // Qualitaetswahl im Player (src/shared/bitrate.js qualityChoices): Wahl (0 = Automatisch), was Automatisch gerade bedeutet, ob Transcoding erlaubt ist,
+      // die Stufen bis zur Grenze des Servers
+      quality: this._qualityState(plan, limitBps),
       // Im Transcode kennt mpv nur die eine Spur im Strom; die Liste kommt dann vom Server (Wechsel = neu laden).
       ...(res.isTranscode ? { tracks: this._transcodeTracks(this.cur) } : {})
     });
@@ -1045,11 +1073,14 @@ class PlayerController extends EventEmitter {
         this._setChannels(String(cmd.value));
         break;
       case 'quality': {
-        // Qualitaet waehrend der Wiedergabe: neue Bitratengrenze, der Server liefert Original (Direct Play) oder einen Transcode.
-        // Gilt bis zum Ende der Wiedergabe (auch fuer folgende Folgen), die Einstellung bleibt unveraendert.
+        // Qualitaet waehrend der Wiedergabe: neue Obergrenze, der Server liefert die Datei (Direct Play) oder einen Transcode. "Automatisch" (0) ist im
+        // Heimnetz ohne Grenze, ueber das Internet nach der Messung. Gilt bis zum Ende der Wiedergabe (auch fuer folgende Folgen), die Einstellung
+        // bleibt unveraendert. Ueber der Grenze des Servers laesst sich nichts waehlen.
         const mbps = Number(cmd.mbps);
         if (!Number.isFinite(mbps) || mbps < 0 || mbps > 500 || this.busy || !this.cur) break;
         if (mbps > 0 && this.getSettings().player.allowTranscode === false) break;
+        const cap = Bitrate.serverLimitMbps(this.cur.bitrate?.serverLimit);
+        if (cap && mbps > cap) break;
         if (mbps === this._qualityMbps()) break;
         this.quality = mbps;
         this._reload();
@@ -1193,6 +1224,7 @@ class PlayerController extends EventEmitter {
     this._pausedByMinimize = false;
     this._audioFellBack = false;
     this.quality = undefined;
+    this._limitsP = null; // die Pruefung gehoerte zu dieser Wiedergabe; danach (Detailseite) gilt der Speicher der Rueckseite
     this._seekAcc = 0;
     this.mpvBuf = null;
     if (!mpv && !host && !overlay) return;

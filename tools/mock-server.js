@@ -132,13 +132,14 @@ function serveVideo(req, res) {
 //   lists (alle Listen: /Items, Neu, Weiterschauen, Als Naechstes), images, auth (Anmeldung mit Passwort), gesetzt ueber POST /__debug/delay in Sekunden
 // bytes: gesendete JSON-Antworten (items = Listen von /Items), fuer Leistungsmessungen
 // limits: Verbindungsart und Bitratengrenzen wie bei einem echten Server (bit/s): local = Client liegt im LAN (dann gilt keine Grenze),
-// user/server = Fern-Grenze der Benutzer-Richtlinie bzw. serverweit, serverForbidden = /System/Configuration nur fuer Administratoren, endpointMissing = /System/Endpoint fehlt
+// user/server = Fern-Grenze der Benutzer-Richtlinie bzw. serverweit (die des Kontos zuerst), serverForbidden = /System/Configuration nur fuer
+// Administratoren, endpointMissing = /System/Endpoint fehlt, meMissing = /Users/Me scheitert (Grenze nicht lesbar)
 // faults: gestellte Fehler je Art (lists, images): { how: '500'|'invalid'|'empty'|'drop', left: Zahl oder null = bis abgeschaltet } (POST /__debug/fault)
 // expired: Sitzung abgelaufen, jede angemeldete Anfrage bekommt 401 bis zur naechsten Anmeldung (POST /__debug/expire)
 // qc: Quick Connect wie beim Apple-Testserver (POST /__debug/quickconnect): hold = Bestaetigung zurueckhalten, gone = Code abgelaufen (404),
 //   disabled = am Server aus, authorized = von einem anderen Geraet bestaetigt (POST /QuickConnect/Authorize), started = Zeit von Initiate
 // remote: gestellte Wiedergaben anderer Geraete (POST /__debug/session), fuer "Auf diesem Geraet fortsetzen"
-const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0, lists: 0, images: 0, auth: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false }, admin: false, faults: {}, expired: false, qc: { hold: false, gone: false, disabled: false, authorized: false, started: 0 }, remote: [], extraViews: [] };
+const state = { played: new Set(), fav: new Set(), progress: new Map(), log: [], qcPolls: 0, delays: { stopped: 0, playbackInfo: 0, items: 0, lists: 0, images: 0, auth: 0 }, bytes: { total: 0, items: 0 }, limits: { local: true, user: 0, server: 0, serverForbidden: false, endpointMissing: false, meMissing: false }, admin: false, faults: {}, expired: false, qc: { hold: false, gone: false, disabled: false, authorized: false, started: 0 }, remote: [], extraViews: [] };
 
 /** Tor fuer "festhalten, bis der Test freigibt" (delay=hold): wait() wartet, solange es zu ist, hoechstens 120 s. */
 function makeGate() {
@@ -240,11 +241,11 @@ function freshAdminData() {
 state.adminData = null;
 
 /** Wirksame Grenze fuer den Client in bit/s (0 = keine): nur wenn er nicht lokal ist, dann die kleinere von Benutzer und Server. */
+/** Wie Jellyfin (MediaInfoHelper.GetMaxBitrate): fuer entfernte Verbindungen die Grenze des Kontos, ohne sie die des Servers. */
 function effectiveRemoteLimit() {
   const l = state.limits;
   if (l.local) return 0;
-  const active = [l.user, l.server].filter((n) => n > 0);
-  return active.length ? Math.min(...active) : 0;
+  return l.user > 0 ? l.user : l.server > 0 ? l.server : 0;
 }
 const items = new Map();
 const children = new Map();
@@ -1375,6 +1376,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (p === '/Users/Me') {
     state.log.push({ at: '/Users/Me' });
+    if (state.limits.meMissing) return send(res, 500, { Message: 'gestellter Fehler' });
     return send(res, 200, { ...USER, ServerId: SERVER_ID, Policy: { IsAdministrator: !!state.admin, RemoteClientBitrateLimit: state.limits.user }, Configuration: { AudioLanguagePreference: 'ger', SubtitleMode: 'Default' } });
   }
   // weitere Bibliotheken (state.extraViews, von Szenarien gesetzt: zweite Film-Bibliothek, Kollektionen), hinter den beiden festen
@@ -1457,14 +1459,15 @@ const server = http.createServer(async (req, res) => {
     if (limited || forced) {
       src.SupportsDirectPlay = false;
       src.SupportsDirectStream = false;
-      src.TranscodingUrl = `/videos/${item.Id}/master.m3u8?MediaSourceId=${src.Id}&PlaySessionId=mock-session&VideoBitrate=${maxBitrate ?? b.MaxStreamingBitrate}`;
+      // Wie Jellyfin (StreamInfo.ToUrl): das Token steht als ApiKey in der Adresse; die App nimmt es heraus (Kopf statt Adresse, Plan Q5)
+      src.TranscodingUrl = `/videos/${item.Id}/master.m3u8?MediaSourceId=${src.Id}&PlaySessionId=mock-session&VideoBitrate=${maxBitrate ?? b.MaxStreamingBitrate}&ApiKey=${TOKEN}`;
       src.TranscodingSubProtocol = 'hls';
       // Wie Jellyfin: gewaehlte Spuren werden zur Vorgabe, ein gewaehlter Textuntertitel kommt als eigene Datei
       if (b.AudioStreamIndex != null) src.DefaultAudioStreamIndex = b.AudioStreamIndex;
       if (b.SubtitleStreamIndex != null) src.DefaultSubtitleStreamIndex = b.SubtitleStreamIndex;
       src.MediaStreams = src.MediaStreams.map((s) =>
         s.Type === 'Subtitle' && s.Index === b.SubtitleStreamIndex && !/pgs/i.test(s.Codec) && !s.DeliveryUrl
-          ? { ...s, DeliveryMethod: 'External', DeliveryUrl: `/Videos/${item.Id}/${item.Id}/Subtitles/${s.Index}/0/Stream.srt` }
+          ? { ...s, DeliveryMethod: 'External', DeliveryUrl: `/Videos/${item.Id}/${item.Id}/Subtitles/${s.Index}/0/Stream.srt?ApiKey=${TOKEN}` }
           : s
       );
     }
@@ -1474,6 +1477,7 @@ const server = http.createServer(async (req, res) => {
       hasProfile: !!b.DeviceProfile,
       directPlayProfiles: b.DeviceProfile?.DirectPlayProfiles,
       maxBitrate: b.MaxStreamingBitrate,
+      profileMaxBitrate: b.DeviceProfile?.MaxStreamingBitrate,
       startTicks: b.StartTimeTicks,
       audioIndex: b.AudioStreamIndex,
       subtitleIndex: b.SubtitleStreamIndex,

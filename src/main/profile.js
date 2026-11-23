@@ -2,24 +2,29 @@
 
 /**
  * Direct-Play-Logik. mpv kann praktisch jedes Format abspielen, deshalb meldet das
- * Geraeteprofil "alles" als Direct Play. Nur wenn der Nutzer ein Bitratenlimit setzt
+ * Geraeteprofil "alles" als Direct Play. Nur wenn die Obergrenze der Anfrage unter der Datei liegt
  * (oder der Server das Medium nicht liefern kann), faellt der Server auf HLS-Transcode zurueck.
  */
+
+const { unlimitedBitrate } = require('../shared/bitrate');
+const { withoutAccessToken } = require('../shared/jellyfin');
 
 const TEXT_SUB_FORMATS = ['srt', 'subrip', 'ass', 'ssa', 'vtt', 'webvtt', 'smi', 'sami', 'ttml', 'sub', 'microdvd'];
 const IMAGE_SUB_FORMATS = ['pgs', 'pgssub', 'dvdsub', 'dvbsub', 'idx'];
 
 /**
+ * maxBitrate: Obergrenze der Anfrage in bit/s (src/shared/bitrate.js planBitrate; ohne Angabe "keine Grenze" als Zahl, Plan P21). Dateien, die unveraendert
+ * laufen, sind nie enger begrenzt (MaxStaticBitrate).
  * maxAudioChannels: Kanalzahl, die bei einem Transcode hoechstens geliefert werden soll. Bei Stereo-Ausgabe (2) mischt der
  * Server selbst herunter, statt Surround zu schicken, das am Ende doch nur heruntergemischt wird.
  */
-function buildDeviceProfile({ maxBitrateMbps = 0, maxAudioChannels = 8 } = {}) {
-  const maxBps = maxBitrateMbps > 0 ? Math.round(maxBitrateMbps * 1_000_000) : 1_000_000_000;
+function buildDeviceProfile({ maxBitrate = unlimitedBitrate(null), maxAudioChannels = 8 } = {}) {
+  const maxBps = Number.isFinite(+maxBitrate) && +maxBitrate > 0 ? Math.round(+maxBitrate) : unlimitedBitrate(null);
   const audioChannels = String(Math.min(8, Math.max(2, Math.round(Number(maxAudioChannels)) || 8)));
   return {
     Name: 'Jellycloud Player (mpv)',
     MaxStreamingBitrate: maxBps,
-    MaxStaticBitrate: 1_000_000_000,
+    MaxStaticBitrate: Math.max(1_000_000_000, maxBps),
     MusicStreamingTranscodingBitrate: 384000,
     // Leere Container-/Codec-Listen bedeuten bei Jellyfin: alles ist erlaubt.
     DirectPlayProfiles: [{ Type: 'Video' }, { Type: 'Audio' }],
@@ -72,7 +77,8 @@ function absolute(base, maybeRelative) {
 
 /**
  * Waehlt aus der PlaybackInfo-Antwort die Quelle und die URL, die mpv oeffnen soll.
- * Das Token steht nie in der URL, mpv bekommt es als Header.
+ * Das Token steht nie in der URL, mpv bekommt es als Header: auch nicht in der Adresse des Stroms und der Untertitel, an die Jellyfin es als
+ * ApiKey haengt (withoutAccessToken, Plan Q5).
  */
 function resolvePlayback({ info, base, itemId, mediaSourceId, deviceId, forceTranscode = false }) {
   const sources = info?.MediaSources ?? [];
@@ -94,7 +100,7 @@ function resolvePlayback({ info, base, itemId, mediaSourceId, deviceId, forceTra
     url = `${base}/Videos/${itemId}/stream?${q}`;
   } else if (source.TranscodingUrl) {
     method = source.SupportsDirectStream && !forceTranscode ? 'DirectStream' : 'Transcode';
-    url = absolute(base, source.TranscodingUrl);
+    url = withoutAccessToken(absolute(base, source.TranscodingUrl));
     isHls = true;
   } else if (source.SupportsDirectStream) {
     method = 'DirectStream';
@@ -111,7 +117,7 @@ function resolvePlayback({ info, base, itemId, mediaSourceId, deviceId, forceTra
     .filter((s) => s.Type === 'Subtitle' && s.DeliveryUrl && (isTranscode || s.IsExternal) && (s.DeliveryMethod === 'External' || (!s.DeliveryMethod && s.IsExternal)))
     .map((s) => ({
       index: s.Index,
-      url: absolute(base, s.DeliveryUrl),
+      url: withoutAccessToken(absolute(base, s.DeliveryUrl)),
       title: s.DisplayTitle || s.Title || s.Language || 'Extern',
       lang: s.Language || ''
     }));

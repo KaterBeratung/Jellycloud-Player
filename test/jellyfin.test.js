@@ -144,10 +144,12 @@ test('PlaybackInfo -> Direct Play; mit Bitratenlimit -> Transcode', async () => 
   assert.equal(r.method, 'DirectPlay');
   assert.ok(r.url.startsWith(`${base}/Videos/${movie.Id}/stream?`));
 
-  const limited = await c.getPlaybackInfo(movie.Id, { deviceProfile: buildDeviceProfile({ maxBitrateMbps: 8 }), maxBitrate: 8_000_000 });
+  const limited = await c.getPlaybackInfo(movie.Id, { deviceProfile: buildDeviceProfile({ maxBitrate: 8_000_000 }), maxBitrate: 8_000_000 });
   const t = resolvePlayback({ info: limited, base: c.baseUrl, itemId: movie.Id, deviceId: c.deviceId });
   assert.equal(t.method, 'Transcode');
   assert.match(t.url, /master\.m3u8/);
+  assert.ok(limited.MediaSources[0].TranscodingUrl.includes('ApiKey='), 'der Testserver haengt das Token an wie Jellyfin');
+  assert.ok(!/api_?key=/i.test(t.url) && !t.url.includes(c.token), 'die Adresse fuer mpv enthaelt es nicht');
 
   const log = await (await fetch(`${base}/__log`)).json();
   const pb = log.filter((l) => l.at === 'PlaybackInfo');

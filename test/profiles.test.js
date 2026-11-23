@@ -26,7 +26,8 @@ const aborted = (signal) => new Promise((_, reject) => signal?.addEventListener(
  */
 function fakeNet() {
   // proxy.test: meldet sich als derselbe Server, ordnet das Token aber einem anderen Benutzer zu (ein falsch eingerichteter Proxy davor)
-  const servers = { 'jf.test': 'srv', 'jf2.test': 'srv', 'proxy.test': 'srv', 'other.test': 'srv-other' };
+  // jf.home: Heimadresse von "srv" (LocalAddress wie bei Jellyfin): sie antwortet, also gilt die Verbindung als Heimnetz und die App liest keine Grenzen (Plan P21)
+  const servers = { 'jf.test': 'srv', 'jf2.test': 'srv', 'proxy.test': 'srv', 'other.test': 'srv-other', 'jf.home': 'srv' };
   const tokens = { srv: new Set(), 'srv-other': new Set() };
   const net = { log: [], down: new Set(), hangMe: false, admin: false, qc: { enabled: true, answer: () => json(200, true) }, seerr: { up: true, session: true } };
   net.fetch = async (url, init = {}) => {
@@ -48,7 +49,7 @@ function fakeNet() {
       return json(404, {});
     }
     const sid = servers[u.hostname];
-    if (u.pathname === '/System/Info/Public') return json(200, { Id: sid, ServerName: sid === 'srv' ? 'Testserver' : 'Fremd', Version: '10.10.3' });
+    if (u.pathname === '/System/Info/Public') return json(200, { Id: sid, ServerName: sid === 'srv' ? 'Testserver' : 'Fremd', Version: '10.10.3', ...(sid === 'srv' ? { LocalAddress: 'http://jf.home' } : {}) });
     if (u.pathname === '/Users/AuthenticateByName') {
       const b = JSON.parse(init.body);
       const t = `tok-${b.Username}-${sid}`;

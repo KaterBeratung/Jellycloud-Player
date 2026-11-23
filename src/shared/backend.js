@@ -4,16 +4,16 @@
    Die Rueckgaben sind die Werte der IPC-Handler (ohne { ok, data }-Huelle); Fehler sind JellyfinError/SeerrError mit status und code.
    Laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCBackend). */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'), require('./notifications'), require('./seerr-state'), require('./handoff'));
-  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings, root.JCNotifications, root.JCSeerrState, root.JCHandoff);
-})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings, Notifications, SeerrState, Handoff) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'), require('./notifications'), require('./seerr-state'), require('./handoff'), require('./bitrate'));
+  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings, root.JCNotifications, root.JCSeerrState, root.JCHandoff, root.JCBitrate);
+})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings, Notifications, SeerrState, Handoff, Bitrate) {
   'use strict';
 
   const { JellyfinClient, JellyfinError, probeServer, CALLABLE_METHODS } = Jelly;
   const { SeerrClient, SeerrError, probeSeerr, loginWithJellyfin, seerrLanguage } = Seerr;
 
-  /** Bitratengrenze des Servers fuer diese Verbindung: kurz zwischengespeichert, beim Wechsel des Servers oder Kontos verworfen. */
-  const LIMITS_TTL_MS = 60 * 1000;
+  /** Heimnetz und Bitratengrenze des Servers fuer diese Verbindung (Plan P21): zehn Minuten gemerkt, beim Wechsel des Servers oder Kontos verworfen. */
+  const LIMITS_TTL_MS = Bitrate.HOME_TTL_MS;
   /** Verbindungspruefung (wie die Apple-App, ConnectionCheck): EINE Frist je Dienst fuer die ganze Pruefung, danach Abbruch, keine Wiederholung. */
   const CHECK_TIMEOUT_MS = 30 * 1000;
 
@@ -76,8 +76,10 @@
    * @param {(summary: {active:boolean, enabled:boolean, unread:number, notice:number}) => void} [deps.onNotifications] nach jeder Aenderung der Mitteilungen
    * @param {{show(list:object[]):void, withdraw(ids:string[]):void, withdrawProfile(key:string):void}} [deps.systemNotify] Mitteilungen des Systems (Plan P18):
    *   zeigt fertige Mitteilungen (src/shared/notifications.js systemNotificationOf) und nimmt sie zurueck; ohne: keine
+   * @param {() => {signature?: string, viaLocalInterface?: boolean|null}} [deps.connection] Netz des Geraets fuer die Heimnetz-Pruefung (Plan P21): signature
+   *   aendert sich, wenn das Netz wechselt (dann gilt nichts Gemerktes mehr), viaLocalInterface false = Mobilfunk; ohne: unbekannt
    */
-  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {}, systemNotify = null }) {
+  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {}, systemNotify = null, connection = () => ({}) }) {
     /** @type {InstanceType<typeof JellyfinClient>|null} */
     let client = null;
     /** @type {InstanceType<typeof SeerrClient>|null} Seerr des aktiven Profils, nur mit gueltiger Sitzung */
@@ -90,6 +92,10 @@
     let limits = null;
     let limitsAt = 0;
     let limitsRun = null;
+    let limitsNet = ''; // Netz, in dem `limits` entstand
+    let lastLimit = null; // zuletzt gelesene Grenze des Servers (bit/s, null = keine): gilt weiter, wenn das Lesen scheitert
+    const homeProbe = Bitrate.createNetworkMemo(); // antwortet die Heimadresse des Servers? je Netz zehn Minuten
+    const bandwidth = Bitrate.createBandwidthMeter({ test: (bytes, ms) => (client ? client.bitrateTest(bytes, ms) : Promise.resolve(null)) });
     let check = null; // laufende Verbindungspruefung { client, run }: ein zweiter Anlass waehrenddessen bekommt dieselbe (keine Doppelanfragen)
     const callable = new Set(CALLABLE_METHODS);
     const rankings = Rankings.createStore(); // Top 10: Rangfolge je Server, Profil, Seerr und Zeitraum fuer 30 min (src/shared/rankings.js)
@@ -266,31 +272,65 @@
       return run;
     }
 
-    // ---------- Bitratengrenze ----------
+    // ---------- Heimnetz und Bitratengrenze (Plan P21) ----------
+    const netNow = () => {
+      try {
+        const c = connection() ?? {};
+        return { signature: String(c.signature ?? ''), viaLocalInterface: typeof c.viaLocalInterface === 'boolean' ? c.viaLocalInterface : null };
+      } catch {
+        return { signature: '', viaLocalInterface: null };
+      }
+    };
+
+    /**
+     * Heimnetz oder Internet und die Grenze des Servers (JellyfinClient.getStreamingLimits). Gemerkt zehn Minuten, solange das Netz dasselbe ist und
+     * das Ergebnis feststand; force (Start der Wiedergabe, "Pruefen") fragt neu, die Probe der Heimadresse bleibt je Netz gemerkt. Scheitert das Lesen
+     * der Grenze, gilt die zuletzt gelesene weiter (limitStale), ohne jede fruehere Antwort keine.
+     */
     function refreshLimits(force = false) {
       if (!client) return Promise.resolve(null);
-      if (limitsRun) return limitsRun;
-      if (!force && limits && Date.now() - limitsAt < LIMITS_TTL_MS) return Promise.resolve(limits);
+      const net = netNow();
+      if (limitsRun && limitsRun.net === net.signature) return limitsRun.p;
+      if (!force && limits && limits.settled && limitsNet === net.signature && Date.now() - limitsAt < LIMITS_TTL_MS) return Promise.resolve(limits);
       const mine = client;
-      limitsRun = mine
-        .getStreamingLimits()
+      const p = mine
+        .getStreamingLimits({ viaLocalInterface: net.viaLocalInterface, probeHome: (run) => homeProbe.get(net.signature, run) })
         .then((l) => {
-          if (client === mine) {
-            limits = l;
-            limitsAt = Date.now();
+          if (client !== mine) return l;
+          const out = { ...l };
+          if (!out.home) {
+            if (out.limitRead === undefined) {
+              out.limitBps = lastLimit ?? 0;
+              out.limitStale = true;
+            } else lastLimit = out.limitRead;
           }
-          return l;
+          delete out.limitRead;
+          limits = out;
+          limitsAt = Date.now();
+          limitsNet = net.signature;
+          return out;
         })
         .catch(() => limits)
         .finally(() => {
-          limitsRun = null;
+          if (limitsRun?.p === p) limitsRun = null;
         });
-      return limitsRun;
+      limitsRun = { net: net.signature, p };
+      return p;
     }
 
     function resetLimits() {
       limits = null;
       limitsAt = 0;
+      limitsRun = null;
+      lastLimit = null;
+      homeProbe.reset();
+      bandwidth.reset();
+    }
+
+    /** Bandbreite zum Server in Mbit/s fuer "Automatisch" ausserhalb des Heimnetzes (30 min gemerkt); quick: hoechstens 4 s warten. null: nicht messbar. */
+    function measureBandwidth({ quick = false } = {}) {
+      if (!client) return Promise.resolve(null);
+      return bandwidth.measure({ quick: !!quick });
     }
 
     // ---------- Server und Konto ----------
@@ -378,6 +418,7 @@
       activateServer,
       refreshLimits,
       resetLimits,
+      measureBandwidth,
       publicState,
 
       probeServer: probe,

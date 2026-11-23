@@ -8,15 +8,39 @@ const BASE = 'http://srv:8096';
 test('Geraeteprofil: alles ist Direct Play, Text- und Bild-Untertitel werden akzeptiert', () => {
   const p = buildDeviceProfile();
   assert.deepEqual(p.DirectPlayProfiles, [{ Type: 'Video' }, { Type: 'Audio' }]);
-  assert.ok(p.MaxStreamingBitrate >= 1_000_000_000);
+  assert.equal(p.MaxStreamingBitrate, 400_000_000, 'ohne Angabe "keine Grenze" als Zahl (Plan P21; ohne Zahl naehme Jellyfin 8 Mbit/s)');
+  assert.ok(p.MaxStaticBitrate >= 1_000_000_000);
   const formats = (method) => p.SubtitleProfiles.filter((s) => s.Method === method).map((s) => s.Format);
   for (const f of ['srt', 'ass', 'ssa', 'vtt']) assert.ok(formats('External').includes(f) && formats('Embed').includes(f), f);
   for (const f of ['pgssub', 'dvdsub', 'dvbsub']) assert.ok(formats('Embed').includes(f), f);
   assert.ok(p.TranscodingProfiles.some((t) => t.Protocol === 'hls' && /hevc/.test(t.VideoCodec)));
 });
 
-test('Geraeteprofil: Bitratenlimit wird uebernommen', () => {
-  assert.equal(buildDeviceProfile({ maxBitrateMbps: 20 }).MaxStreamingBitrate, 20_000_000);
+test('Geraeteprofil: die Obergrenze der Anfrage wird uebernommen; Dateien, die unveraendert laufen, sind nie enger begrenzt', () => {
+  assert.equal(buildDeviceProfile({ maxBitrate: 20_000_000 }).MaxStreamingBitrate, 20_000_000);
+  const open = buildDeviceProfile({ maxBitrate: 1_073_741_823 });
+  assert.equal(open.MaxStreamingBitrate, 1_073_741_823);
+  assert.ok(open.MaxStaticBitrate >= open.MaxStreamingBitrate);
+  for (const bad of [0, -1, 'x', null]) assert.equal(buildDeviceProfile({ maxBitrate: bad }).MaxStreamingBitrate, 400_000_000, `Wert ${bad}`);
+});
+
+test('Adresse des Stroms und der Untertitel: das Token (ApiKey, aeltere: api_key) faellt heraus, alles andere bleibt Zeichen fuer Zeichen (Plan Q5)', () => {
+  const info = {
+    PlaySessionId: 'ps1',
+    MediaSources: [
+      {
+        Id: 'abc',
+        SupportsDirectPlay: false,
+        SupportsDirectStream: false,
+        TranscodingUrl: '/videos/abc/master.m3u8?MediaSourceId=abc&VideoCodec=hevc,h264&ApiKey=geheim123&TranscodeReasons=ContainerBitrateExceedsLimit',
+        MediaStreams: [{ Index: 3, Type: 'Subtitle', Codec: 'srt', DeliveryMethod: 'External', DeliveryUrl: '/Videos/abc/abc/Subtitles/3/0/Stream.srt?api_key=geheim123' }]
+      }
+    ]
+  };
+  const r = resolvePlayback({ info, base: BASE, itemId: 'abc', deviceId: 'd' });
+  assert.equal(r.url, `${BASE}/videos/abc/master.m3u8?MediaSourceId=abc&VideoCodec=hevc,h264&TranscodeReasons=ContainerBitrateExceedsLimit`);
+  assert.equal(r.externalSubtitles[0].url, `${BASE}/Videos/abc/abc/Subtitles/3/0/Stream.srt`);
+  assert.ok(!JSON.stringify([r.url, r.externalSubtitles]).includes('geheim123'));
 });
 
 const source = (over = {}) => ({

@@ -64,7 +64,7 @@ module.exports = async (ctx) => {
       getPlatform: () => 'android',
       PluginHeaders: [
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
-        { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }] },
+        { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }, { name: 'audioOutput', rtype: 'promise' }] },
         { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] },
         { name: 'JellycloudNotifications', methods: ['status', 'request', 'openSettings', 'show', 'withdraw', 'withdrawProfile', 'takeTap'].map((name) => ({ name, rtype: 'promise' })) }
       ],
@@ -90,6 +90,8 @@ module.exports = async (ctx) => {
           window.__calls.openExternal.push(options);
           return {};
         }
+        // Kanaele der Tonausgabe (JellycloudPlayerPlugin.audioOutput): Lautsprecher 2, am AV-Receiver per HDMI 8 (__audioChannels)
+        if (plugin === 'JellycloudPlayer' && method === 'audioOutput') return { channels: window.__audioChannels ?? 2 };
         if (plugin === 'JellycloudNotifications') {
           const status = () => ({ supported: true, permission: window.__notifyPerm, settings: true });
           if (method === 'takeTap') {
@@ -178,6 +180,11 @@ module.exports = async (ctx) => {
   const log1 = state.log.filter((l) => l.at === 'PlaybackInfo');
   const dp = log1[0]?.directPlayProfiles?.[0] ?? {};
   check('Geraeteprofil: mp4/mkv, H.264/HEVC, Ton nur AAC, MP3, Opus, FLAC, Vorbis (kein AC3/DTS), Start 0', log1.length === 1 && /mkv/.test(dp.Container) && /hevc/.test(dp.VideoCodec) && /aac/.test(dp.AudioCodec) && !/ac3|dts|truehd/i.test(dp.AudioCodec) && log1[0].startTicks === 0, JSON.stringify({ n: log1.length, dp, start: log1[0]?.startTicks }));
+  check(
+    'Obergrenze an PlaybackInfo (Plan P21): im Heimnetz "keine Grenze" als Zahl (400 Mbit/s), im Profil ebenso; Lautsprecher: beim Umwandeln bis 6 Kanaele',
+    log1[0]?.maxBitrate === 400_000_000 && log1[0]?.profileMaxBitrate === 400_000_000 && log1[0]?.maxAudioChannels === '6',
+    JSON.stringify({ max: log1[0]?.maxBitrate, profile: log1[0]?.profileMaxBitrate, ch: log1[0]?.maxAudioChannels })
+  );
   const ev1 = await ev(`window.__events`);
   check('Ereignisse: Player aktiv, dann nicht mehr aktiv, dann geschlossen (Weiterschauen laedt neu)', JSON.stringify(ev1) === JSON.stringify(['active:true', 'active:false', `closed:${movie.Id}`]), JSON.stringify(ev1));
 
@@ -208,6 +215,24 @@ module.exports = async (ctx) => {
   await ev(`window.jc.play({ itemId: '${ep.Id}', resume: false })`);
   const o5 = (await ev(`window.__calls.play`))[0] ?? {};
   check('Folge: Titel = Folgenname, Untertitel = Serie und "S<Staffel>:E<Folge>"', o5.title === ep.Name && /\S+ · S\d+:E\d+$/.test(o5.subtitle ?? '') && (o5.subtitle ?? '').startsWith(ep.SeriesName ?? '?'), `${o5.title} | ${o5.subtitle}`);
+
+  // ---------- Bitrate ueber das Internet und Mehrkanal-Ausgabe (Plan P21) ----------
+  Object.assign(state.limits, { local: false, user: 0, server: 8_000_000 });
+  state.log.length = 0;
+  await ev(`window.__calls.play.length = 0; window.__audioChannels = 8`);
+  await ev(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
+  const o6 = (await ev(`window.__calls.play`))[0] ?? {};
+  const log6 = state.log.filter((l) => l.at === 'PlaybackInfo');
+  check(
+    'Internet mit Grenze des Servers 8 Mbit/s: die App fragt hoechstens 8 an (Automatisch hat gemessen), der Server setzt um (HLS)',
+    log6[0]?.maxBitrate === 8_000_000 && log6[0]?.profileMaxBitrate === 8_000_000 && o6.method === 'Transcode' && o6.hls === true && state.log.some((l) => l.at === 'BitrateTest'),
+    JSON.stringify({ max: log6.map((l) => l.maxBitrate), method: o6.method, tests: state.log.filter((l) => l.at === 'BitrateTest').length })
+  );
+  check('7.1-Ausgabe (HDMI): beim Umwandeln bis 8 Kanaele', log6[0]?.maxAudioChannels === '8', String(log6[0]?.maxAudioChannels));
+  check('HLS-Adresse ohne Token (Jellyfin haengt es als ApiKey an, Media3 sendet es im Kopf)', /master\.m3u8/.test(o6.url ?? '') && !/api_?key|mock-token/i.test(o6.url ?? '') && /Token="/.test(o6.authorization ?? ''), o6.url);
+  Object.assign(state.limits, { local: true, server: 0 });
+  // Die Einstufung gilt zehn Minuten im selben Netz; der Testserver hat sie eben umgestellt, also neu pruefen (wie "Pruefen" in den Einstellungen)
+  await ev(`window.__audioChannels = 2; window.jc.streamingLimits(true)`);
 
   // ---------- Wie der Server liefern wuerde (Wiedergabe-Tag der Detailseite), ohne abzuspielen ----------
   await ev(`window.__calls.play.length = 0`);
@@ -242,6 +267,20 @@ module.exports = async (ctx) => {
   const diagText = await ev(`(document.body.innerText.match(/Diagnose: [^\\n]+/) ?? [''])[0]`);
   const cardText = (await ev(`(document.querySelector('.about-card')?.innerText ?? '').replace(/\\s+/g, ' ')`)) || `[Info-Karte fehlt; Adresse ${await ev('location.hash')}, Ansicht: ${(await ev(`(document.querySelector('#view')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 120)`))}]`;
   check('Einstellungen > Info zeigt Diagnose: Plattform, Huelle ok, Engine-Version; keine Windows/mpv-Texte', diag && /Hülle ok/.test(diagText) && /Chrome \d+/.test(diagText) && !/mpv|FFmpeg/.test(cardText), `${diagText} | ${cardText.slice(0, 160)}`);
+
+  // ---------- Einstellungen (P21): "Mehrkanalton behalten" nur auf Android, Bitratengrenze wirkt jetzt auch hier ----------
+  await ev(`location.hash = '#/settings/subtitles'`);
+  const surround = `document.querySelector('.switch[aria-label="Mehrkanalton behalten"]')`;
+  const hasSurround = await waitFor(`!!${surround}`);
+  check('Sprache & Untertitel: Schalter "Mehrkanalton behalten" (Standard aus, wie die Apple-App)', hasSurround && (await ev(`${surround}.getAttribute('aria-checked')`)) === 'false');
+  if (hasSurround) await ev(`${surround}.click()`);
+  const kept = await waitFor(`window.jc.getState().then((s) => s.settings.player.keepSurround === true)`, 4000);
+  check('...einschalten wird gespeichert', kept);
+  if (kept) await ev(`${surround}.click()`);
+  await ev(`location.hash = '#/settings/network'`);
+  const limitLabel = await waitFor(`[...document.querySelectorAll('.setting-label')].some((l) => l.textContent === 'Bitratengrenze')`);
+  const limitValue = await ev(`(() => { const s = [...document.querySelectorAll('.setting')].find((x) => x.querySelector('.setting-label')?.textContent === 'Bitratengrenze'); return s?.querySelector('button')?.textContent.trim() ?? null; })()`);
+  check('Netzwerk: "Bitratengrenze" mit "Automatisch"', limitLabel && limitValue === 'Automatisch', String(limitValue));
 
   // ---------- Auf diesem Geraet fortsetzen (P19): auf dem Handy ueber der Reiterleiste ----------
   await fetch('http://127.0.0.1:8097/__debug/session?device=Wohnzimmer%20Apple%20TV&at=120', { method: 'POST' });

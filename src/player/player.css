@@ -311,7 +311,6 @@ button { font: inherit; color: inherit; }
    ========================================================================== */
 .closing .top, .closing .bar, .closing .floaters, .closing .pop, .closing .info, .closing .flash, .closing .errcard { opacity: 0 !important; pointer-events: none !important; transition: opacity 90ms linear; }
 .closing .status { opacity: 0; }.cluster .ibtn.lim:not(.on) { color: var(--accent-fg, var(--accent)); }
-.pop-note { margin: 2px 12px 8px; padding: 8px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.1); color: rgb(255 255 255 / 0.85); font-size: 12.5px; line-height: 1.35; max-width: 280px; }
 
 /* ==========================================================================
    Pausenbildschirm: nach einigen Sekunden Pause ohne Bedienung. Ein dunkler Verlauf von links (der Text liegt immer auf Dunkel, egal wie hell das angehaltene Bild ist),

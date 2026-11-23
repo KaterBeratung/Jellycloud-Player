@@ -6,8 +6,9 @@ PGS-/ASS-Untertitel.
 
 ## Funktionen
 
-- **Direct Play zuerst:** Das Geräteprofil meldet dem Server „alles abspielbar“. Nur bei einem eingestellten Bitratenlimit
-  (oder wenn der Server nicht liefern kann) fällt der Client auf HLS-Transcode zurück.
+- **Direct Play zuerst:** Das Geräteprofil meldet dem Server „alles abspielbar“. Nur wenn die Datei über der Bitratengrenze liegt
+  (oder der Server nicht liefern kann), fällt der Client auf HLS-Transcode zurück. Im Heimnetz gibt es keine eigene Grenze, über das Internet
+  gilt die Grenze des Servers immer zuerst, siehe *Bitratensteuerung*.
 - **HDR:** mpv mit `gpu-next` (libplacebo) und D3D11. HDR-Ausgabe: Automatisch, Durchreichen oder Tone-Mapping nach SDR.
   Dolby Vision (Profil 5/8) wird über die RPU-Daten abgebildet, Profil 7 FEL nur als Basisschicht.
 - **Audio:** WASAPI-Passthrough für AC3/E-AC3/DTS/DTS-HD/TrueHD, optional exklusiv (für Bitstream von TrueHD/DTS-HD).
@@ -164,7 +165,7 @@ Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbiete
 | Ton | Ausgabegerät (mit Anzeige des erkannten Geräts), Kanäle (Auto/Stereo/5.1/7.1), Passthrough (nur digitale Ausgänge), WASAPI exklusiv, Nachtmodus |
 | Sprache & Untertitel | Audiosprache, Untertitel-Modus (Server/Aus/Erzwungen/Immer/Smart), Untertitelsprache, Größe, Position, Farbe, Umrandung, Hintergrundkasten, Fett, Schriftart, ASS-Stil, Live-Vorschau |
 | Wiedergabe | **Trailer** (automatisch, stumm starten, Verzögerung, Text ausblenden, Lautstärke, Qualität bis 4K), nächste Folge automatisch, Intro/Abspann überspringen (Button/Auto/Aus), Countdown an den Knöpfen (6 s), Rücksprung beim Fortsetzen, Vollbild beim Start, Sprungweiten, Mausrad, Pause beim Minimieren, Bildschirm anlassen |
-| Netzwerk | Qualitätsgrenze, Transcoding erlauben, Puffergröße, Vorausladen, selbstsignierte Zertifikate |
+| Netzwerk | Grenze des Servers (mit *Prüfen*), Bitratengrenze (Automatisch, 40, 20, 10, 5, 2 Mbit/s), Transcoding erlauben, Puffergröße, Vorausladen, selbstsignierte Zertifikate |
 | Anfragen (Seerr) | Verbindung zu Seerr **für das aktive Profil**: Stand mit Hinweis, Adresse (vorbelegt), Anmeldung mit einem Jellyfin-Konto (vorbelegt, änderbar), *Erneut prüfen*, *Trennen* mit Rückfrage, *Erneut anmelden* bei abgelaufener Sitzung |
 | Discord | **Rich Presence** (zeigt, was du schaust): Schalter, Verbindung testen, Statuszeile, **Name in Discord** (frei wählbar, Knopf *Servername*), Poster-Quelle (Automatisch/TMDB/Server/Kein), Titel verbergen, Link zur Titelseite (Knopf und anklickbarer Titel), optional eine eigene Application-ID mit Anleitung |
 | Allgemein | mpv-Status (nur Anzeige), **mit Windows starten**, **minimiert starten**, Fenster merken, Spoiler-Schutz, Bildcache leeren, alles zurücksetzen |
@@ -199,14 +200,15 @@ Dann hilft der Umschalter im Player oder die feste Wahl *Stereo* in den Einstell
 
 ## Transcoding
 
-Direct Play bleibt der Normalfall. Läuft über den Server ein HLS-Transcode (Bitratenlimit oder Rückfall), gilt:
+Direct Play bleibt der Normalfall. Läuft über den Server ein HLS-Transcode (Bitratengrenze oder Rückfall), gilt:
 
 - **Spuren und Untertitel wechseln:** Im Transcode steckt nur die angeforderte Tonspur im Strom. Die Spurliste kommt daher vom Server; ein Wechsel lädt den Eintrag an der
   aktuellen Position neu (neue PlaybackInfo, der alte Transcode wird beendet). Die beim Start gewählte Sprache wird gleich mit angefragt, sodass Anzeige und Ton übereinstimmen.
   Textuntertitel liefert der Server als eigene Datei, Bilduntertitel brennt er ein.
-- **Qualität im Player:** Der Reglerknopf in der rechten Leiste öffnet *Qualität*: *Original* (Direct Play) oder eine Bitratenstufe unterhalb der Quelle (20, 10, 8, 6, 4, 2 Mbit/s).
-  Die Wahl lädt an der aktuellen Position neu, der Server liefert dann einen Transcode. Sie gilt bis zum Ende der Wiedergabe (auch für folgende Folgen);
-  die Einstellung *Qualitätsgrenze* bleibt der Standard für den nächsten Start. Ist *Transcoding erlauben* aus, fehlt der Knopf.
+- **Qualität im Player:** Der Reglerknopf in der rechten Leiste öffnet *Qualität* mit den Stufen der Apple-App: *Automatisch* (über das Internet mit
+  „ca. N Mbit/s“), *4K* 40, *1080p hoch* 20, *1080p* 8, *720p* 4, *480p* 2 Mbit/s. Hat der Server eine Grenze für das Internet, endet die Liste dort
+  (*Grenze des Servers* ist dann die höchste Stufe). Die Wahl lädt an der aktuellen Position neu. Sie gilt bis zum Ende der Wiedergabe (auch für folgende Folgen);
+  die Einstellung *Bitratengrenze* bleibt der Standard für den nächsten Start. Ist *Transcoding erlauben* aus, fehlt der Knopf.
 - **Automatischer Rückfall:** Scheitert Direct Play beim Öffnen (Format, Server, Netz), fordert der Player einmal einen Transcode an derselben Stelle an
   (nur wenn *Transcoding erlauben* an ist), sonst erscheint die Fehlermeldung.
 - **Schnelle Sprünge** (Pfeiltasten, Sprungknöpfe) werden im Transcode zu einem Sprung zusammengefasst, weil jeder Sprung beim Server eine neue Codierung startet.
@@ -736,22 +738,52 @@ Abschnitt „Tags“ in `app.css`). Es gibt **keinen Schalter** dafür (früher 
 
 Jede Änderung erhöht die Version in `package.json` (und den Wurzeleintrag in `package-lock.json`): 0.0.1 bis 0.0.50, danach 1.1.x. Die Version erscheint unter *Info* und im Namen des Installers.
 
-## Bitratenlimit des Servers
+## Bitratensteuerung
 
-Der Jellyfin-Server hat eigene Fern-Grenzen (Benutzer-Richtlinie und serverweit), die der Client nicht umgehen kann: Liegt eine Datei darüber, meldet der Server „Direct Play nicht möglich“ und schickt
-einen Transcode, auch wenn die App „Original“ verlangt. Sie gelten **nur über das Internet**, also wenn der Server den Client nicht als lokal erkennt. Die App fragt das deshalb in zwei Stufen ab
-(`JellyfinClient.getStreamingLimits`):
+Seit 1.2.20 (Plan P21) wie in der Apple-App (`Notizen/bitratensteuerung.md` dort): **im Heimnetz keine eigene Grenze der App, über das Internet hat die
+Grenze des Servers immer Vorrang**, gleich was in der App gewählt ist. Die Regeln stehen für Windows und Android gemeinsam in `src/shared/bitrate.js`.
 
-1. `GET /System/Endpoint`: Erkennt der Server den Client als lokal, ist **Schluss**: im lokalen Netz bleibt es bei dieser einen kleinen Anfrage.
-2. Nur über das Internet (oder wenn die Verbindungsart nicht erkennbar ist) werden die Grenzen gelesen: `UserPolicy.RemoteClientBitrateLimit` (`/Users/Me`) und `ServerConfiguration.RemoteClientBitrateLimit`
-   (`/System/Configuration`, nicht überall lesbar; fehlt sie, gilt die des Benutzers). Bit pro Sekunde, 0 = keine, es gilt die kleinere.
+**Obergrenze einer Anfrage** (`planBitrate`, `bitrateCeiling`), von oben nach unten:
 
-Sichtbar wird es nur auf Abruf, beim Abspielen blendet die App **nichts** ein: *Einstellungen > Netzwerk > Server-Limit* (mit Knopf *Prüfen*), die Technik-Info (Zeile *Server-Limit*) und das
-Qualitäts-Menü (erklärt, dass *Original* über dem Limit nicht geht). Bei jedem Start der Wiedergabe wird neu abgefragt, weil sich die Verbindung ändern kann (VPN an/aus).
+1. Die Grenze des Servers für Streaming über das Internet (nur extern): nie mehr. Jellyfin nimmt die des Kontos (`/Users/Me`, `Policy.RemoteClientBitrateLimit`),
+   ohne sie die des Servers (`/System/Configuration`, nicht für jedes Konto lesbar), wie `MediaInfoHelper.GetMaxBitrate` im Quelltext von Jellyfin (bis 1.2.19 nahm die App
+   die kleinere der beiden).
+2. Die Wahl in der App (*Einstellungen > Netzwerk > Bitratengrenze*: *Automatisch*, 40, 20, 10, 5, 2 Mbit/s; ein früher gewählter anderer Wert bleibt wählbar;
+   im Player für die laufende Wiedergabe). *Automatisch* heißt über das Internet 75 % der gemessenen Bandbreite (`GET /Playback/BitrateTest`: erst 1 MB, zwischen 6 und
+   60 Mbit/s danach 3 MB genauer, 30 Minuten gemerkt; beim Start wartet die Planung höchstens 4 s), mindestens 1, höchstens 120 Mbit/s.
+3. Sonst keine Grenze, als **Zahl**: mindestens 400 Mbit/s, bei schnelleren Dateien das Doppelte ihrer Datenrate, höchstens 1,07 Gbit/s. Ohne Zahl nähme Jellyfin
+   die Grenze seines Standardprofils (8 Mbit/s, `DeviceProfile.MaxStreamingBitrate`). Die Zahl steht im Rumpf von `PlaybackInfo` und im Geräteprofil.
 
-Hinter einem Reverse-Proxy auf demselben Rechner sieht Jellyfin Fernzugriffe oft als lokal (127.0.0.1), dann gilt das Limit gar nicht; das Gegenmittel ist *Known proxies* im Server
-([Forum](https://forum.jellyfin.org/t-remote-streaming-bandwidth-and-reverse-proxy)). Wer Direct Play will, hebt das Limit im Server an oder trägt die eigenen Netze unter *LAN-Netzwerke* ein.
-Die Felder von `/System/Endpoint` und die Grenzen sind nach den veröffentlichten API-Modellen umgesetzt und gegen den Mock-Server geprüft, nicht gegen einen echten Server mit Limit.
+Die App hält sich auch dann an die Grenze des Servers, wenn er sie nicht durchsetzt: Hinter einem Reverse Proxy sieht Jellyfin dessen Adresse im eigenen Netz und hält
+jede Verbindung für lokal. Ist *Transcoding erlauben* aus, setzt die App keine eigene Grenze (keine Messung); die des Servers gilt trotzdem.
+
+**Heimnetz oder Internet** (`isHome`, `JellyfinClient.getStreamingLimits`):
+
+1. Sagt der Server „nicht im Heimnetz“ (`GET /System/Endpoint`, `IsInNetwork: false`), ist die Verbindung extern, auch unter einer privaten Adresse. `IsLocal` zählt nicht mehr.
+2. Private Adresse (10.x, 192.168.x, 172.16–31.x, `.local`, `.lan`, Rechnername …): Heimnetz, außer über Mobilfunk (Android: Verbindungsart der WebView). Antwortet der
+   Server nicht auf die Frage, bleibt es beim Heimnetz (er setzt seine Grenze für Verbindungen, die er als entfernt sieht, selbst durch).
+3. Öffentliche Adresse: Heimnetz nur, wenn unter der Heimadresse, die der Server nennt (`/System/Info/Public`, `LocalAddress`), derselbe Server antwortet
+   (gleiche Id, Frist 3 s, ohne Token). Die Einstufung des Servers allein reicht hier nicht (Reverse Proxy).
+
+Das Ergebnis gilt zehn Minuten oder bis sich das Netz des Geräts ändert (Windows: Adapter und Adressen; Android: Art der Verbindung). Beim Start der Wiedergabe und
+mit *Prüfen* wird neu gefragt; die Probe der Heimadresse bleibt je Netz gemerkt. Scheitert das Lesen der Grenze, gilt die zuletzt gelesene weiter („nicht lesbar“ heißt nicht
+„keine Grenze“). Über welche Schnittstelle eine Verbindung läuft (die Apple-App erkennt so ein VPN), lässt sich unter Windows nicht ohne Weiteres bestimmen:
+**ein VPN ins Heimnetz zählt hier als Heimnetz**, wie bis 1.2.19.
+
+**Sichtbar** nur auf Abruf, beim Abspielen blendet die App nichts ein: *Einstellungen > Netzwerk > Server-Limit* (mit *Prüfen*; „Heimnetz: keine Begrenzung“, die Grenze
+mit Konto und Server, „zuletzt bekannte Grenze“), die Technik-Info (Zeile *Server-Limit*) und das Qualitätsmenü (endet an der Grenze; eine höhere Einstellung gilt
+für die Wiedergabe als die Grenze selbst).
+
+**Token nicht in der Adresse (Plan Q5):** Jellyfin hängt das Anmeldetoken als `ApiKey` an die Adresse des HLS-Stroms und der Untertitel (`StreamInfo.ToUrl` im Quelltext).
+Die App nimmt es dort heraus (`withoutAccessToken`); mpv und Media3 senden es im Kopf `Authorization`, den Jellyfin für jede Anfrage annimmt. So steht es in keiner
+Adresse, die ein Player öffnet, anzeigt oder protokolliert.
+
+**Fristen auf Android:** Die native HTTP-Schicht der Hülle kennt das Abbruchsignal nicht. Bis 1.2.19 wartete eine Anfrage dort darum bis zu ihrer eigenen Frist
+(10 s Aufbau, 20 s Antwort); jetzt endet das Warten nach der Frist der Anfrage (`fetchWithTimeout`), wie unter Windows.
+
+**Geprüft:** Unit-Tests `bitrate.test.js` (die Fälle aus `BitrateRulesTests` der Apple-App, ohne die zum verlustfreien Ton und zu kleineren Auflösungen, die es hier
+nicht gibt) und `limits.test.js` gegen den Testserver; Szenarien `limits.js`, `transcode-audio.js`, `android-host.js`. **Nicht geprüft:** ein echter Jellyfin mit Grenze,
+ein echter Reverse Proxy, ein echtes VPN, echtes Mobilfunknetz, Android am Gerät.
 
 ## Wiedergabe im selben Fenster
 
@@ -902,7 +934,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `player-fullscreen.js` | **Vollbild im Player** (9 Prüfungen, Simulator, native Messung per GetWindowRect): im Fenster deckt das Overlay genau den Host, im Vollbild den ganzen Bildschirm mit mindestens einem Bildpunkt Reserve ringsum (gegen den Taskleistenstreifen unten), nach erneutem Angleichen unverändert, zurück im Fenster wieder ohne Rand |
 | `player-episodes.js` | **Folgen und Staffeln im Player** (27 Prüfungen, Simulator): Knopf nur bei Serien, Liste mit Staffel-Reitern, laufende Folge, Wechsel mit Server-Log, Taste E/Escape, Mausrad, Spoiler-Schutz, schmales Fenster |
 | `back-latency.js` | Zurück-Taste bei langsamem Server (4 s Verzögerung der Stopped-Antwort), Schließen während des Ladens, Esc/Backspace/Maustaste, Mehrfachklick; Ruhezustand während eines Transcodes (schließt sofort, ein Ende, dann `ActiveEncodings`), Aufwachen ohne Schlaf spielt weiter |
-| `transcode-audio.js` | Spurwechsel im Transcode, Qualitätswahl im Player, Rückfall auf Transcode, Stereo-Profil, Bitstream-Schutz, Ton-Rückfall, Kanalumschaltung, Statistik nur bei offener Info |
+| `transcode-audio.js` | Spurwechsel im Transcode, Qualitätswahl im Player (Stufen wie die Apple-App), Adressen für mpv ohne Token (Strom und Untertitel), Rückfall auf Transcode, Stereo-Profil, Bitstream-Schutz, Ton-Rückfall, Kanalumschaltung, Statistik nur bei offener Info |
 | `reload.js` | F5, Neu-laden-Knopf, Metadaten aktualisieren (Refresh, Ersetzen, 403), Statuscodes aus dem Hauptprozess |
 | `trailer.js` | Trailer auf der Detailseite gegen **echtes YouTube** (Verzögerung, stumm, 4K/Full HD/720p, Lautstärke, kein Nebel, freier Blick: Absinken und Ausblenden über 9 s, Ton-Knopf, Ausblenden, Stopp bei Wiedergabe); braucht Internet |
 | `home-trailer.js` | Startseite: Banner und Reihen mit Neuzugängen, Trailer im Banner gegen **echtes YouTube** (bleibt stehen, geht nach dem Ende weiter, Punkt-Klick, nichts blendet aus, Seite verlassen und zurück, Schalter); braucht Internet |
@@ -927,7 +959,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `seerr-states.js` | Seerr je Profil und vier Zustände (P10): Stand in den Einstellungen, Reiter *Anfragen* verbunden / nicht erreichbar / abgelaufen, *Erneut prüfen*, *Erneut versuchen*, *Erneut anmelden*, fremde Sitzung (abgemeldet und verworfen), zweites Profil mit anderem Jellyfin-Konto, Wechsel stellt die eigene Sitzung her, `language=de` (eigener Port 8993, zweite Adresse 8992) |
 | `seerr-issue.js` | **Problem melden** (31 Prüfungen, Mock-Seerr, Port 8897): **Warnschild** in der Knopfleiste (Lage, Größe, Beschriftung, öffnet das Fenster; fehlt ohne Seerr, ohne TMDB-Nummer und nach dem Trennen), Eintrag im Menü *Mehr* nur mit Seerr und TMDB-Nummer, vier Arten, Kommentar freiwillig, *Melden* erst nach der Wahl, Film, Serie und Folge (Staffel und Folge gehen mit), Ersatztext ohne Kommentar, Esc sendet nichts, Fehler im Fenster (403, Titel Seerr unbekannt) ohne Textverlust, gewählte Art klar markiert |
 | `compact-audit.js` | **Handy-Ansicht auf Abgeschnittenes absuchen** (Web-Fassung, 22 Seiten und Menüs in 412×891, 360×740 und 800×411): Text und Knöpfe außerhalb des Fensters oder von einem Rahmen mit `overflow: hidden` gekappt, Tab-Beschriftungen nur mit „…“, Seitenende unter der Tab-Leiste, Menüs, die herausragen, waagerechtes Scrollen; Aufnahmen bei 412 px |
-| `android-host.js` | **Hülle der Android-App ohne Handy** (37 Prüfungen, Mock-Server): Web-Bau mit `--host`, Nachbildung der **echten Capacitor-Brücke** (`nativePromise`, `PluginHeaders`, ohne `registerPlugin`; `CapacitorHttp`, `JellycloudPlayer`) per Debug-Protokoll eingeschleust, dazu ein Lauf mit der echten Laufzeit `@capacitor/core`, Diagnose-Zeile unter Einstellungen > Info; Hülle meldet Plattform/Version/Gerätename, Anmeldung und 401 über die „native“ Schicht, **Wiedergabe-Plan** (Direct Play, Token nur im Header, Startstelle aus „Weiterschauen“, Dauer, Titel, Geräteprofil ohne AC3/DTS), „Von vorn“, **Rückfall auf Transcode** ab der erreichten Stelle bei Decoder-Fehler, Fehlermeldung bei Serverfehler, Ereignisse (aktiv, geschlossen), Folgen-Titel, Links nur http(s); seit P18 die **Mitteilungen des Systems** (`JellycloudNotifications`: Erlaubnis erst auf Wunsch, Zeigen mit dem Ziel als Text, Zurücknehmen einzeln und je Profil, Antippen beim kalten Start und bei laufender App, Weg in die Einstellungen) |
+| `android-host.js` | **Hülle der Android-App ohne Handy** (45 Prüfungen, Mock-Server): Web-Bau mit `--host`, Nachbildung der **echten Capacitor-Brücke** (`nativePromise`, `PluginHeaders`, ohne `registerPlugin`; `CapacitorHttp`, `JellycloudPlayer`) per Debug-Protokoll eingeschleust, dazu ein Lauf mit der echten Laufzeit `@capacitor/core`, Diagnose-Zeile unter Einstellungen > Info; Hülle meldet Plattform/Version/Gerätename, Anmeldung und 401 über die „native“ Schicht, **Wiedergabe-Plan** (Direct Play, Token nur im Header, Startstelle aus „Weiterschauen“, Dauer, Titel, Geräteprofil ohne AC3/DTS), „Von vorn“, **Rückfall auf Transcode** ab der erreichten Stelle bei Decoder-Fehler, Fehlermeldung bei Serverfehler, Ereignisse (aktiv, geschlossen), Folgen-Titel, Links nur http(s); seit P18 die **Mitteilungen des Systems** (`JellycloudNotifications`: Erlaubnis erst auf Wunsch, Zeigen mit dem Ziel als Text, Zurücknehmen einzeln und je Profil, Antippen beim kalten Start und bei laufender App, Weg in die Einstellungen); seit P21 die **Bitratensteuerung** (Obergrenze an `PlaybackInfo` als Zahl, über das Internet höchstens die Grenze des Servers mit Messung, Kanäle beim Umwandeln nach der Tonausgabe `audioOutput`: 6 am Lautsprecher, 8 an einer 7.1-Ausgabe, HLS-Adresse ohne Token, Schalter „Mehrkanalton behalten“ nur hier) |
 | `no-scrollbar.js` | **Kein Scrollbalken** (20 Prüfungen): auf Startseite, Film, Einstellungen und Bibliothek ist `scrollbar-width` aus, es bleibt kein Streifen am Rand (Inhalt so breit wie das Fenster), und **Mausrad und Bild-runter-Taste scrollen trotzdem**; kein scrollbares Element, keine Stylesheet-Regel (`thin`/`auto`, `::-webkit-scrollbar`) schaltet einen Balken ein; geöffnetes Sortier-Menü ohne Balken; Eingaben mit Fokus-Wiederholung (die VM verschluckt sie zwischendurch) |
 | `hover-audit.js` | **Hover-Prüfung** (Port 9197, echte Mausereignisse per `sendInputEvent`, ohne Trailer): fährt auf den unteren und linken Rand von 100 bedienbaren Elementen auf sieben Seiten und misst, ob der Hover stabil bleibt (kein Zittern, kein Verlust), ob **Knöpfe, Reiter (Staffeln) und Auswahlfelder ohne Weichzeichner** sind (sonst Streifen am Rand), ob ein **Klick ganz am Rand** ankommt, ob bei Animationen *aus* nichts abhebt, ob jedes bedienbare Element den Zeiger zeigt, Karten nach dem Wegfahren wieder in Ruhe sind, **Menü bei Tastatur und Maus nur einen hervorgehobenen Eintrag** hat, die Knöpfe im **Player-Overlay** und „Weiter“ des Pausenbildschirms am Rand stabil sind und der Text beim Zeigen in allen vier Themes mindestens 4,5 : 1 Kontrast hat |
 | `discord.js` | **Discord Rich Presence** (49 Prüfungen, **Fake-Discord** auf eigener Pipe über `JC_DISCORD_PIPE`, Mock-Seerr, Port 9097): Einstellungen (nur Ziffern in der eigenen ID, Test mit falscher und richtiger ID, Status), **eingebaute Anwendung** (Feld nur optional, Einschalten genügt, Test ohne ID) und **eigener Name** (Feld, Servername, leer, auf 128 gekürzt), Anzeige für Film und Folge (Titel, Jahr und Genres, S1E2, Poster von TMDB über Seerr, Fortschritt, Knopf), Pause, Weiterspielen, Sprung, keine Flut bei normalem Weiterlaufen, Titel verbergen, Poster-Quellen (Server im Heimnetz = kein Bild), Ende (Schonfrist, dann weg), Neustart von Discord, Ausschalten; nichts Vertrauliches auf dem Draht |
@@ -943,7 +975,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |
 | `startup-anim.js` | **Startanimation**: Ablauf (Umriss, Dreieck, Schriftzug, Zoom, Oberfläche blendet ein), Zeit rund 2,7 s, Überspringen per Klick und Taste, ruhige Fassung bei *Bewegung reduzieren*, kein Schalter und keine Vorschau in den Einstellungen, kein zweites Mal beim Neuaufbau, Warten bis das Fenster sichtbar ist, Hinweise erst danach, Bildabstände (Mock, Port 8497) |
 | `home-trending.js` | Startseite: Reihe **Filme im Trend** (nur Filme, Reihenfolge, Stände, Anfragen und Details aus der Reihe, Zwischenspeicher), **ohne Seerr weder Reihe noch Hinweis** (seit 1.2.14, E8; im Editor gesperrt), ausgeblendet keine Abfrage, Verbinden/Trennen baut die Startseite neu, Fehler und abgelaufene Anmeldung ohne leere Reihe (Mock-Seerr, eigener Port 8197) |
-| `limits.js` | Bitratenlimit des Servers: nur über das Internet abfragen, Anzeige in den Einstellungen, Info/Qualitäts-Menü im Player (keine Einblendung beim Start), LAN ohne weitere Abfragen |
+| `limits.js` | Bitratensteuerung (Plan P21, 30 Prüfungen): Heimnetz ohne Abfrage der Grenzen und ohne Messung, Anfrage mit „keine Grenze“ als Zahl; über das Internet fragt die App selbst höchstens die Grenze des Servers an (Konto vor Server), Automatisch nach der gemessenen Bandbreite (langsame Leitung 10 Mbit/s), Qualitätsmenü endet an der Grenze, Einstellung über der Grenze gilt als die Grenze, zuletzt bekannte Grenze, Anzeige in den Einstellungen, Technik-Info, keine Einblendung beim Start |
 | `autostart.js` | Minimierter Start mit `--autostart`, Einstellungen in der Entwicklung (Registry bleibt unberührt) |
 | `play-curtain.js` | Klick auf *Abspielen* mit dem **echten** mpv (ohne `JC_FAKE_MPV`): Die Oberfläche ist in höchstens 250 ms schwarz und vor dem mpv-Fenster, nach dem Schließen wieder sichtbar (kein hängender Vorhang, keine Klicksperre), zweiter Klick ebenso. Misst ohne Bildschirmzugriff (Seitenaufnahme und Fensterliste), läuft also auch ohne angemeldete Sitzung |
 | `pause-screen.js` | Pausenbildschirm im Player (56 Prüfungen, fake mpv): erscheint nach der eingestellten Wartezeit, Logo/Titel, Folge, Angaben, Beschreibung, Fortschritt und „Endet um“ stimmen, Maus/Taste/Rad blenden aus (Maus ohne Bewegung nicht), Weiter-Knopf und Leertaste, kein Erscheinen bei Menü/Info, drei Fenstergrößen ohne Überlappung, Rückfall ohne Logo, Spoiler-Schutz, abgeschaltet, 3 s; Aufnahmen mit Ersatz-Video |

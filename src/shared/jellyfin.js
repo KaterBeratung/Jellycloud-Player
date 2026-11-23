@@ -1,13 +1,29 @@
 /* Gemeinsames Modul: laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCJellyfin) in der Oberflaeche der Web-/Handy-Fassung (src/web).
    Keine eigenen Abhaengigkeiten ausser dem eingespeisten fetch; `node:os` nur, wenn es Node gibt. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(typeof require === 'function' ? require : null);
-  else root.JCJellyfin = factory(null);
-})(typeof self !== 'undefined' ? self : this, function (nodeRequire) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(typeof require === 'function' ? require : null, require('./bitrate'));
+  else root.JCJellyfin = factory(null, root.JCBitrate);
+})(typeof self !== 'undefined' ? self : this, function (nodeRequire, Bitrate) {
   'use strict';
 
   const os = nodeRequire ? nodeRequire('node:os') : null;
 const TICKS_PER_SECOND = 10_000_000;
+const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+
+/**
+ * Jellyfin haengt das Token als ApiKey (aeltere Fassungen: api_key) an die Adresse des Stroms und der Untertitel (StreamInfo.ToUrl, nachgelesen im
+ * Quelltext von Jellyfin, Plan Q5). mpv und Media3 senden es im Kopf (Authorization), den der Server fuer jede Anfrage annimmt; darum faellt es hier
+ * aus der Adresse. So steht es nie in Adressen, die ein Player oeffnet, anzeigt oder protokolliert. Alles andere bleibt Zeichen fuer Zeichen gleich.
+ */
+function withoutAccessToken(url) {
+  if (typeof url !== 'string') return url;
+  const q = url.indexOf('?');
+  if (q < 0) return url;
+  const hash = url.indexOf('#', q);
+  const query = url.slice(q + 1, hash < 0 ? undefined : hash);
+  const kept = query.split('&').filter((part) => part && !/^api_?key(=|$)/i.test(part));
+  return `${url.slice(0, q)}${kept.length ? `?${kept.join('&')}` : ''}${hash < 0 ? '' : url.slice(hash)}`;
+}
 
 /**
  * Fehler von Jellyfin. code: "OFFLINE" (Server nicht erreicht) oder "TIMEOUT" (keine Antwort in der Frist), sonst null; er geht als einziges Merkmal
@@ -55,11 +71,23 @@ function candidateUrls(input) {
   return out;
 }
 
+/**
+ * fetch mit Frist: nach timeoutMs wird abgebrochen (signal) und das Warten endet mit einem AbortError, auch wenn die Abruffunktion das Signal
+ * nicht kennt (die native HTTP-Schicht der Android-Huelle, mobile/host-capacitor.js; vorher wartete sie dort bis zu ihrer eigenen Frist von 10 s
+ * fuer den Aufbau und 20 s fuer die Antwort). Bringt der Aufrufer ein eigenes Signal mit, gilt nur seins.
+ */
 async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 20000) {
+  if (init.signal) return fetchImpl(url, init);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let timer = null;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort();
+      reject(Object.assign(new Error('Zeitueberschreitung'), { name: 'AbortError' }));
+    }, timeoutMs);
+  });
   try {
-    return await fetchImpl(url, { ...init, signal: init.signal ?? ctrl.signal });
+    return await Promise.race([fetchImpl(url, { ...init, signal: ctrl.signal }), expired]);
   } finally {
     clearTimeout(timer);
   }
@@ -633,16 +661,98 @@ class JellyfinClient {
     return this.request('POST', '/System/Shutdown');
   }
 
+  /** Wie der Server diese Verbindung einstuft (GET /System/Endpoint, jedes Konto darf fragen): { inNetwork: true | false | null }, null ohne Antwort. */
+  async getEndpoint() {
+    let r;
+    try {
+      r = await this.request('GET', '/System/Endpoint', { timeout: 4000 });
+    } catch {
+      return null;
+    }
+    return { inNetwork: typeof r?.IsInNetwork === 'boolean' ? r.IsInNetwork : null };
+  }
+
   /**
-   * Fragt ab, ob der Server die Bitrate dieser Verbindung begrenzt. Erst die Verbindungsart (/System/Endpoint): im lokalen Netz gibt es
-   * keine Grenze, dann bleibt es bei dieser einen kleinen Anfrage. Nur ueber das Internet (oder wenn die Art unbekannt ist) werden die
-   * Grenzen gelesen: Benutzer-Richtlinie und serverweit. Die Server-Einstellung ist nicht fuer jeden lesbar; fehlt sie, gilt, was sich lesen laesst.
+   * Antwortet unter der Heimadresse, die der Server nennt (/System/Info/Public: LocalAddress), derselbe Server (gleiche Id)? Kurze Fristen: von
+   * unterwegs geht die Heimadresse meist ins Leere. Die Frage dort geht ohne Token (sie braucht keins). Nennt der Server die Adresse, unter der er
+   * ohnehin erreicht wird, hilft sie nicht weiter: false.
    */
-  async getStreamingLimits() {
-    const endpoint = await this.request('GET', '/System/Endpoint', { timeout: 8000 }).catch(() => null);
-    if (endpoint && (endpoint.IsInNetwork === true || endpoint.IsLocal === true)) return describeStreamingLimits({ endpoint });
-    const [me, config] = await Promise.all([this.getMe().catch(() => null), this.request('GET', '/System/Configuration', { timeout: 8000 }).catch(() => null)]);
-    return describeStreamingLimits({ endpoint, me, config });
+  async homeAddressAnswers() {
+    const info = await this.request('GET', '/System/Info/Public', { timeout: 4000 }).catch(() => null);
+    const id = info?.Id;
+    const raw = String(info?.LocalAddress ?? '').trim().replace(/\/+$/, '');
+    if (!id || !raw) return false;
+    let home;
+    let base;
+    try {
+      home = new URL(raw);
+      base = new URL(this.baseUrl);
+    } catch {
+      return false;
+    }
+    if (!/^https?:$/.test(home.protocol) || !home.hostname) return false;
+    if (home.hostname.toLowerCase() === base.hostname.toLowerCase() && home.port === base.port) return false;
+    try {
+      const res = await fetchWithTimeout(this.fetch, `${raw}/System/Info/Public`, { headers: { Accept: 'application/json' } }, 3000);
+      if (!res.ok) return false;
+      const answer = await res.json();
+      return answer?.Id === id;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Eine Messung der Bandbreite zum Server (GET /Playback/BitrateTest?Size=<Bytes>, wie die offiziellen Apps): so viele Bytes laden und durch die Zeit
+   * teilen. Mbit/s, null ohne brauchbare Antwort (Server kennt den Test nicht, Frist abgelaufen, weniger als die Haelfte angekommen).
+   */
+  async bitrateTest(bytes, timeoutMs = 12000) {
+    const ctrl = new AbortController();
+    let timer = null;
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        ctrl.abort();
+        resolve(null);
+      }, timeoutMs);
+    });
+    const run = (async () => {
+      const start = nowMs();
+      const res = await this.request('GET', '/Playback/BitrateTest', { query: { Size: bytes }, raw: true, signal: ctrl.signal });
+      if (!res.ok) return null;
+      // Desktop: Bytes zaehlen; die native Anfrage der Android-Huelle liefert Text, dort zaehlt die Laenge laut Kopf
+      const size = typeof res.arrayBuffer === 'function' ? (await res.arrayBuffer()).byteLength : Number(res.headers.get('content-length')) || (await res.text()).length;
+      const seconds = (nowMs() - start) / 1000;
+      if (size < bytes / 2 || seconds <= 0.001) return null;
+      return (size * 8) / seconds / 1_000_000;
+    })().catch(() => null);
+    try {
+      return await Promise.race([run, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Heimnetz oder Internet, und welche Grenze der Server dort setzt (Plan P21, Regel wie HomeNetwork der Apple-App, Bitratensteuerung in
+   * src/shared/bitrate.js). Erst die Einstufung des Servers (/System/Endpoint); bei einer oeffentlichen Adresse, die der Server nicht als entfernt
+   * einstuft, die Probe der Heimadresse (probeHome: die Rueckseite merkt sich ihr Ergebnis je Netz). Nur ausserhalb des Heimnetzes werden die Grenzen
+   * gelesen: die des Kontos und die des Servers (die Server-Einstellung ist nicht fuer jeden lesbar). viaLocalInterface: false = Mobilfunk (nie Heimnetz).
+   */
+  async getStreamingLimits({ viaLocalInterface = null, probeHome = (run) => run() } = {}) {
+    const endpoint = await this.getEndpoint();
+    const looksLocal = Bitrate.addressLooksLocal(this.baseUrl);
+    const serverView = endpoint ? endpoint.inNetwork : null;
+    const probe = serverView !== false && !looksLocal && viaLocalInterface !== false;
+    const homeAnswers = probe ? await Promise.resolve(probeHome(() => this.homeAddressAnswers())).catch(() => false) : false;
+    const home = Bitrate.isHome({ serverInNetwork: serverView, addressLooksLocal: looksLocal, viaLocalInterface, homeAddressAnswers: homeAnswers });
+    // Gemerkt wird nur, was feststeht: hat der Server bei einer privaten Adresse nicht geantwortet, fragt die naechste Planung neu
+    const settled = endpoint !== null || !looksLocal;
+    if (home) return Bitrate.summarizeLimits({ home, serverView, settled });
+    const [me, config] = await Promise.all([
+      this.request('GET', '/Users/Me', { timeout: 6000 }).catch(() => null),
+      this.request('GET', '/System/Configuration', { timeout: 6000 }).catch(() => null)
+    ]);
+    return Bitrate.summarizeLimits({ home, serverView, settled, me, config });
   }
 
   async getMediaSegments(id) {
@@ -697,24 +807,6 @@ class JellyfinClient {
   }
 }
 
-const positiveBps = (n) => (Number.isFinite(+n) && +n > 0 ? Math.round(+n) : 0);
-
-/**
- * Fasst zusammen, welche Bitratengrenze der Server fuer diese Verbindung anwendet. Reine Funktion (testbar).
- * Die Grenzen des Servers gelten nur fuer Clients, die er nicht als lokal erkennt (Internet): Benutzer-Richtlinie
- * (UserPolicy.RemoteClientBitrateLimit) und serverweit (ServerConfiguration.RemoteClientBitrateLimit), Bit pro Sekunde, 0 = keine. Es gilt die kleinere.
- * @param {{endpoint?:{IsLocal?:boolean, IsInNetwork?:boolean}|null, me?:any, config?:any}} o
- * @returns {{remote:boolean|null, user:number, server:number, limitBps:number, serverKnown:boolean}}
- *   remote: true = Internet, false = lokales Netz, null = unbekannt
- */
-function describeStreamingLimits({ endpoint = null, me = null, config = null } = {}) {
-  const local = !!endpoint && (endpoint.IsInNetwork === true || endpoint.IsLocal === true);
-  const user = positiveBps(me?.Policy?.RemoteClientBitrateLimit);
-  const server = positiveBps(config?.RemoteClientBitrateLimit);
-  const active = [user, server].filter(Boolean);
-  return { remote: endpoint ? !local : null, user, server, limitBps: active.length ? Math.min(...active) : 0, serverKnown: config != null };
-}
-
 /**
  * Methoden des JellyfinClient, die die Oberflaeche aufrufen darf (window.jc.api): nur diese, alles andere lehnt die Rueckseite ab.
  * Die Verwaltung ist fuer Administratoren gedacht (die Oberflaeche zeigt sie nur ihnen, der Server prueft es ohnehin und antwortet sonst mit 403).
@@ -738,7 +830,7 @@ return {
   probeServer,
   ticksToSeconds,
   secondsToTicks,
-  describeStreamingLimits,
+  withoutAccessToken,
   checkId,
   checkText,
   checkList,

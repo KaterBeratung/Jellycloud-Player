@@ -4,9 +4,10 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { server, items, state } = require('../mock-server');
+const { server, items, state, TOKEN } = require('../mock-server');
 
 module.exports = async (ctx) => {
+  const out = process.env.SHOT_DIR || path.join(__dirname, '..', '..', 'shots');
   const results = [];
   const check = (name, ok, detail = '') => {
     results.push(ok);
@@ -56,6 +57,8 @@ module.exports = async (ctx) => {
   await settings({ maxBitrateMbps: 8 });
   check('Transcode gestartet', await start(), `phase=${player.state.phase}`);
   check('Methode Transcode, HLS-URL', player.state.method === 'Transcode' && /master\.m3u8/.test(player.cur?.res.url ?? ''), player.state.method);
+  // Jellyfin (und der Testserver) haengen das Token als ApiKey an die Adresse; mpv bekommt es nur im Kopf (Plan Q5)
+  check('Adresse fuer mpv ohne Token, das Token steht nur im Kopf', !/api_?key/i.test(player.cur?.res.url ?? '') && fakeLog().filter((l) => l.cmd === 'loadfile').every((l) => !JSON.stringify(l.args).includes(TOKEN)), player.cur?.res.url);
   const i0 = infos()[0];
   check('PlaybackInfo nennt die gewaehlte Tonspur (nur diese steckt im Transcode-Strom)', i0?.audioIndex === 1, `audioIndex=${i0?.audioIndex}`);
   const tr0 = player.state.tracks;
@@ -80,6 +83,8 @@ module.exports = async (ctx) => {
   check('Untertitelwechsel laedt neu mit der Untertitelspur', await waitFor(() => infos().some((l) => l.subtitleIndex === 3)), JSON.stringify(infos().map((l) => l.subtitleIndex)));
   await waitFor(() => player.state.phase === 'playing' && player.cur?.subIdx === 3);
   check('Untertitel wird als externe Datei angehaengt und gewaehlt', await waitFor(() => (player.mpv.prop('track-list') ?? []).some((t) => t.type === 'sub' && t.external && t.selected)), JSON.stringify(player.mpv.prop('track-list')?.filter((t) => t.external)));
+  const subAdds = fakeLog().filter((l) => l.cmd === 'sub-add');
+  check('...ohne Token in seiner Adresse', subAdds.length > 0 && subAdds.every((l) => !JSON.stringify(l.args).includes(TOKEN) && !/api_?key/i.test(JSON.stringify(l.args))), JSON.stringify(subAdds.map((l) => l.args[0])));
   check('Tonspur bleibt beim Untertitelwechsel erhalten', player.cur?.audioIdx === 2 && infos().at(-1)?.audioIndex === 2, `audio=${player.cur?.audioIdx}`);
   await cmd({ type: 'sub', id: null });
   check('Untertitel aus: neue Anfrage mit -1', await waitFor(() => infos().some((l) => l.subtitleIndex === -1)), JSON.stringify(infos().map((l) => l.subtitleIndex)));
@@ -123,17 +128,23 @@ module.exports = async (ctx) => {
   await ctx.wait(200);
   check('Ungueltiger Kanalmodus wird ignoriert', player.state.audioCfg?.mode === 'stereo');
 
-  // Qualitaet im Player: Popup, Wahl erzeugt einen Transcode an der aktuellen Position, "Original" geht zurueck
+  // Qualitaet im Player (Plan P21, Stufen wie die Apple-App): Popup, Wahl erzeugt einen Transcode an der aktuellen Position, "Automatisch" geht zurueck
+  check('Direct Play im Heimnetz: die Anfrage nennt trotzdem eine Zahl ("keine Grenze" = 400 Mbit/s)', infos()[0]?.maxBitrate === 400_000_000 && infos()[0]?.profileMaxBitrate === 400_000_000, JSON.stringify(infos().map((l) => [l.maxBitrate, l.profileMaxBitrate])));
   const qBtn = `document.querySelector('.cluster .ibtn[title="Qualität"]')`;
   check('Qualitaets-Knopf ist sichtbar (Transcoding erlaubt)', await ev(`!!${qBtn} && !${qBtn}.hidden`));
   await ev(`${qBtn}.click()`);
   await ctx.wait(450);
   const qRows = await ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim())`);
-  check('Popup: Original (mit Quellbitrate) und Stufen unterhalb der Quelle', qRows[0]?.startsWith('Original') && /52 Mbit/.test(qRows[0]) && qRows.some((r) => r.startsWith('8 Mbit/s')) && qRows.some((r) => r.startsWith('20 Mbit/s')), JSON.stringify(qRows));
-  check('Original ist markiert', (await ev(`document.querySelector('.pop .opt.sel')?.innerText ?? ''`)).startsWith('Original'));
+  check(
+    'Popup: Automatisch, 4K 40, 1080p hoch 20, 1080p 8, 720p 4, 480p 2 (wie die Apple-App)',
+    JSON.stringify(qRows) === JSON.stringify(['Automatisch', '4K 40 Mbit/s', '1080p hoch 20 Mbit/s', '1080p 8 Mbit/s', '720p 4 Mbit/s', '480p 2 Mbit/s']),
+    JSON.stringify(qRows)
+  );
+  check('Automatisch ist markiert', (await ev(`document.querySelector('.pop .opt.sel')?.innerText ?? ''`)).startsWith('Automatisch'));
+  await ctx.capture(path.join(out, 'TA-quality-menu.png'), player.overlay);
   const posQ = player.state.position;
   state.log.length = 0;
-  await ev(`[...document.querySelectorAll('.pop .opt')].find((b) => /^8 Mbit/.test(b.innerText.trim())).click()`);
+  await ev(`[...document.querySelectorAll('.pop .opt')].find((b) => /^1080p\\s+8 Mbit/.test(b.innerText.trim())).click()`);
   check('Wahl "8 Mbit/s": neue PlaybackInfo mit Bitratengrenze', await waitFor(() => infos().some((l) => l.maxBitrate === 8_000_000)), JSON.stringify(infos().map((l) => l.maxBitrate)));
   check('...der Server transcodiert, der Player laeuft weiter', await waitFor(() => player.state.phase === 'playing' && player.state.method === 'Transcode'), `phase=${player.state.phase} method=${player.state.method}`);
   check('...an der aktuellen Position', Math.abs(infos().find((l) => l.maxBitrate === 8_000_000).startTicks / 1e7 - posQ) < 6, `${(infos()[0].startTicks / 1e7).toFixed(1)} s ~ ${posQ.toFixed(1)} s`);
@@ -141,7 +152,7 @@ module.exports = async (ctx) => {
   check('Tonspur bleibt bei der Qualitaetswahl erhalten', infos().at(-1)?.audioIndex === player.cur?.audioIdx);
   state.log.length = 0;
   await cmd({ type: 'quality', mbps: 0 });
-  check('Zurueck auf Original: Direct Play ohne Bitratengrenze', await waitFor(() => player.state.phase === 'playing' && player.state.method === 'DirectPlay') && infos().at(-1)?.maxBitrate === undefined, `method=${player.state.method} max=${infos().at(-1)?.maxBitrate}`);
+  check('Zurueck auf Automatisch: im Heimnetz Direct Play ohne eigene Grenze', await waitFor(() => player.state.phase === 'playing' && player.state.method === 'DirectPlay') && infos().at(-1)?.maxBitrate === 400_000_000, `method=${player.state.method} max=${infos().at(-1)?.maxBitrate}`);
   state.log.length = 0;
   await cmd({ type: 'quality', mbps: -5 });
   await cmd({ type: 'quality', mbps: 'x' });

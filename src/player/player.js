@@ -20,8 +20,9 @@ const TEXT = {
     channels: 'Kanäle', hwdec: 'Hardware-Dekodierung', renderer: 'Renderer', dropped: 'Verworfene Bilder', bitrate: 'Bitrate', cache: 'Puffer', mpv: 'mpv',
     volumeNow: 'Lautstärke {v} %', muted: 'Stumm', unmuted: 'Ton an', speedNow: 'Geschwindigkeit {v}×', chapter: 'Kapitel {n}', noTracks: 'Keine Spuren', remaining: 'Verbleibend', elapsed: 'Laufzeit',
     device: 'Gerät', noAudioOut: 'keine Tonausgabe', bitstream: 'Bitstream', audioFallback: 'Ton-Ausgabe zurückgesetzt auf Stereo', transcodeFallback: 'Direkt nicht abspielbar, der Server transcodiert',
-    loadingTranscode: 'Transcodierung wird vorbereitet…', quality: 'Qualität', original: 'Original', mbit: '{n} Mbit/s', qualityHint: 'Weniger Bitrate: der Server transcodiert',
-    serverLimit: 'Server-Limit (Internet)', serverLimitNote: 'Server-Limit (Internet): {n} Mbit/s. „Original“ ist darüber nicht möglich.',
+    loadingTranscode: 'Transcodierung wird vorbereitet…', quality: 'Qualität', mbit: '{n} Mbit/s', qualityAbout: 'ca. {n} Mbit/s',
+    q1080high: '1080p hoch', qServer: 'Grenze des Servers', qSetting: 'Einstellung',
+    serverLimit: 'Server-Limit (Internet)',
     moreLangs: 'Weitere Sprachen ({n})', lessLangs: 'Weniger Sprachen', unknownLang: 'Unbekannte Sprache',
     pauseTag: 'Pausiert', pauseResume: 'Weiter', pauseKey: 'Leertaste', pauseEnds: 'Endet um {t}', pauseLeft: 'noch {d}', pauseOf: '{a} von {b}', season: 'Staffel {n}', episodeN: 'Folge {n}',
     episodes: 'Folgen', specials: 'Specials', playingNow: 'Läuft'
@@ -38,8 +39,9 @@ const TEXT = {
     channels: 'Channels', hwdec: 'Hardware decoding', renderer: 'Renderer', dropped: 'Dropped frames', bitrate: 'Bitrate', cache: 'Buffer', mpv: 'mpv',
     volumeNow: 'Volume {v}%', muted: 'Muted', unmuted: 'Sound on', speedNow: 'Speed {v}×', chapter: 'Chapter {n}', noTracks: 'No tracks', remaining: 'Remaining', elapsed: 'Elapsed',
     device: 'Device', noAudioOut: 'no audio output', bitstream: 'Bitstream', audioFallback: 'Audio output reset to stereo', transcodeFallback: 'Cannot play directly, the server is transcoding',
-    loadingTranscode: 'Preparing transcode…', quality: 'Quality', original: 'Original', mbit: '{n} Mbit/s', qualityHint: 'Lower bitrate: the server transcodes',
-    serverLimit: 'Server limit (internet)', serverLimitNote: 'Server limit (internet): {n} Mbit/s. "Original" is not possible above it.',
+    loadingTranscode: 'Preparing transcode…', quality: 'Quality', mbit: '{n} Mbit/s', qualityAbout: 'about {n} Mbit/s',
+    q1080high: '1080p high', qServer: 'Server limit', qSetting: 'Setting',
+    serverLimit: 'Server limit (internet)',
     moreLangs: 'More languages ({n})', lessLangs: 'Fewer languages', unknownLang: 'Unknown language',
     pauseTag: 'Paused', pauseResume: 'Resume', pauseKey: 'Space', pauseEnds: 'Ends at {t}', pauseLeft: '{d} left', pauseOf: '{a} of {b}', season: 'Season {n}', episodeN: 'Episode {n}',
     episodes: 'Episodes', specials: 'Specials', playingNow: 'Playing'
@@ -816,20 +818,25 @@ function buildSpeedPopup() {
   return el;
 }
 
-/** Qualitaet = Bitratengrenze: "Original" (Direct Play) oder eine Stufe unterhalb der Quelle (der Server transcodiert). */
+/** Zahl in Mbit/s fuer die Anzeige (deutsch mit Komma). */
+const fmtMbps = (n) => (lang === 'de' ? String(+(+n).toFixed(1)).replace('.', ',') : String(+(+n).toFixed(1)));
+
+/**
+ * Qualitaet = Obergrenze der Datenrate (Plan P21, wie das Qualitaetsmenue der Apple-App): "Automatisch" (im Heimnetz ohne Grenze, ueber das Internet nach
+ * der gemessenen Bandbreite) und feste Stufen. Die Liste kommt fertig vom Hauptprozess (src/shared/bitrate.js qualityChoices): hat der Server eine
+ * Grenze fuer das Internet, endet sie dort, die Grenze selbst ist die hoechste Stufe.
+ */
 function buildQualityPopup() {
-  const q = S.quality ?? { mbps: 0, sourceMbps: null };
-  const src = q.sourceMbps;
+  const q = S.quality ?? { mbps: 0, choices: [] };
   const cur = q.mbps ?? 0;
-  const steps = [20, 10, 8, 6, 4, 2].filter((n) => !src || n < src);
-  if (cur > 0 && !steps.includes(cur)) steps.push(cur); // eine in den Einstellungen gewaehlte Grenze bleibt sichtbar
-  steps.sort((a, b) => b - a);
   const el = h('div', { class: 'pop' }, h('h4', null, tr('quality')));
-  // Begrenzt der Server die Bitrate (Internet) und liegt die Datei darueber, steht es hier: "Original" waere dort Direct Play, der Server erlaubt es nicht
-  if (S.serverLimit?.exceeded) el.append(h('div', { class: 'pop-note' }, tr('serverLimitNote', { n: S.serverLimit.mbps })));
-  const rows = [[0, tr('original'), src ? tr('mbit', { n: +src.toFixed(1) }) : ''], ...steps.map((n) => [n, tr('mbit', { n }), n === steps[0] ? tr('qualityHint') : ''])];
-  for (const [m, label, sub] of rows) {
-    el.append(optRow({ label, sub, selected: Math.abs(cur - m) < 0.01, onclick: () => { send({ type: 'quality', mbps: m }); closePopup(); showFlash(`${tr('quality')}: ${label}`); } }));
+  const label = (c) =>
+    c.name === 'auto' ? tr('auto') : c.name === 'server' ? tr('qServer') : c.name === 'setting' ? tr('mbit', { n: fmtMbps(c.mbps) }) : c.name === '1080high' ? tr('q1080high') : c.name === '4k' ? '4K' : `${c.name}p`;
+  const sub = (c) =>
+    c.name === 'auto' ? (c.detailMbps ? tr('qualityAbout', { n: fmtMbps(c.detailMbps) }) : '') : c.name === 'setting' ? tr('qSetting') : tr('mbit', { n: fmtMbps(c.detailMbps) });
+  for (const c of q.choices ?? []) {
+    const name = label(c);
+    el.append(optRow({ label: name, sub: sub(c), selected: Math.abs(cur - c.mbps) < 0.01, onclick: () => { send({ type: 'quality', mbps: c.mbps }); closePopup(); showFlash(`${tr('quality')}: ${name}`); } }));
   }
   return el;
 }

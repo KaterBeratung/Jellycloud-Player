@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog, Notification, powerMonitor } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
 const { PlayerController } = require('./player');
 const { AudioOutputProbe } = require('./audio-output');
@@ -46,6 +47,18 @@ let booted = false;
 let devNoSplash = DEV && process.argv.some((a) => a.startsWith('--shots='));
 
 const netFetch = (url, init) => net.fetch(url, init);
+
+/** Kennzeichen des Netzes dieses Rechners: Name und Adresse jedes aktiven Adapters (ohne Loopback). Nur fuer den Vergleich, nie gespeichert oder gemeldet. */
+function networkSignature() {
+  try {
+    return Object.entries(os.networkInterfaces())
+      .flatMap(([name, list]) => (list ?? []).filter((a) => !a.internal).map((a) => `${name}=${a.address}`))
+      .sort()
+      .join('|');
+  } catch {
+    return '';
+  }
+}
 
 /** @type {Updater|null} */
 let updater = null;
@@ -470,7 +483,10 @@ async function startUp() {
     onNotifications: (summary) => {
       if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('notify:changed', summary);
     },
-    systemNotify: notifier
+    systemNotify: notifier,
+    // Heimnetz-Pruefung (Plan P21): das Netz des Rechners als Kennzeichen (Adapter und Adressen, nur im Speicher). Wechselt es (anderes WLAN, VPN an
+    // oder aus), gilt keine gemerkte Einstufung mehr. Ueber welche Schnittstelle eine Verbindung laeuft, laesst sich hier nicht bestimmen (unbekannt).
+    connection: () => ({ signature: networkSignature() })
   });
   backend.buildSeerr();
 
@@ -511,7 +527,8 @@ async function startUp() {
   player = new PlayerController({
     getClient: () => backend.client,
     getLimits: () => backend.limits,
-    refreshLimits: () => backend.refreshLimits(true), // bei jedem Start neu: die Verbindung kann sich geaendert haben (VPN an/aus)
+    refreshLimits: (force) => backend.refreshLimits(force), // beim Start neu (force): die Verbindung kann sich geaendert haben
+    measureBandwidth: (o) => backend.measureBandwidth(o),
     getSettings: () => config.settings,
     saveSettings: (patch) => config.updateSettings(patch),
     getHostWindow: () => mainWin,
@@ -582,6 +599,8 @@ async function startUp() {
         },
         player,
         config,
+        /** Rueckseite (tools/shots/limits.js: gemerkte Bandbreite und Heimnetz-Pruefung verwerfen) */
+        backend,
         updater,
         presence,
         /** Mitteilungen des Systems: die Szenarien setzen create (und isSupported) auf eine Attrappe und fangen so jede Mitteilung ab (tools/shots/system-notify.js) */

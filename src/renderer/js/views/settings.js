@@ -589,6 +589,10 @@ export function settingsView({ section, query: q }) {
       group(
         t('set.grp.language'),
         setting(t('set.audioLanguage'), t('set.audioLanguageDesc'), menuSelect(langOptions(t('set.langServer')), pl().audioLanguage, (v) => setPlayer({ audioLanguage: v }))),
+        // Nur Android (Plan P21, wie Einstellungen > Player > Ton der Apple-App); unter Windows entscheidet die Tonausgabe (Ton > Kanaele)
+        state.platform === 'android'
+          ? setting(t('set.keepSurround'), t('set.keepSurroundDesc'), toggle(pl().keepSurround === true, (v) => setPlayer({ keepSurround: v }), t('set.keepSurround')))
+          : null,
         setting(
           t('set.subMode'),
           t('set.subModeDesc'),
@@ -732,20 +736,23 @@ export function settingsView({ section, query: q }) {
 
   // ---------- Netzwerk & Qualitaet ----------
   function networkPanel() {
-    const bitrate = [0, 80, 40, 20, 12, 8, 4].map((v) => ({ value: v, label: v === 0 ? t('set.qualityOriginal') : `${v} Mbit/s` }));
+    // Stufen wie die Apple-App (Plan P21, E7): Automatisch, 40, 20, 10, 5, 2 Mbit/s; ein frueher gewaehlter anderer Wert bleibt waehlbar
+    const bitrate = window.JCBitrate.settingChoices(pl().maxBitrateMbps).map((v) => ({ value: v, label: v === 0 ? t('set.qualityAuto') : `${v} Mbit/s` }));
     const buffers = [64, 128, 256, 512, 1024].map((v) => ({ value: v, label: v >= 1024 ? '1 GB' : `${v} MB` }));
 
-    // Bitratenlimit des Servers: gilt nur ueber das Internet, im lokalen Netz fragt die App nichts weiter ab (siehe JellyfinClient.getStreamingLimits)
+    // Grenze des Servers: gilt nur ueber das Internet; im Heimnetz liest die App sie nicht (src/shared/jellyfin.js getStreamingLimits)
     const mbit = (bps) => `${+(bps / 1e6).toFixed(1)} Mbit/s`;
     const describeLimits = (l) => {
       if (!l) return '—';
-      if (l.remote === false) return t('set.limitsLocal');
+      const unknown = l.serverView === null ? `${t('set.limitsUnknown')} · ` : '';
+      if (l.home) return unknown + t('set.limitsLocal');
       const parts = [];
       if (l.user > 0) parts.push(`${t('set.limitsUser')} ${mbit(l.user)}`);
       if (l.server > 0) parts.push(`${t('set.limitsServer')} ${mbit(l.server)}`);
       let text = l.limitBps > 0 ? t('set.limitsRemote', { n: mbit(l.limitBps) }) + (parts.length > 1 ? ` (${parts.join(', ')})` : '') : t('set.limitsNone');
-      if (!l.serverKnown) text += ` · ${t('set.limitsUnreadable')}`;
-      return l.remote === null ? `${t('set.limitsUnknown')} · ${text}` : text;
+      if (l.limitStale) text += ` · ${t('set.limitsStale')}`;
+      else if (!l.serverKnown && !(l.user > 0)) text += ` · ${t('set.limitsUnreadable')}`;
+      return unknown + text;
     };
     const limitText = h('span', { class: 'setting-desc limit-text' }, '…');
     const check = h('button', { class: 'btn glass sm', type: 'button' }, icon('refresh', 16), h('span', null, t('set.limitsCheck')));
@@ -763,7 +770,7 @@ export function settingsView({ section, query: q }) {
       group(t('set.grp.limits'), limitRow),
       group(
         t('set.grp.quality'),
-        setting(t('set.quality'), t('set.qualityDesc'), menuSelect(bitrate, pl().maxBitrateMbps, (v) => setPlayer({ maxBitrateMbps: v }))),
+        setting(t('set.quality'), t('set.qualityDesc'), menuSelect(bitrate, Number(pl().maxBitrateMbps) > 0 ? Number(pl().maxBitrateMbps) : 0, (v) => setPlayer({ maxBitrateMbps: v }))),
         setting(t('set.allowTranscode'), t('set.allowTranscodeDesc'), toggle(pl().allowTranscode, (v) => setPlayer({ allowTranscode: v }), t('set.allowTranscode')))
       ),
       group(

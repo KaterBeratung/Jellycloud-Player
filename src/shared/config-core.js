@@ -71,6 +71,9 @@ const DEFAULT_SETTINGS = {
     muted: false,
     // Sprache und Untertitel
     audioLanguage: 'server', // server | ISO-639-1 (de, en, ...)
+    // Android (Plan P21, wie die Apple-App): Mehrkanalspur behalten, auch wenn die Tonausgabe nur Stereo kann (sonst dort die Stereo-Spur derselben
+    // Sprache, wenn es eine gibt). Windows waehlt nach der Tonausgabe (audioChannels) und nutzt den Schalter nicht.
+    keepSurround: false,
     subtitleMode: 'server', // server | off | forced | always | smart
     subtitleLanguage: 'server',
     subtitleScale: 1,
@@ -99,7 +102,9 @@ const DEFAULT_SETTINGS = {
     // die App waehrend der Wiedergabe trotzdem an (sonst koennte kein anderes Geraet uebernehmen)
     showHandoff: true,
     // Netzwerk
-    maxBitrateMbps: 0, // 0 = Original (Direct Play), sonst Server begrenzt per Transcode
+    // Bitratengrenze (Plan P21, src/shared/bitrate.js): 0 = Automatisch (im Heimnetz ohne Grenze, ueber das Internet nach der gemessenen Bandbreite),
+    // sonst Mbit/s; ueber das Internet gilt die Grenze des Servers immer zuerst
+    maxBitrateMbps: 0,
     allowTranscode: true, // false: nur Direct Play / Direct Stream
     bufferMb: 256,
     readaheadSec: 40,
