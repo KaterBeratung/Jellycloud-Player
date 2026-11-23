@@ -67,7 +67,7 @@ test('Zustand vor der Anmeldung: nicht angemeldet, Version, Sprache, Zusatzfelde
   assert.equal(s.locale, 'de-DE');
   assert.equal(s.platform, 'web');
   assert.deepEqual(s.servers, []);
-  assert.equal(s.settings.player.skipCountdown, 6, 'Standardeinstellungen sind da');
+  assert.equal(s.settings.player.skipDelay, 5, 'Standardeinstellungen sind da');
 });
 
 test('Anmeldung mit Passwort: Konto wird gemerkt, Token nur kodiert abgelegt, Zustand zeigt keine Tokens', async () => {
@@ -283,9 +283,9 @@ test('Profilgrenze: ein fuenftes Profil wird nach der Anmeldung abgelehnt (PROFI
 test('ConfigCore: defekte Konfiguration wird gesichert statt stumm ueberschrieben, BOM stoert nicht, Neues ergaenzt sich', () => {
   const m = memoryConfig('{kaputt');
   assert.equal(m.store.corrupt, '{kaputt', 'die alte Datei ist gesichert');
-  assert.equal(m.config.settings.player.skipCountdown, 6);
+  assert.equal(m.config.settings.player.skipDelay, 5);
   const bom = memoryConfig('﻿' + JSON.stringify({ version: 9, deviceId: 'abc', servers: [], settings: { player: { skipIntro: 'auto' } } }));
   assert.equal(bom.config.deviceId, 'abc');
   assert.equal(bom.config.settings.player.skipIntro, 'auto', 'eigene Werte bleiben');
-  assert.equal(bom.config.settings.player.skipCountdown, 6, 'fehlende Schluessel kommen aus den Standardwerten');
+  assert.equal(bom.config.settings.player.skipDelay, 5, 'fehlende Schluessel kommen aus den Standardwerten');
 });

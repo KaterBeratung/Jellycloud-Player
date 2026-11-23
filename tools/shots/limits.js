@@ -50,9 +50,10 @@ module.exports = async (ctx) => {
     await ctx.wait(700);
   };
   const qualityRows = async () => {
-    await ev(`document.querySelector('.cluster .ibtn[title="Qualität"]').click()`);
+    await ev(`document.querySelector('.cluster .ibtn[title="Qualität & Bildformat"]').click()`);
     await ctx.wait(500);
-    return ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim())`);
+    // nur der Abschnitt "Qualitaet": die letzten vier Zeilen sind das Bildformat (Automatisch, Einpassen, Fuellen, Dehnen)
+    return ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim()).slice(0, -4)`);
   };
 
   // ---------- Einstellungen: Heimnetz ----------

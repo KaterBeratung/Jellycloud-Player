@@ -9,7 +9,7 @@ const OVERLAY_CHECK = `(() => {
   const vis = (el) => { const r = rect(el); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && +s.opacity > 0.1 && !el.hidden; };
   const hit = (a, b) => { const x = rect(a), y = rect(b); return Math.min(x.right, y.right) - Math.max(x.left, y.left) > 1.5 && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 1.5; };
   const q = (s) => document.querySelector(s);
-  const pairs = [['.titles', '.info'], ['.info', '.floaters'], ['.info', '.bar'], ['.floaters', '.bar'], ['.skip', '.nextcard'], ['.pop', '.top'], ['.pop', '.bar .ctrls'], ['.top .round', '.titles'], ['.seekrow .time', '.seek'], ['.pop', '.info'], ['.pop', '.floaters']];
+  const pairs = [['.titles', '.info'], ['.info', '.floaters'], ['.info', '.bar'], ['.floaters', '.bar'], ['.skip', '.bar'],['.pop', '.top'], ['.pop', '.bar .ctrls'], ['.top .round', '.titles'], ['.seekrow .time', '.seek'], ['.pop', '.info'], ['.pop', '.floaters']];
   for (const [a, b] of pairs) { const x = q(a), y = q(b); if (x && y && vis(x) && vis(y) && !x.contains(y) && !y.contains(x) && hit(x, y)) issues.push(a + ' x ' + b); }
   const W = innerWidth, H = innerHeight;
   for (const el of document.querySelectorAll('.top, .bar, .floaters > *, .info, .pop, .ctrls > *')) { if (!vis(el)) continue; const r = rect(el); if (r.left < -1 || r.right > W + 1 || r.top < -1 || r.bottom > H + 1) issues.push('ausserhalb: ' + (el.className || el.tagName)); }
@@ -172,7 +172,7 @@ module.exports = async (ctx) => {
   await waitFor(() => player.state.phase === 'playing');
   await waitFor(() => player.state.segments?.length > 0);
   await ctx.wait(1200);
-  check('Intro-Segment geladen', player.state.segments?.[0]?.type === 'Intro');
+  check('Intro-Segment geladen (Rueckblick und Vorschau stehen ohne Einstellung nicht auf der Zeitleiste)', player.state.segments?.some((s) => s.type === 'Intro') && !player.state.segments.some((s) => s.type === 'Recap'));
   check('Naechste Folge ermittelt', player.state.next?.id === ep2.Id, JSON.stringify(player.state.next));
   const skipVisible = await waitFor(async () => (await ev(`!document.querySelector('.skip').hidden`)));
   check('Skip-Button erscheint im Intro', skipVisible);
@@ -183,12 +183,12 @@ module.exports = async (ctx) => {
   check('Skip springt hinter das Intro', player.state.position >= 84, `${player.state.position.toFixed(1)} s`);
   check('Skip-Button verschwindet danach', await waitFor(async () => await ev(`document.querySelector('.skip').hidden`)));
 
+  // Abspann bis ans Ende (Testserver: 5340-5400 s): der Bildschirm "Naechste Folge" mit Countdown (Plan P22, E10; Einzelheiten in player-countdown.js)
   await ev(`window.player.send({ type: 'seek', to: 5392 })`);
+  const nextVisible = await waitFor(async () => await ev(`!document.querySelector('.upnext').hidden`), 4000);
+  check('Bildschirm "Naechste Folge" im Abspann', nextVisible);
   await ctx.wait(700);
-  const nextVisible = await ev(`!document.querySelector('.nextcard').hidden`);
-  check('Karte "Naechste Folge" gegen Ende', nextVisible);
   await shot('07-next-episode');
-  await overlayIssues('Naechste-Folge-Karte');
   const advanced = await waitFor(() => player.cur?.item?.Id === ep2.Id && player.state.phase === 'playing', 12000);
   check('Autoplay startet die naechste Folge', advanced, `aktuell=${player.cur?.item?.Name}`);
   // Der Start-Bericht an den Server geht asynchron hinter dem Wechsel des Players her: kurz auf ihn warten, statt gegen einen Zeitpunkt zu pruefen

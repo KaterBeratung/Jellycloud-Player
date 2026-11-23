@@ -130,11 +130,14 @@ module.exports = async (ctx) => {
 
   // Qualitaet im Player (Plan P21, Stufen wie die Apple-App): Popup, Wahl erzeugt einen Transcode an der aktuellen Position, "Automatisch" geht zurueck
   check('Direct Play im Heimnetz: die Anfrage nennt trotzdem eine Zahl ("keine Grenze" = 400 Mbit/s)', infos()[0]?.maxBitrate === 400_000_000 && infos()[0]?.profileMaxBitrate === 400_000_000, JSON.stringify(infos().map((l) => [l.maxBitrate, l.profileMaxBitrate])));
-  const qBtn = `document.querySelector('.cluster .ibtn[title="Qualität"]')`;
+  const qBtn = `document.querySelector('.cluster .ibtn[title="Qualität & Bildformat"]')`;
   check('Qualitaets-Knopf ist sichtbar (Transcoding erlaubt)', await ev(`!!${qBtn} && !${qBtn}.hidden`));
   await ev(`${qBtn}.click()`);
   await ctx.wait(450);
-  const qRows = await ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim())`);
+  // nur der Abschnitt "Qualitaet": die letzten vier Zeilen sind das Bildformat (Automatisch, Einpassen, Fuellen, Dehnen)
+  const qRows = await ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim()).slice(0, -4)`);
+  const fRows = await ev(`[...document.querySelectorAll('.pop .opt')].map((b) => b.innerText.replace(/\\s+/g, ' ').trim()).slice(-4)`);
+  check('Im selben Menue: Bildformat Automatisch, Einpassen, Fuellen, Dehnen ("Automatisch" sagt, was es gerade bedeutet)', /^Automatisch (Einpassen|Füllen)$/.test(fRows[0]) && JSON.stringify(fRows.slice(1)) === JSON.stringify(['Einpassen', 'Füllen', 'Dehnen']), JSON.stringify(fRows));
   check(
     'Popup: Automatisch, 4K 40, 1080p hoch 20, 1080p 8, 720p 4, 480p 2 (wie die Apple-App)',
     JSON.stringify(qRows) === JSON.stringify(['Automatisch', '4K 40 Mbit/s', '1080p hoch 20 Mbit/s', '1080p 8 Mbit/s', '720p 4 Mbit/s', '480p 2 Mbit/s']),
@@ -223,7 +226,10 @@ module.exports = async (ctx) => {
   state.log.length = 0;
   await ctx.run(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
   check('Transcode verboten: Fehleranzeige statt Ausweichen', await waitFor(() => player.state.phase === 'error', 8000), `phase=${player.state.phase}`);
-  check('Transcode verboten: keine Qualitaetswahl im Player', player.state.quality?.allowed === false && (await ev(`document.querySelector('.cluster .ibtn[title="Qualität"]').hidden`)));
+  await ev(`document.querySelector('.cluster .ibtn[title="Qualität & Bildformat"]').click()`);
+  await ctx.wait(450);
+  const heads = await ev(`[...document.querySelectorAll('.pop h4')].map((e) => e.textContent)`);
+  check('Transcode verboten: das Menue "Qualitaet & Bildformat" bietet nur das Bildformat', player.state.quality?.allowed === false && JSON.stringify(heads) === JSON.stringify(['Bildformat']), JSON.stringify(heads));
   check('...und keine zweite PlaybackInfo', infos().length === 1, `${infos().length} Anfragen`);
   await stop();
   await settings({ allowTranscode: true });

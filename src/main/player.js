@@ -10,6 +10,8 @@ const { buildMpvArgs, findMpv, probeMpv, listAudioDevices } = require('./mpv-arg
 const { buildDeviceProfile, resolvePlayback, mpvTrackId, streamIndexFromMpvId, describeMedia, pickStreams } = require('./profile');
 const { secondsToTicks, ticksToSeconds } = require('./jellyfin');
 const Bitrate = require('../shared/bitrate');
+const PlayerRules = require('../shared/player-rules');
+const MediaTags = require('../shared/media-tags');
 const { resolveAudioOutput } = require('./audio-output');
 const { buildPauseInfo } = require('./pause-info');
 const { buildEpisodeList, nextEpisode } = require('./episode-list');
@@ -71,6 +73,14 @@ class PlayerController extends EventEmitter {
     this.stopping = false;
     this._session = 0;
     this.quality = undefined; // Qualitaet dieser Wiedergabe in Mbit/s (0 = Automatisch); undefined = Einstellung "Bitratengrenze"
+    this.format = undefined; // Bildformat dieser Wiedergabe (auto | fit | fill | stretch); undefined = Einstellung "Standardbild"
+    // Ueberspringen und "Naechste Folge" wie in der Apple-App (Plan P22, E10; Regeln in src/shared/player-rules.js). Den Countdown zaehlt dieser Player
+    // nach der Wanduhr (_countdown: { ends, total, inCredits }); im Abspann laeuft das Bild dabei klein weiter (Raender von mpv, _layoutPicture).
+    this.skip = PlayerRules.createSkipEngine();
+    this._skipItem = null;
+    this._countdown = null;
+    this._cdTimer = null;
+    this._pictureApplied = '';
     this._stopPromise = null;
     this._reports = new Set();
     this._pushedPos = { at: 0, value: 0 };
@@ -366,6 +376,7 @@ class PlayerController extends EventEmitter {
 
     const sync = () => {
       if (overlay.isDestroyed() || host.isDestroyed() || host.isMinimized()) return;
+      this._layoutPicture(); // "Automatisch" und das kleine Bild im Abspann haengen von der Flaeche ab
       // Im Vollbild ragt das Overlay ringsum etwas ueber den Bildschirm hinaus (siehe fullscreen-bounds.js): sonst bleibt bei gebrochener Skalierung ein Streifen der Taskleiste unten stehen
       const b = host.getContentBounds();
       overlay.setBounds(host.isFullScreen() ? coverBounds(b) : b);
@@ -525,7 +536,6 @@ class PlayerController extends EventEmitter {
       startSec,
       selectExternal: externalSelect,
       segments: [],
-      skipped: new Set(),
       next: null,
       lastSent: 0,
       ended: false,
@@ -537,9 +547,16 @@ class PlayerController extends EventEmitter {
     };
     this.state.position = startSec;
     this._pushedPos = { at: 0, value: startSec };
+    // Ueberspringen und Countdown: je Eintrag neu; ein Neuladen desselben Eintrags (Spur, Qualitaet) behaelt, was schon uebersprungen ist
+    if (this._skipItem !== item.Id) {
+      this.skip.reset(item.Id);
+      this._skipItem = item.Id;
+    } else this.skip.dropCountdown();
+    this._hideCountdown();
     this._push({
       phase: 'loading',
       itemId: item.Id,
+      skip: null,
       title,
       subtitle,
       isEpisode,
@@ -560,18 +577,17 @@ class PlayerController extends EventEmitter {
       // Im Transcode kennt mpv nur die eine Spur im Strom; die Liste kommt dann vom Server (Wechsel = neu laden).
       ...(res.isTranscode ? { tracks: this._transcodeTracks(this.cur) } : {})
     });
+    this._pushTags();
 
     // Segmente und naechste Folge parallel laden, blockiert den Start nicht.
     const itemId = item.Id;
     client.getMediaSegments(itemId).then((segs) => {
       if (this.cur?.item.Id !== itemId) return;
-      const ps2 = this.getSettings().player;
+      // Alle Arten; was davon wirkt, entscheiden die Regeln bei jeder Zeitmeldung nach den aktuellen Einstellungen (src/shared/player-rules.js)
       this.cur.segments = segs
         .map((s) => ({ type: s.Type, start: ticksToSeconds(s.StartTicks), end: ticksToSeconds(s.EndTicks) }))
-        .filter((s) => s.end > s.start)
-        // Je Art abschaltbar: Intro/Rueckblick/Vorschau folgen "Intro ueberspringen", der Abspann "Abspann ueberspringen".
-        .filter((s) => (s.type === 'Outro' ? ps2.skipOutro !== 'off' : ps2.skipIntro !== 'off'));
-      this._push({ segments: this.cur.segments });
+        .filter((s) => s.end > s.start && PlayerRules.SEGMENT_TYPES.includes(s.type));
+      this._pushSegments();
     });
     if (isEpisode && item.SeriesId) {
       this._loadEpisodes(item).then(({ next, list }) => {
@@ -678,6 +694,8 @@ class PlayerController extends EventEmitter {
       case 'pause':
         this._push({ paused: !!value });
         if (this.cur?.started) this._report(value ? 'Pause' : 'Unpause');
+        // Wer im Abspann anhaelt, will nicht gleich in der naechsten Folge landen (am Ende haelt mpv selbst an: das zaehlt nicht)
+        if (value && this.cur?.started && !this.cur.ended) this._applyCountdown(this.skip.paused());
         break;
       case 'volume':
         this._push({ volume: value });
@@ -692,6 +710,14 @@ class PlayerController extends EventEmitter {
         break;
       case 'eof-reached':
         if (value === true) this._onEof();
+        else if (value === false && this.cur?.ended) {
+          // nach dem Ende zurueckgesprungen: die Folge laeuft wieder, der Countdown vom Ende gilt nicht mehr
+          this.cur.ended = false;
+          if (this._countdown && !this._countdown.inCredits) {
+            this.skip.dropCountdown();
+            this._hideCountdown();
+          }
+        }
         break;
       case 'core-idle':
       case 'paused-for-cache':
@@ -710,6 +736,8 @@ class PlayerController extends EventEmitter {
           video: {
             w: v.w,
             h: v.h,
+            dw: v.dw,
+            dh: v.dh,
             pixelformat: v.pixelformat,
             colormatrix: v.colormatrix,
             gamma: v.gamma,
@@ -718,6 +746,8 @@ class PlayerController extends EventEmitter {
             hdr: v.gamma === 'pq' ? 'PQ (HDR10 / Dolby Vision)' : v.gamma === 'hlg' ? 'HLG' : 'SDR'
           }
         });
+        this._layoutPicture(); // "Automatisch" und das kleine Bild richten sich nach dem Seitenverhaeltnis des Videos
+        this._pushTags(); // die Aufloesung, die wirklich ankommt
         break;
       }
       case 'current-ao':
@@ -810,18 +840,161 @@ class PlayerController extends EventEmitter {
     };
   }
 
+  /** Was die Regeln fuer Ueberspringen und Countdown ueber die laufende Wiedergabe wissen muessen. */
+  _skipContext(t = Number(this.state.position) || 0) {
+    const c = this.cur;
+    const ps = this.getSettings().player;
+    return { t, duration: Number(this.state.duration) || 0, segments: c?.segments ?? [], prefs: ps, hasNext: !!c?.next, autoplayNext: ps.autoplayNext !== false, paused: !!this.state.paused, reachedEnd: !!c?.ended };
+  }
+
+  /**
+   * Zeitmeldung (etwa zweimal pro Sekunde): Abschnitte ueberspringen, "Intro ueberspringen" zeigen (bei "Automatisch" mit Timer, aus dem sich der Knopf
+   * fuellt) und den Countdown zur naechsten Folge im Abspann beginnen oder zuruecknehmen.
+   */
   _tick(pos) {
     const c = this.cur;
-    if (!c || !c.started) return;
-    const settings = this.getSettings();
-    // Intro/Rueckblick bzw. Abspann automatisch ueberspringen
-    for (const seg of c.segments) {
-      const auto = seg.type === 'Outro' ? settings.player.skipOutro === 'auto' : settings.player.skipIntro === 'auto' && (seg.type === 'Intro' || seg.type === 'Recap');
-      if (auto && pos >= seg.start && pos < seg.end - 1 && !c.skipped.has(seg.start)) {
-        c.skipped.add(seg.start);
-        this.mpv?.command('seek', seg.end, 'absolute').catch(() => {});
-      }
+    if (!c || !c.started || this.stopping) return;
+    const r = this.skip.tick(this._skipContext(pos));
+    if (r.skip) {
+      this.mpv?.command('seek', r.skip.to, 'absolute').catch(() => {});
+      this._push({ skipNotice: { type: r.skip.type, at: Date.now() } });
     }
+    this._applyCountdown(r.countdown);
+    const skip = r.button ? { type: r.button, timer: r.timer } : null;
+    if (JSON.stringify(skip) !== JSON.stringify(this.state.skip ?? null)) this._push({ skip });
+  }
+
+  /**
+   * Tags neben dem Titel (Plan P22, Y10; Regeln in src/shared/media-tags.js player): wie der Server liefert, was an Aufloesung, HDR und Ton wirklich ankommt.
+   * HDR gilt als ausgegeben, solange es nicht auf SDR umgerechnet wird (Einstellung "HDR-Ausgabe"); die Aufloesung meldet mpv (beim Umsetzen die des Servers).
+   */
+  _pushTags() {
+    const c = this.cur;
+    if (!c) return;
+    const v = this.state.video;
+    const audio = (c.streams ?? []).find((s) => s.Type === 'Audio' && s.Index === c.audioIdx) ?? null;
+    const tags = MediaTags.player({
+      source: c.res.source,
+      audio,
+      delivery: MediaTags.delivery(c.res.method, c.res.url, this.audio?.outChannels === 2 ? 2 : 8),
+      hdrOutput: this.getSettings().player.hdr !== 'tonemap',
+      presented: v?.w > 0 && v?.h > 0 ? { width: v.w, height: v.h } : null,
+      lang: String(this.getUi?.().language ?? 'de').slice(0, 2)
+    }).map((t) => ({ kind: t.kind, text: t.text, highlighted: t.highlighted }));
+    if (JSON.stringify(tags) !== JSON.stringify(this.state.tags ?? null)) this._push({ tags });
+  }
+
+  /** Abschnitte fuer die Zeitleiste: nur die Arten, die nicht aus sind. */
+  _pushSegments() {
+    const ps = this.getSettings().player;
+    this._push({ segments: (this.cur?.segments ?? []).filter((s) => PlayerRules.skipMode(ps, s.type) !== 'off') });
+  }
+
+  /** Ergebnis der Regeln fuer den Countdown umsetzen. */
+  _applyCountdown(cd) {
+    if (!cd) return;
+    if (cd.action === 'start') this._startCountdown(cd.seconds, cd.inCredits);
+    else if (cd.action === 'hide') this._hideCountdown();
+    else if (cd.action === 'continue') this._countdownAtEnd();
+    else if (cd.action === 'close') this.stop(true);
+    else if (cd.action === 'next') this._playNext();
+  }
+
+  _startCountdown(seconds, inCredits) {
+    clearTimeout(this._cdTimer);
+    this._countdown = { ends: Date.now() + seconds * 1000, total: seconds, inCredits };
+    this._cdTimer = setTimeout(() => this._applyCountdown(this.skip.countdownFinished()), seconds * 1000);
+    this._layoutPicture();
+    this._push({ upnext: this._upnextState() });
+  }
+
+  /** Der Countdown lief schon im Abspann, jetzt ist die Folge zu Ende: er zaehlt weiter, das Bild ist vorbei (kein kleines Bild mehr). */
+  _countdownAtEnd() {
+    if (!this._countdown) return;
+    this._countdown.inCredits = false;
+    this._layoutPicture();
+    this._push({ upnext: this._upnextState() });
+  }
+
+  _hideCountdown() {
+    clearTimeout(this._cdTimer);
+    this._cdTimer = null;
+    if (!this._countdown) return;
+    this._countdown = null;
+    this._layoutPicture();
+    this._push({ upnext: null });
+  }
+
+  /** Bildschirm "Naechste Folge": Ablauf des Countdowns, die naechste Folge (ohne Bild bei Spoilerschutz) und die Lage des kleinen Bildes. */
+  _upnextState() {
+    const cd = this._countdown;
+    const next = this.cur?.next;
+    if (!cd || !next) return null;
+    const hide = !!this.getSettings().general?.spoilerProtection && !next.UserData?.Played;
+    return {
+      ends: cd.ends,
+      total: cd.total,
+      inCredits: cd.inCredits,
+      rect: this._miniPicture()?.rect ?? null,
+      next: { id: next.Id, label: Format.episodeNumbers(next), title: next.Name ?? '', overview: hide ? '' : String(next.Overview ?? '').slice(0, 400), imageTag: hide ? null : next.ImageTags?.Primary ?? null }
+    };
+  }
+
+  /** Lage des kleinen Bildes (nur solange im Abspann der Countdown laeuft). */
+  _miniPicture() {
+    if (!this._countdown?.inCredits || !this.host || this.host.isDestroyed()) return null;
+    const b = this.host.getContentBounds();
+    return PlayerRules.miniPicture(b.width, b.height, this._videoAspect());
+  }
+
+  _videoAspect() {
+    const v = this.state.video ?? {};
+    return v.dw > 0 && v.dh > 0 ? v.dw / v.dh : v.w > 0 && v.h > 0 ? v.w / v.h : null;
+  }
+
+  /** Bildformat dieser Wiedergabe: die Wahl im Player, sonst das Standardbild aus den Einstellungen. */
+  _formatChoice() {
+    return PlayerRules.videoFormat(this.format ?? this.getSettings().player.videoFormat);
+  }
+
+  /**
+   * Bild in mpv setzen: Bildformat (bei "Automatisch" nach Video und Flaeche) und, solange im Abspann der Countdown laeuft, das kleine Bild ueber die Raender
+   * von mpv (video-margin-ratio-*). Nur Aenderungen gehen an mpv.
+   */
+  _layoutPicture() {
+    const m = this.mpv;
+    if (!m || !this.host || this.host.isDestroyed()) return;
+    const b = this.host.getContentBounds();
+    const mini = this._miniPicture();
+    const margins = mini?.margins ?? { left: 0, right: 0, top: 0, bottom: 0 };
+    const choice = this._formatChoice();
+    const format = mini ? 'fit' : PlayerRules.resolveFormat(choice, this._videoAspect(), b.height > 0 ? b.width / b.height : null);
+    const want = JSON.stringify({ margins, format });
+    if (want !== this._pictureApplied) {
+      this._pictureApplied = want;
+      const fail = () => {};
+      for (const side of ['left', 'right', 'top', 'bottom']) m.setProperty(`video-margin-ratio-${side}`, margins[side]).catch(fail);
+      m.setProperty('keepaspect', format !== 'stretch').catch(fail);
+      m.setProperty('panscan', format === 'fill' ? 1 : 0).catch(fail);
+    }
+    if (this.state.format?.choice !== choice || this.state.format?.shown !== format) this._push({ format: { choice, shown: format } });
+    if (this._countdown && JSON.stringify(mini?.rect ?? null) !== JSON.stringify(this.state.upnext?.rect ?? null)) this._push({ upnext: this._upnextState() });
+  }
+
+  /** Naechste Folge (Countdown abgelaufen, "Abspielen" oder Taste): an derselben Stelle wie der Knopf "Naechste Folge". */
+  _playNext() {
+    const c = this.cur;
+    this._hideCountdown();
+    if (!c?.next || this.busy) return;
+    this.busy = true;
+    const sid = this._session;
+    this._switchItem({ itemId: c.next.Id, resume: false }, { atEnd: c.ended })
+      .catch((e) => {
+        if (!(e instanceof Cancelled) && this._session === sid) this._push({ phase: 'error', error: e.message });
+      })
+      .finally(() => {
+        if (this._session === sid) this.busy = false;
+      });
   }
 
   _persistVolume(now = false) {
@@ -836,24 +1009,13 @@ class PlayerController extends EventEmitter {
     else this._volTimer = setTimeout(save, 800);
   }
 
-  async _onEof() {
+  /** Ende der Folge: Countdown zur naechsten Folge (lief er schon im Abspann, zaehlt er weiter), ohne naechste Folge schliesst der Player. */
+  _onEof() {
     const c = this.cur;
     if (!c || c.ended || this.stopping) return;
     c.ended = true;
-    const settings = this.getSettings();
-    if (settings.player.autoplayNext && c.next && !this.busy) {
-      this.busy = true;
-      const sid = this._session;
-      try {
-        await this._switchItem({ itemId: c.next.Id, resume: false }, { atEnd: true });
-      } catch (e) {
-        if (!(e instanceof Cancelled) && this._session === sid) this._push({ phase: 'error', error: e.message });
-      } finally {
-        if (this._session === sid) this.busy = false;
-      }
-    } else {
-      await this.stop(true);
-    }
+    this._push({ skip: null });
+    this._applyCountdown(this.skip.ended(this._skipContext()));
   }
 
   // ---------- Ton: Kontrolle und Rueckfall ----------
@@ -1049,6 +1211,7 @@ class PlayerController extends EventEmitter {
         }
         m.setProperty('aid', Number.isInteger(cmd.id) ? cmd.id : 'auto').catch(fail);
         if (this.cur) this.cur.audioIdx = streamIndexFromMpvId(this.cur.streams, 'Audio', cmd.id);
+        this._pushTags();
         this._report('AudioTrackChange');
         break;
       case 'sub':
@@ -1090,30 +1253,37 @@ class PlayerController extends EventEmitter {
         // Die Technik-Info braucht Werte, die sich bei jedem Bild aendern: nur beobachten, solange sie offen ist.
         m.observeStats(!!cmd.on);
         break;
-      case 'aspect':
-        this._setAspect(cmd.mode);
+      case 'format':
+        // Bildformat dieser Wiedergabe (Menue "Qualitaet & Bildformat"); das Standardbild in den Einstellungen bleibt
+        if (!PlayerRules.VIDEO_FORMATS.includes(cmd.mode)) break;
+        this.format = cmd.mode;
+        this._layoutPicture();
         break;
       case 'fullscreen':
         if (this.host && !this.host.isDestroyed()) this.host.setFullScreen(typeof cmd.value === 'boolean' ? cmd.value : !this.host.isFullScreen());
         break;
       case 'skip': {
-        const seg = this.cur?.segments.find((s) => this.state.position >= s.start && this.state.position < s.end);
-        if (seg) m.command('seek', seg.end, 'absolute').catch(fail);
+        // "Intro ueberspringen" (Knopf) oder die Taste: ans Ende des Abschnitts; im Abspann mit laufendem Countdown die naechste Folge
+        if (!this.cur?.started) break;
+        const r = this.skip.skipPressed(this._skipContext());
+        if (r?.next) this._applyCountdown(this.skip.countdownFinished());
+        else if (r?.to !== undefined) {
+          m.command('seek', r.to, 'absolute').catch(fail);
+          this._push({ skip: null });
+        }
         break;
       }
       case 'next':
-        if (this.cur?.next && !this.busy) {
-          this.busy = true;
-          const sid = this._session;
-          this._switchItem({ itemId: this.cur.next.Id, resume: false })
-            .catch((e) => {
-              if (!(e instanceof Cancelled) && this._session === sid) this._push({ phase: 'error', error: e.message });
-            })
-            .finally(() => {
-              if (this._session === sid) this.busy = false;
-            });
-        }
+        // "Abspielen" am Bildschirm "Naechste Folge", der Knopf in der Leiste oder die Taste N
+        if (this._countdown) this.skip.countdownFinished();
+        this._playNext();
         break;
+      case 'upnext-cancel': {
+        // "Ausblenden" (im Abspann: er laeuft weiter, am Ende kommt der Countdown wieder) bzw. "Schliessen" (am Ende: der Player schliesst)
+        const r = this.skip.cancel();
+        if (r) this._applyCountdown(r);
+        break;
+      }
       case 'play-episode':
         // Folge aus der Liste "Folgen": nur eine Folge dieser Serie (so wie sie die Liste zuletzt bekam), ab der gemerkten Position, andere Eintraege und die laufende Folge ignorieren
         if (typeof cmd.id === 'string' && this.cur?.episodeIds?.has(cmd.id) && cmd.id !== this.cur.item.Id && !this.busy) {
@@ -1150,16 +1320,6 @@ class PlayerController extends EventEmitter {
       default:
         break;
     }
-  }
-
-  _setAspect(mode) {
-    const m = this.mpv;
-    const fail = () => {};
-    m.setProperty('keepaspect', mode !== 'stretch').catch(fail);
-    m.setProperty('panscan', mode === 'fill' ? 1 : 0).catch(fail);
-    const map = { '16:9': '16:9', '4:3': '4:3', '2.39:1': '2.39:1', '21:9': '21:9' };
-    m.setProperty('video-aspect-override', map[mode] ?? '-1').catch(fail);
-    this._push({ aspect: mode ?? 'auto' });
   }
 
   // ---------- Zustand -> Overlay ----------
@@ -1214,6 +1374,7 @@ class PlayerController extends EventEmitter {
     clearInterval(this.reportTimer);
     clearInterval(this._audioTimer);
     clearTimeout(this._seekTimer);
+    clearTimeout(this._cdTimer);
     const { mpv, host, overlay, ownsHost, zorder, _offHost: offHost, _sleepId: sleepId } = this;
     this.flushTimer = this.reportTimer = this._audioTimer = this._seekTimer = null;
     this.mpv = this.host = this.overlay = this.zorder = this._offHost = this._sleepId = null;
@@ -1224,6 +1385,11 @@ class PlayerController extends EventEmitter {
     this._pausedByMinimize = false;
     this._audioFellBack = false;
     this.quality = undefined;
+    this.format = undefined;
+    this._countdown = null;
+    this._cdTimer = null;
+    this._skipItem = null;
+    this._pictureApplied = '';
     this._limitsP = null; // die Pruefung gehoerte zu dieser Wiedergabe; danach (Detailseite) gilt der Speicher der Rueckseite
     this._seekAcc = 0;
     this.mpvBuf = null;

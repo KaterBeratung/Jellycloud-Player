@@ -2,6 +2,7 @@ import { h, icon } from '../renderer/js/dom.js';
 import { installNoDrag } from '../renderer/js/no-drag.js';
 import { installMotion } from '../renderer/js/motion.js';
 import { formatSpan, formatClock, endsAt, chapterAt, isGenericChapter } from './pause.js';
+import { mediaTagRow } from '../renderer/js/tags.js';
 
 installNoDrag();
 installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (motion.js)
@@ -12,10 +13,11 @@ const TEXT = {
     minimize: 'Minimieren', maximize: 'Maximieren', closeWindow: 'Fenster schließen',
     back: 'Zurück', pause: 'Pause', play: 'Abspielen', rew: '10 Sekunden zurück', fwd: '10 Sekunden vor', volume: 'Lautstärke', mute: 'Stumm',
     tracks: 'Audio & Untertitel', audio: 'Audio', subs: 'Untertitel', off: 'Aus', speed: 'Geschwindigkeit', aspect: 'Bildformat', chapters: 'Kapitel',
-    info: 'Technik-Info', fullscreen: 'Vollbild', next: 'Nächste Folge', now: 'Jetzt', nextIn: 'Als Nächstes', skipIntro: 'Intro überspringen',
-    skipRecap: 'Rückblick überspringen', skipOutro: 'Abspann überspringen', skipPreview: 'Vorschau überspringen', close: 'Schließen', loading: 'Wird geladen…',
+    info: 'Technik-Info', fullscreen: 'Vollbild', next: 'Nächste Folge', skipIntro: 'Intro überspringen', close: 'Schließen', loading: 'Wird geladen…',
+    skipped: '{name} übersprungen', segIntro: 'Intro', segOutro: 'Abspann', segRecap: 'Rückblick', segPreview: 'Vorschau',
+    upnextIn: 'Startet in {n} s', upnextPlay: 'Abspielen', upnextHide: 'Ausblenden', qualityFormat: 'Qualität & Bildformat',
     buffering: 'Puffert…', error: 'Wiedergabefehler', forced: 'Erzwungen', external: 'Extern', delay: 'Verzögerung', size: 'Größe', auto: 'Automatisch',
-    fill: 'Füllen', stretch: 'Strecken', directPlay: 'Direct Play', directStream: 'Direct Stream', transcode: 'Transcode', method: 'Methode', container: 'Container',
+    fit: 'Einpassen', fill: 'Füllen', stretch: 'Dehnen', directPlay: 'Direct Play', directStream: 'Direct Stream', transcode: 'Transcode', method: 'Methode', container: 'Container',
     video: 'Video', audioSec: 'Audio', output: 'Ausgabe', codec: 'Codec', resolution: 'Auflösung', fps: 'Bilder/s', hdr: 'Dynamikbereich', depth: 'Farbtiefe',
     channels: 'Kanäle', hwdec: 'Hardware-Dekodierung', renderer: 'Renderer', dropped: 'Verworfene Bilder', bitrate: 'Bitrate', cache: 'Puffer', mpv: 'mpv',
     volumeNow: 'Lautstärke {v} %', muted: 'Stumm', unmuted: 'Ton an', speedNow: 'Geschwindigkeit {v}×', chapter: 'Kapitel {n}', noTracks: 'Keine Spuren', remaining: 'Verbleibend', elapsed: 'Laufzeit',
@@ -31,10 +33,11 @@ const TEXT = {
     minimize: 'Minimize', maximize: 'Maximize', closeWindow: 'Close window',
     back: 'Back', pause: 'Pause', play: 'Play', rew: 'Back 10 seconds', fwd: 'Forward 10 seconds', volume: 'Volume', mute: 'Mute',
     tracks: 'Audio & Subtitles', audio: 'Audio', subs: 'Subtitles', off: 'Off', speed: 'Speed', aspect: 'Aspect ratio', chapters: 'Chapters',
-    info: 'Technical info', fullscreen: 'Fullscreen', next: 'Next episode', now: 'Now', nextIn: 'Up next', skipIntro: 'Skip intro',
-    skipRecap: 'Skip recap', skipOutro: 'Skip credits', skipPreview: 'Skip preview', close: 'Close', loading: 'Loading…',
-    buffering: 'Buffering…', error: 'Playback error', forced: 'Forced', external: 'External', delay: 'Delay', size: 'Size', auto: 'Auto',
-    fill: 'Fill', stretch: 'Stretch', directPlay: 'Direct Play', directStream: 'Direct Stream', transcode: 'Transcode', method: 'Method', container: 'Container',
+    info: 'Technical info', fullscreen: 'Fullscreen', next: 'Next episode', skipIntro: 'Skip intro', close: 'Close', loading: 'Loading…',
+    skipped: '{name} skipped', segIntro: 'Intro', segOutro: 'Credits', segRecap: 'Recap', segPreview: 'Preview',
+    upnextIn: 'Starts in {n} s', upnextPlay: 'Play', upnextHide: 'Hide', qualityFormat: 'Quality & Aspect',
+    buffering: 'Buffering…', error: 'Playback error', forced: 'Forced', external: 'External', delay: 'Delay', size: 'Size', auto: 'Automatic',
+    fit: 'Fit', fill: 'Fill', stretch: 'Stretch', directPlay: 'Direct Play', directStream: 'Direct Stream', transcode: 'Transcode', method: 'Method', container: 'Container',
     video: 'Video', audioSec: 'Audio', output: 'Output', codec: 'Codec', resolution: 'Resolution', fps: 'Frames/s', hdr: 'Dynamic range', depth: 'Bit depth',
     channels: 'Channels', hwdec: 'Hardware decoding', renderer: 'Renderer', dropped: 'Dropped frames', bitrate: 'Bitrate', cache: 'Buffer', mpv: 'mpv',
     volumeNow: 'Volume {v}%', muted: 'Muted', unmuted: 'Sound on', speedNow: 'Speed {v}×', chapter: 'Chapter {n}', noTracks: 'No tracks', remaining: 'Remaining', elapsed: 'Elapsed',
@@ -55,7 +58,7 @@ const tr = (k, vars) => {
 };
 
 // ---------- Zustand ----------
-const S = { phase: 'loading', position: 0, duration: 0, paused: false, buffering: false, volume: 100, mute: false, speed: 1, tracks: { audio: [], sub: [] }, chapters: [], jfChapters: [], segments: [], next: null, media: null, stats: {}, aspect: 'auto' };
+const S = { phase: 'loading', position: 0, duration: 0, paused: false, buffering: false, volume: 100, mute: false, speed: 1, tracks: { audio: [], sub: [] }, chapters: [], jfChapters: [], segments: [], next: null, media: null, stats: {}, skip: null, upnext: null, format: null };
 let shown = { position: 0, at: performance.now() };
 let uiVisible = true;
 let hideTimer = null;
@@ -127,12 +130,30 @@ const status = h('div', { class: 'status' });
 const flash = h('div', { class: 'flash' });
 const center = h('div', { class: 'center' }, spinner, pulse, status);
 
-// Countdown (wie bei Netflix): hinter dem Text fuellt sich der Knopf von links nach rechts (`.cd > i`); ist er voll, geht es von selbst weiter. Ablauf: siehe "Countdown" weiter unten.
+// Ueber dem Bild nur "Intro ueberspringen" (Plan P22, E10, wie die Apple-App). Steht das Intro auf "Automatisch", fuellt sich der Knopf hinter dem Text von links
+// nach rechts (`.cd > i`), dann springt der Player; Zeit und Dauer kommen vom Hauptprozess (S.skip.timer, Spielzeit: Pause haelt die Fuellung an).
 const cdFill = () => h('span', { class: 'cd', 'aria-hidden': 'true' }, h('i'));
-const skipBtn = h('button', { class: 'skip', type: 'button', hidden: true, onclick: () => (cdMark(cdSkip), send({ type: 'skip' })) }, cdFill(), icon('skip-next', 18), h('span'));
-const nextGo = h('button', { class: 'go', type: 'button', onclick: () => (cdMark(cdNext), send({ type: 'next' })) }, cdFill(), icon('skip-next', 16), h('span', null, tr('now')));
-const nextCard = h('div', { class: 'nextcard', hidden: true }, h('div', { class: 'txt' }, h('div', { class: 'k' }, tr('nextIn')), h('div', { class: 'n' })), nextGo);
-const floaters = h('div', { class: 'floaters' }, nextCard, skipBtn);
+const skipBtn = h('button', { class: 'skip', type: 'button', hidden: true, onclick: () => send({ type: 'skip' }) }, cdFill(), icon('skip-next', 18), h('span', null, tr('skipIntro')));
+const floaters = h('div', { class: 'floaters' }, skipBtn);
+
+// Bildschirm "Naechste Folge" (Countdown): im Abspann laeuft das Bild links klein weiter (mpv zeichnet es dorthin, die Flaeche hier laesst genau
+// diesen Ausschnitt frei: .upnext-hole), am Ende der Folge steht dort das Bild der naechsten Folge. "Abspielen" fuellt sich bis zum Start.
+const upHole = h('div', { class: 'upnext-hole', 'aria-hidden': 'true' });
+const upThumb = h('img', { class: 'upnext-thumb', alt: '', draggable: 'false', hidden: true });
+const upKicker = h('div', { class: 'upnext-k' }, tr('next'));
+const upLabel = h('div', { class: 'upnext-label' });
+const upTitle = h('h2', { class: 'upnext-title' });
+const upText = h('p', { class: 'upnext-text' });
+const upPlay = h('button', { class: 'upnext-play counting', type: 'button', onclick: () => send({ type: 'next' }) }, cdFill(), icon('play', 18), h('span', null, tr('upnextPlay')));
+const upHide = h('button', { class: 'upnext-hide', type: 'button', onclick: () => send({ type: 'upnext-cancel' }) }, h('span'));
+const upWhen = h('div', { class: 'upnext-when' });
+const upnext = h(
+  'section',
+  { class: 'upnext', hidden: true, 'aria-label': tr('next') },
+  upHole,
+  upThumb,
+  h('div', { class: 'upnext-body' }, upKicker, upLabel, upTitle, upText, h('div', { class: 'upnext-actions' }, upPlay, upHide), upWhen)
+);
 
 const tCur = h('div', { class: 'time' }, '0:00');
 const tEnd = h('div', { class: 'time right', title: tr('remaining'), onclick: () => { remainingMode = !remainingMode; paintTimes(); } }, '0:00');
@@ -178,14 +199,12 @@ const chapBtn = mkBtn('list', tr('chapters'), (e) => togglePopup('chapters', e.c
 const epsBtn = mkBtn('layers', tr('episodes'), (e) => togglePopup('episodes', e.currentTarget));
 epsBtn.hidden = true;
 const speedBtn = h('button', { class: 'chip', type: 'button', title: tr('speed'), onclick: (e) => togglePopup('speed', e.currentTarget) }, '1×');
-const aspectBtn = mkBtn('aspect', tr('aspect'), (e) => togglePopup('aspect', e.currentTarget));
-// Qualitaet: nur sichtbar, wenn Transcoding erlaubt ist (sonst gibt es nichts zu waehlen)
-const qualityBtn = mkBtn('settings', tr('quality'), (e) => togglePopup('quality', e.currentTarget));
-qualityBtn.hidden = true;
+// Ein Menue "Qualitaet & Bildformat" direkt nach dem Ton (wie die Apple-App): Qualitaet nur, wenn Transcoding erlaubt ist, das Bildformat immer
+const qualityBtn = mkBtn('settings', tr('qualityFormat'), (e) => togglePopup('quality', e.currentTarget));
 const infoBtn = mkBtn('info', tr('info'), () => toggleInfo());
 const fsBtn = mkBtn('fullscreen', tr('fullscreen'), () => send({ type: 'fullscreen' }));
 // Zwei Glas-Kapseln statt loser Knoepfe (wie die Steuerelement-Gruppen in iOS 26)
-const ctrls = h('div', { class: 'ctrls' }, h('div', { class: 'cluster' }, playBtn, rewBtn, fwdBtn, nextBtn, vol), h('div', { class: 'sp' }), h('div', { class: 'cluster' }, tracksBtn, epsBtn, chapBtn, speedBtn, aspectBtn, qualityBtn, infoBtn, fsBtn));
+const ctrls = h('div', { class: 'ctrls' }, h('div', { class: 'cluster' }, playBtn, rewBtn, fwdBtn, nextBtn, vol), h('div', { class: 'sp' }), h('div', { class: 'cluster' }, tracksBtn, qualityBtn, epsBtn, chapBtn, speedBtn, infoBtn, fsBtn));
 const bar = h('div', { class: 'bar' }, h('div', { class: 'seekrow' }, tCur, seek, tEnd), ctrls);
 
 const infoPanel = h('aside', { class: 'info', hidden: true });
@@ -195,7 +214,7 @@ const errCard = h('div', { class: 'errcard', hidden: true });
 const pauseCard = h('div', { class: 'pause-card' });
 const pauseLayer = h('section', { class: 'pause', hidden: true, 'aria-hidden': 'true', 'aria-label': 'Pause' }, pauseCard);
 
-root.append(pauseLayer, top, center, flash, floaters, infoPanel, bar, errCard);
+root.append(pauseLayer, top, center, flash, floaters, infoPanel, bar, upnext, errCard);
 
 // ---------- Hilfsfunktionen ----------
 const clock = (sec) => {
@@ -307,7 +326,8 @@ function paintPause() {
   if (p.rating) meta.push(h('span', { class: 'pause-rating' }, p.rating));
   if (p.score) meta.push(h('span', { class: 'pause-score' }, icon('star', 13), String(p.score)));
   if (S.duration) meta.push(h('span', null, formatSpan(S.duration, lang)));
-  for (const b of S.media?.badges ?? []) meta.push(h('span', { class: `badge ${b.kind}` }, b.text));
+  const tagRow = mediaTagRow(S.tags ?? [], { surface: 'dark' }); // dieselben Tags wie neben dem Titel
+  if (tagRow) meta.push(tagRow);
   if (meta.length) kids.push(h('div', { class: 'pause-meta' }, ...meta));
   const story = p.overview || p.tagline;
   if (story) kids.push(h('p', { class: 'pause-ov' }, story));
@@ -407,12 +427,9 @@ function paintTitle() {
   const txt = t2.querySelector('.txt');
   const b = t2.querySelector('.badges');
   txt.textContent = S.subtitle ?? '';
-  b.replaceChildren();
-  if (S.method) {
-    const label = S.method === 'DirectPlay' ? tr('directPlay') : S.method === 'DirectStream' ? tr('directStream') : tr('transcode');
-    b.append(h('span', { class: `badge ${S.method === 'Transcode' ? '' : 'play'}` }, label));
-  }
-  for (const x of S.media?.badges ?? []) b.append(h('span', { class: `badge ${x.kind}` }, x.text));
+  // Tags wie in der Apple-App (Plan P22, Y10): was wirklich ankommt, in der Rangfolge des Players; reicht der Platz nicht, fallen die hinteren weg
+  const row = mediaTagRow(S.tags ?? [], { surface: 'dark', fit: true });
+  b.replaceChildren(...(row ? [row] : []));
 }
 
 function paintPlayState() {
@@ -431,73 +448,71 @@ function paintVolume() {
   volInput.style.setProperty('--fill', `${((S.volume ?? 100) / 130) * 100}%`);
 }
 
+/** "Intro ueberspringen" und der Knopf "Naechste Folge" in der Leiste; die Regeln stehen im Hauptprozess (src/shared/player-rules.js). */
 function paintSkip() {
-  const pos = shown.position;
-  const seg = (S.segments ?? []).find((s) => pos >= s.start && pos < s.end - 1);
-  const label = { Intro: 'skipIntro', Recap: 'skipRecap', Outro: 'skipOutro', Preview: 'skipPreview' };
-  const showSkip = !!(seg && label[seg.type]);
-  if (showSkip) {
-    skipBtn.querySelector('span:last-child').textContent = tr(label[seg.type]);
-    skipBtn.hidden = false;
-  } else {
-    skipBtn.hidden = true;
-  }
-  const d = S.duration;
-  const nearEnd = d && S.next && d - pos < 30 && d - pos > 0;
-  nextCard.hidden = !nearEnd;
-  if (nearEnd) nextCard.querySelector('.n').textContent = [S.next.label, S.next.title].filter(Boolean).join(' · '); // "S1 · E2 · Titel" (format.js im Hauptprozess)
+  skipBtn.hidden = !(S.skip?.type === 'Intro') || !!S.upnext;
+  if (!skipBtn.hidden) skipBtn.querySelector('span:last-child').textContent = tr('skipIntro'); // Sprache steht erst nach dem ersten Zustand fest
+  skipBtn.classList.toggle('counting', !skipBtn.hidden && !!S.skip?.timer);
   nextBtn.hidden = !S.next;
-  // Countdown: je Segment (Art + Anfang) bzw. je naechster Folge einmal; die naechste Folge nur, wenn sie automatisch abgespielt wird
-  cdSync(cdSkip, showSkip ? `${seg.type}:${seg.start}` : null);
-  cdSync(cdNext, nearEnd && S.ui?.autoSkip?.next !== false ? `next:${S.next.id}` : null);
 }
 
-// ---------- Countdown an "Ueberspringen" und "Naechste Folge" (wie bei Netflix) ----------
-// Sekunden kommen aus den Einstellungen (S.ui.autoSkip.sec, 0 = aus). Gezaehlt wird die Wanduhr, aber nur, solange die Wiedergabe wirklich laeuft (Pause, Laden und Puffern halten
-// den Countdown an, ein Sprung ueber den Rahmen hinaus bricht ihn ab, weil der Knopf dann verschwindet). Bewusst kein CSS-Ablauf: bei "Animationen aus" liefe der sonst sofort durch.
-// Ein Eintrag zaehlt nur ein einziges Mal (`cdDone`): wer nach dem Ueberspringen zurueckspult oder von Hand klickt, bekommt den Knopf ohne zweiten Countdown.
-const cdSkip = { el: skipBtn, key: null, t: 0, send: () => send({ type: 'skip' }) };
-const cdNext = { el: nextGo, key: null, t: 0, send: () => send({ type: 'next' }) };
-const cdDone = new Set();
-const cdSec = () => {
-  const v = Number(S.ui?.autoSkip?.sec);
-  return Number.isFinite(v) && v > 0 ? Math.min(30, v) : 0;
-};
-function cdPaint(cd, p) {
-  const fill = cd.el.querySelector('.cd > i');
+/** Fuellung eines Knopfs (0..1). Bewusst kein CSS-Ablauf: bei reduzierter Bewegung liefe der sonst sofort durch. */
+function fillTo(btn, p) {
+  const fill = btn.querySelector('.cd > i');
   if (fill) fill.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
 }
-function cdSync(cd, key) {
-  const want = key && cdSec() > 0 && !cdDone.has(key) ? key : null;
-  if (cd.key === want) return;
-  cd.key = want;
-  cd.t = 0;
-  cd.el.classList.toggle('counting', !!want);
-  cdPaint(cd, 0);
-}
-/** Von Hand ausgeloest: dieser Eintrag bekommt keinen zweiten Countdown mehr. */
-function cdMark(cd) {
-  if (cd.key) cdDone.add(cd.key);
-  cdSync(cd, null);
-}
-function cdReset() {
-  cdDone.clear();
-  cdSync(cdSkip, null);
-  cdSync(cdNext, null);
-}
-function cdTick(dt) {
-  if (S.phase !== 'playing' || S.paused || S.buffering || closing) return;
-  const sec = cdSec();
-  for (const cd of [cdSkip, cdNext]) {
-    if (!cd.key || !sec) continue;
-    cd.t += dt;
-    cdPaint(cd, cd.t / sec);
-    if (cd.t >= sec) {
-      cdDone.add(cd.key);
-      cdSync(cd, null);
-      cd.send();
+
+/** Je Bild: Fuellung von "Intro ueberspringen" nach Spielzeit, Countdown "Naechste Folge" nach der Wanduhr. */
+function paintCountdowns() {
+  const t = S.skip?.timer;
+  if (t && !skipBtn.hidden) fillTo(skipBtn, t.duration > 0 ? (shown.position - t.start) / t.duration : 1);
+  const u = S.upnext;
+  if (u && !upnext.hidden) {
+    const left = Math.max(0, (u.ends - Date.now()) / 1000);
+    fillTo(upPlay, u.total > 0 ? 1 - left / u.total : 1);
+    const n = Math.ceil(left);
+    if (upWhen.dataset.n !== String(n)) {
+      upWhen.dataset.n = String(n);
+      upWhen.textContent = tr('upnextIn', { n });
     }
   }
+}
+
+/** Bildschirm "Naechste Folge": Inhalt, Lage des kleinen Bildes (im Abspann) bzw. Bild der Folge (am Ende), Knopf "Ausblenden" oder "Schliessen". */
+function paintUpnext() {
+  const u = S.upnext;
+  const on = !!u && !closing;
+  root.classList.toggle('upnext-on', on);
+  if (!on) {
+    upnext.hidden = true;
+    return;
+  }
+  if (upnext.hidden) {
+    closePopup(); // ein offenes Menue bliebe sonst ueber dem neuen Bildschirm stehen
+    if (infoOpen) toggleInfo(false);
+    upnext.hidden = false;
+    upPlay.focus({ preventScroll: true });
+  }
+  upnext.classList.toggle('in-credits', !!u.inCredits);
+  const r = u.inCredits ? u.rect : null;
+  upHole.hidden = !r;
+  if (r) Object.assign(upHole.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+  // Am Ende (kein laufendes Bild mehr): das Bild der naechsten Folge an derselben Stelle wie sonst das kleine Video
+  const src = !u.inCredits && u.next?.imageTag ? `jellycloud://img/${u.next.id}/Primary?maxWidth=960&quality=85&tag=${encodeURIComponent(u.next.imageTag)}` : '';
+  upThumb.hidden = !src;
+  if (src && upThumb.dataset.src !== src) {
+    upThumb.dataset.src = src;
+    upThumb.src = src;
+  }
+  upKicker.textContent = tr('next');
+  upPlay.querySelector('span:last-child').textContent = tr('upnextPlay');
+  upLabel.textContent = u.next?.label ?? '';
+  upTitle.textContent = u.next?.title ?? '';
+  upText.textContent = u.next?.overview ?? '';
+  upText.hidden = !u.next?.overview;
+  upHide.querySelector('span').textContent = u.inCredits ? tr('upnextHide') : tr('close');
+  upWhen.dataset.n = '';
+  paintCountdowns();
 }
 
 function paintError() {
@@ -635,7 +650,7 @@ function openPopup(kind, btn, el) {
 }
 function togglePopup(kind, btn) {
   if (popup?.kind === kind) return closePopup();
-  const builders = { tracks: buildTracksPopup, chapters: buildChaptersPopup, speed: buildSpeedPopup, aspect: buildAspectPopup, quality: buildQualityPopup, episodes: buildEpisodesPopup };
+  const builders = { tracks: buildTracksPopup, chapters: buildChaptersPopup, speed: buildSpeedPopup, quality: buildQualityPopup, episodes: buildEpisodesPopup };
   openPopup(kind, btn, builders[kind]());
 }
 
@@ -829,22 +844,27 @@ const fmtMbps = (n) => (lang === 'de' ? String(+(+n).toFixed(1)).replace('.', ',
 function buildQualityPopup() {
   const q = S.quality ?? { mbps: 0, choices: [] };
   const cur = q.mbps ?? 0;
-  const el = h('div', { class: 'pop' }, h('h4', null, tr('quality')));
-  const label = (c) =>
-    c.name === 'auto' ? tr('auto') : c.name === 'server' ? tr('qServer') : c.name === 'setting' ? tr('mbit', { n: fmtMbps(c.mbps) }) : c.name === '1080high' ? tr('q1080high') : c.name === '4k' ? '4K' : `${c.name}p`;
-  const sub = (c) =>
-    c.name === 'auto' ? (c.detailMbps ? tr('qualityAbout', { n: fmtMbps(c.detailMbps) }) : '') : c.name === 'setting' ? tr('qSetting') : tr('mbit', { n: fmtMbps(c.detailMbps) });
-  for (const c of q.choices ?? []) {
-    const name = label(c);
-    el.append(optRow({ label: name, sub: sub(c), selected: Math.abs(cur - c.mbps) < 0.01, onclick: () => { send({ type: 'quality', mbps: c.mbps }); closePopup(); showFlash(`${tr('quality')}: ${name}`); } }));
+  const el = h('div', { class: 'pop' });
+  // Qualitaet zuerst (nur wenn der Server umsetzen darf), dann das Bildformat (wie das Menue "Qualitaet & Bildformat" der Apple-App)
+  if (q.allowed !== false && q.choices?.length) {
+    el.append(h('h4', null, tr('quality')));
+    const label = (c) =>
+      c.name === 'auto' ? tr('auto') : c.name === 'server' ? tr('qServer') : c.name === 'setting' ? tr('mbit', { n: fmtMbps(c.mbps) }) : c.name === '1080high' ? tr('q1080high') : c.name === '4k' ? '4K' : `${c.name}p`;
+    const sub = (c) =>
+      c.name === 'auto' ? (c.detailMbps ? tr('qualityAbout', { n: fmtMbps(c.detailMbps) }) : '') : c.name === 'setting' ? tr('qSetting') : tr('mbit', { n: fmtMbps(c.detailMbps) });
+    for (const c of q.choices) {
+      const name = label(c);
+      el.append(optRow({ label: name, sub: sub(c), selected: Math.abs(cur - c.mbps) < 0.01, onclick: () => { send({ type: 'quality', mbps: c.mbps }); closePopup(); showFlash(`${tr('quality')}: ${name}`); } }));
+    }
   }
-  return el;
-}
-
-function buildAspectPopup() {
-  const el = h('div', { class: 'pop' }, h('h4', null, tr('aspect')));
-  const modes = [['auto', tr('auto')], ['16:9', '16:9'], ['4:3', '4:3'], ['2.39:1', '2.39:1'], ['fill', tr('fill')], ['stretch', tr('stretch')]];
-  for (const [id, label] of modes) el.append(optRow({ label, selected: (S.aspect ?? 'auto') === id, onclick: () => { send({ type: 'aspect', mode: id }); closePopup(); showFlash(`${tr('aspect')}: ${label}`); } }));
+  el.append(h('h4', null, tr('aspect')));
+  const choice = S.format?.choice ?? 'auto';
+  for (const id of ['auto', 'fit', 'fill', 'stretch']) {
+    const name = tr(id);
+    // "Automatisch" sagt, was es gerade bedeutet (Einpassen oder Fuellen)
+    const sub = id === 'auto' && choice === 'auto' && S.format?.shown ? tr(S.format.shown) : '';
+    el.append(optRow({ label: name, sub, selected: choice === id, onclick: () => { send({ type: 'format', mode: id }); closePopup(); showFlash(`${tr('aspect')}: ${name}`); } }));
+  }
   return el;
 }
 
@@ -1051,6 +1071,7 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (popup) closePopup();
       else if (infoOpen) toggleInfo(false);
+      else if (!upnext.hidden) send({ type: 'upnext-cancel' }); // wie "Ausblenden" bzw. "Schliessen" am Bildschirm "Naechste Folge"
       else if (document.fullscreenElement || S.fullscreen) send({ type: 'fullscreen', value: false });
       else requestClose();
       break;
@@ -1101,7 +1122,6 @@ function apply(patch) {
   }
   if (keys.includes('itemId') && pauseShown) hidePause();
   if (keys.includes('itemId')) {
-    cdReset(); // neue Folge/neuer Film: alle Countdowns beginnen von vorn
     epsSeasonKey = undefined; // die Folgenliste beginnt wieder bei der Staffel der laufenden Folge
     if (popup?.kind === 'episodes') closePopup();
   }
@@ -1110,16 +1130,17 @@ function apply(patch) {
     fsBtn.replaceChildren(icon(S.fullscreen ? 'fullscreen-exit' : 'fullscreen', 24));
     winctl.hidden = !!S.fullscreen; // im Vollbild gibt es keine Fensterknoepfe
   }
-  if (keys.some((k) => ['title', 'subtitle', 'method', 'media'].includes(k))) paintTitle();
+  if (keys.some((k) => ['title', 'subtitle', 'tags'].includes(k))) paintTitle();
+  if (keys.includes('tags') && pauseShown) paintPause();
   if (keys.some((k) => ['paused', 'phase', 'buffering'].includes(k))) paintPlayState();
   if (keys.some((k) => ['volume', 'mute'].includes(k))) paintVolume();
   if (keys.includes('speed')) speedBtn.textContent = `${+(S.speed ?? 1).toFixed(2)}×`;
-  if (keys.includes('quality')) {
-    qualityBtn.hidden = !S.quality?.allowed;
-    qualityBtn.classList.toggle('lim', (S.quality?.mbps ?? 0) > 0); // Begrenzung aktiv: Symbol in Akzentfarbe
-  }
+  if (keys.includes('quality')) qualityBtn.classList.toggle('lim', (S.quality?.mbps ?? 0) > 0); // Begrenzung aktiv: Symbol in Akzentfarbe
   if (keys.some((k) => ['segments', 'duration', 'chapters', 'jfChapters'].includes(k))) paintSegments();
-  if (keys.some((k) => ['segments', 'next', 'duration', 'position'].includes(k))) paintSkip();
+  if (keys.includes('upnext')) paintUpnext();
+  if (keys.some((k) => ['skip', 'next', 'upnext'].includes(k))) paintSkip();
+  // "Rueckblick uebersprungen" (automatisch): kurze Meldung wie in der Apple-App
+  if (keys.includes('skipNotice') && S.skipNotice?.type) showFlash(tr('skipped', { name: tr(`seg${S.skipNotice.type}`) }), 3000);
   if (keys.some((k) => ['phase', 'error'].includes(k))) paintError();
   if (infoOpen && keys.some((k) => ['stats', 'video', 'media', 'method', 'mpv', 'audioOut', 'audioCfg'].includes(k))) paintInfo();
   if (keys.includes('tracks') && popup?.kind === 'tracks') {
@@ -1134,16 +1155,13 @@ function apply(patch) {
 // Weiche Zeitanzeige zwischen den (seltenen) Positions-Updates. Gezeichnet wird nur, was gerade zu sehen ist:
 // bei ausgeblendeter Leiste nur noch einmal pro Sekunde fuer "Intro ueberspringen" / "Naechste Folge".
 function frame() {
-  // Countdown der Knoepfe: Wanduhr seit dem letzten Bild, hoechstens 0,25 s je Bild (nach einer Pause des Fensters kein Sprung ans Ende)
-  const nowMs = performance.now();
-  cdTick(Math.min(0.25, Math.max(0, (nowMs - (frame.last ?? nowMs)) / 1000)));
-  frame.last = nowMs;
   if (S.phase === 'playing' && !S.paused && !S.buffering && !dragging) {
     const dt = (performance.now() - shown.at) / 1000;
     const pos = Math.min(S.duration || Infinity, shown.position + dt * (S.speed ?? 1));
     shown = { position: pos, at: performance.now() };
   }
   if (uiVisible) paintBar();
+  paintCountdowns();
   const sec = Math.floor(shown.position);
   if (frame.sec !== sec) {
     frame.sec = sec;

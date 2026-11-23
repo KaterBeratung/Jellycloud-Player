@@ -3,7 +3,9 @@
 // der Ersatz-Player merkt sich, was die Huelle ihm uebergibt, und antwortet mit vorgegebenen Ergebnissen.
 // Geprueft: Huelle meldet sich (Plattform, Version, Geraetename), Anmeldung ueber die "native" HTTP-Schicht, Wiedergabe-Plan (Direct Play, Token nur im Header, Startstelle, Dauer, Titel,
 // Geraeteprofil mit konservativem Ton), Rueckfall auf Transcode bei Decoder-Fehler ab der erreichten Stelle, Fehlermeldung bei Serverfehler, Ereignisse, Links, Folgen-Titel, Neustart von vorn,
-// Mitteilungen des Systems (P18: Erlaubnis, Zeigen, Zuruecknehmen, Antippen bei kaltem Start und bei laufender App; ohne Seerr, das hier keine Sitzung bekommt).
+// Mitteilungen des Systems (P18: Erlaubnis, Zeigen, Zuruecknehmen, Antippen bei kaltem Start und bei laufender App; ohne Seerr, das hier keine Sitzung bekommt),
+// Regeln des Players (P22: Abschnitte, naechste Folge mit Spoilerschutz, Tags, Bildformat, Untertitelstil, Spurwahl bei HLS) und der offene Player, der
+// fuer naechste Folge, Spurwechsel und Transcode um einen neuen Plan bittet (continue, close, closed).
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -35,7 +37,7 @@ module.exports = async (ctx) => {
   // Beim ersten Laden liegt eine Konfiguration wie bei 1.1.6 im localStorage (Uebernahme). __secureFail = 'load' | 'save' laesst das Plugin scheitern.
   const OLD_CONFIG = JSON.stringify({ version: 9, deviceId: 'seed-device-0001', servers: [], settings: {} });
   const FAKE = `(() => {
-    window.__calls = { play: [], openExternal: [], secureSave: 0, notify: [], takeTap: 0 };
+    window.__calls = { play: [], openExternal: [], secureSave: 0, notify: [], takeTap: 0, close: 0 };
     // Mitteilungen des Systems (NotificationPlugin.java): Erlaubnis, gezeigte und zurueckgenommene, eine angetippte (auch schon beim Start: kalter Start durch Antippen)
     window.__notifyPerm = 'prompt';
     window.__notifyTap = sessionStorage.getItem('__notifyTapOnStart');
@@ -64,16 +66,27 @@ module.exports = async (ctx) => {
       getPlatform: () => 'android',
       PluginHeaders: [
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
-        { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }, { name: 'audioOutput', rtype: 'promise' }] },
+        { name: 'JellycloudPlayer', methods: ['play', 'close', 'openExternal', 'audioOutput', 'screen'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] },
         { name: 'JellycloudNotifications', methods: ['status', 'request', 'openSettings', 'show', 'withdraw', 'withdrawProfile', 'takeTap'].map((name) => ({ name, rtype: 'promise' })) }
       ],
       nativePromise: async (plugin, method, options) => {
         if (plugin === 'CapacitorHttp' && method === 'request') return http(options);
+        // Player (JellycloudPlayerPlugin.play): vorgegebene Antworten der Reihe nach, sonst "geschlossen"; eine Bitte (request) laesst ihn offen, bis die
+        // Huelle mit continue einen Plan schickt oder close ruft (__playerOpen bildet PlayerActivity.current() nach)
         if (plugin === 'JellycloudPlayer' && method === 'play') {
           window.__calls.play.push(options);
-          return window.__playResults.shift() ?? { positionMs: 0, durationMs: options.durationMs, ended: false, error: null, errorKind: null };
+          if (options.continue && !window.__playerOpen) return { closed: true };
+          const r = window.__playResults.shift() ?? { positionMs: 0, durationMs: options.durationMs, ended: false, error: null, errorKind: null };
+          window.__playerOpen = typeof r.request === 'string' && !r.closeWhilePlanning; // closeWhilePlanning: Zurueck-Taste, waehrend die Huelle plant
+          return r;
         }
+        if (plugin === 'JellycloudPlayer' && method === 'close') {
+          window.__calls.close++;
+          window.__playerOpen = false;
+          return {};
+        }
+        if (plugin === 'JellycloudPlayer' && method === 'screen') return { hdr: window.__screenHdr ?? false };
         if (plugin === 'JellycloudSecureStore' && method === 'load') {
           if (window.__secureFail === 'load') throw { message: 'Keystore nicht verfuegbar' };
           return { value: secure[options.key] ?? null, unreadable: false };
@@ -175,7 +188,24 @@ module.exports = async (ctx) => {
   // Was der Server fuer diesen Eintrag liefert (Fortschritt steht im Benutzer-Teil der Antwort, nicht im statischen Eintrag des Mock-Servers)
   const served = await ev(`window.jc.api('getItem', '${movie.Id}')`);
   const resumeMs = Math.round((served.UserData?.PlaybackPositionTicks ?? 0) / 10000);
-  check('Startstelle (weiterschauen), Dauer und Titel kommen vom Eintrag', resumeMs > 0 && o1.startMs === resumeMs && o1.durationMs === Math.round(movie.RunTimeTicks / 10000) && o1.title === 'Aurora Protocol', `start=${o1.startMs} (erwartet ${resumeMs}) dauer=${o1.durationMs}`);
+  check(
+    'Startstelle (weiterschauen, 5 s vor der Stelle wie unter Windows: "Zuruecksetzen beim Fortsetzen"), Dauer und Titel kommen vom Eintrag',
+    resumeMs > 5000 && o1.startMs === resumeMs - 5000 && o1.durationMs === Math.round(movie.RunTimeTicks / 10000) && o1.title === 'Aurora Protocol',
+    `start=${o1.startMs} (erwartet ${resumeMs - 5000}) dauer=${o1.durationMs}`
+  );
+  check(
+    'Film (P22): keine Abschnitte, keine naechste Folge, Standard-Regeln, Bildformat, Untertitelstil, Sprache und Akzent; bei Direct Play keine eigene Spurwahl',
+    Array.isArray(o1.segments) && o1.segments.length === 0 && o1.next === null && o1.tracks === null && o1.lang === 'de' && /^#[0-9a-f]{6}$/.test(o1.accent ?? '') &&
+      o1.videoFormat === 'auto' && o1.autoFillTolerance === 0.12 && o1.subtitleStyle?.scale === 1 && o1.subtitleStyle?.position === 100 && o1.subtitleStyle?.outline === 2 && o1.subtitleStyle?.background === 0 &&
+      JSON.stringify(o1.skip) === JSON.stringify({ intro: 'button', outro: 'button', recap: 'off', preview: 'off', delay: 5, autoplayNext: true, countdown: 5, creditsCountdown: 10 }) && o1.canTranscode === true && o1.continue === false,
+    JSON.stringify({ segments: o1.segments, next: o1.next, tracks: o1.tracks, lang: o1.lang, accent: o1.accent, fmt: o1.videoFormat, style: o1.subtitleStyle, skip: o1.skip, canTranscode: o1.canTranscode, cont: o1.continue })
+  );
+  const t1 = o1.tags ?? [];
+  check(
+    'Tags des Players (wie src/shared/media-tags.js player): zuerst "Direct Play" hervorgehoben mit fertigen Farben (Flaeche, Kontur, Schrift), dahinter gewoehnliche Angaben',
+    t1.length >= 2 && t1[0].text === 'Direct Play' && t1[0].highlighted === true && t1[0].fill?.length === 2 && t1[0].outline?.length === 2 && /^#[0-9a-f]{6}$/.test(t1[0].ink ?? '') && t1.slice(1).some((t) => t.highlighted === false && !t.fill),
+    JSON.stringify(t1)
+  );
   check('Server, Sitzung und Quelle gehen mit (fuer die Meldungen an Jellyfin)', o1.baseUrl === 'http://127.0.0.1:8097' && o1.playSessionId === 'mock-session' && !!o1.mediaSourceId && !!o1.deviceId && o1.itemId === movie.Id);
   const log1 = state.log.filter((l) => l.at === 'PlaybackInfo');
   const dp = log1[0]?.directPlayProfiles?.[0] ?? {};
@@ -194,13 +224,17 @@ module.exports = async (ctx) => {
   const o2 = (await ev(`window.__calls.play`))[0] ?? {};
   check('"Von vorn": Startstelle 0', o2.startMs === 0, `start=${o2.startMs}`);
 
-  // ---------- Rueckfall: Decoder-Fehler -> Transcode ab der erreichten Stelle ----------
+  // ---------- Rueckfall: Decoder-Fehler -> Transcode ab der erreichten Stelle, im offenen Player ----------
   state.log.length = 0;
-  await ev(`window.__calls.play.length = 0; window.__playResults.push({ positionMs: 123456, durationMs: 0, ended: false, error: 'Die Wiedergabe ist fehlgeschlagen (ERROR_CODE_DECODING_FAILED)', errorKind: 'decoder' })`);
+  await ev(`window.__calls.play.length = 0; window.__playResults.push({ request: 'transcode', positionMs: 123456, audioIndex: -1, subtitleIndex: -1 })`);
   const r3 = await ev(`window.jc.play({ itemId: '${movie.Id}', resume: true }).then(() => 'ok', (e) => e.message)`);
   const c3 = await ev(`window.__calls.play`);
   const log3 = state.log.filter((l) => l.at === 'PlaybackInfo');
-  check('Decoder-Fehler: zweiter Versuch als Transcode (HLS), ab der erreichten Stelle', r3 === 'ok' && c3.length === 2 && c3[0].method === 'DirectPlay' && c3[1].method === 'Transcode' && /master\.m3u8/.test(c3[1].url) && c3[1].startMs === 123456, JSON.stringify({ r3, methods: c3.map((c) => c.method), start2: c3[1]?.startMs }));
+  check(
+    'Decoder-Fehler: der Player bittet um Transcode und bleibt offen; der zweite Plan (HLS, ab der erreichten Stelle) geht an ihn (continue), ohne weiteren Rueckfall',
+    r3 === 'ok' && c3.length === 2 && c3[0].method === 'DirectPlay' && c3[0].canTranscode === true && c3[1].method === 'Transcode' && /master\.m3u8/.test(c3[1].url) && c3[1].startMs === 123456 && c3[1].continue === true && c3[1].canTranscode === false,
+    JSON.stringify({ r3, methods: c3.map((c) => c.method), start2: c3[1]?.startMs, cont: c3.map((c) => c.continue), can: c3.map((c) => c.canTranscode) })
+  );
   check('Zweite Anfrage an den Server verbietet Direct Play', log3.length === 2 && log3[0].enableDirectPlay === true && log3[1].enableDirectPlay === false, JSON.stringify(log3.map((l) => l.enableDirectPlay)));
 
   // ---------- Fehler vom Server ----------
@@ -215,6 +249,53 @@ module.exports = async (ctx) => {
   await ev(`window.jc.play({ itemId: '${ep.Id}', resume: false })`);
   const o5 = (await ev(`window.__calls.play`))[0] ?? {};
   check('Folge: Titel = Folgenname, Untertitel = Serie und "S<Staffel>:E<Folge>"', o5.title === ep.Name && /\S+ · S\d+:E\d+$/.test(o5.subtitle ?? '') && (o5.subtitle ?? '').startsWith(ep.SeriesName ?? '?'), `${o5.title} | ${o5.subtitle}`);
+  check(
+    'Folge (P22): Abschnitte des Servers in Sekunden (Rueckblick, Intro, Abspann bis ans Ende)',
+    JSON.stringify(o5.segments) === JSON.stringify([{ type: 'Recap', start: 0, end: 12 }, { type: 'Intro', start: 20, end: 85 }, { type: 'Outro', start: 5340, end: 5400 }]),
+    JSON.stringify(o5.segments)
+  );
+
+  // ---------- Naechste Folge (P22): wie unter Windows die nach dieser in der Liste der Serie; der Player bleibt offen ----------
+  const eps = await ev(`window.jc.api('getEpisodes', '${ep.SeriesId}')`);
+  const [epA, epB] = eps;
+  await ev(`window.__calls.play.length = 0; window.__events.length = 0; window.__playResults.push({ request: 'next', positionMs: 5395000, audioIndex: -1, subtitleIndex: -1 })`);
+  const r8 = await ev(`window.jc.play({ itemId: '${epA.Id}', resume: false }).then(() => 'ok', (e) => e.message)`);
+  const c8 = await ev(`window.__calls.play`);
+  const n8 = c8[0]?.next ?? {};
+  const tagB = epB?.ImageTags?.Primary;
+  check(
+    'Naechste Folge: Kennung, Nummer, Titel, Beschreibung und Bild (Adresse ohne Token, das geht im Kopf mit)',
+    !!epB && n8.id === epB.Id && n8.label === `S${epB.ParentIndexNumber} · E${epB.IndexNumber}` && n8.title === epB.Name && n8.overview === String(epB.Overview ?? '').slice(0, 400) &&
+      (tagB ? n8.imageUrl === `http://127.0.0.1:8097/Items/${epB.Id}/Images/Primary?maxWidth=960&quality=85&tag=${encodeURIComponent(tagB)}` : n8.imageUrl === '') && !/api_?key|token/i.test(n8.imageUrl ?? ''),
+    JSON.stringify({ n8, epB: epB && { id: epB.Id, name: epB.Name } })
+  );
+  check(
+    'Bitte "next": derselbe offene Player bekommt den Plan der naechsten Folge (continue, von vorn); danach geschlossen gemeldet mit der zuletzt gespielten',
+    r8 === 'ok' && c8.length === 2 && c8[0].continue === false && c8[1].itemId === epB.Id && c8[1].continue === true && c8[1].startMs === 0 && JSON.stringify(await ev('window.__events')) === JSON.stringify(['active:true', 'active:false', `closed:${epB.Id}`]),
+    JSON.stringify({ r8, ids: c8.map((c) => c.itemId), cont: c8.map((c) => c.continue), start: c8[1]?.startMs, events: await ev('window.__events') })
+  );
+  // Zurueck-Taste, waehrend die Huelle plant: der Player ist schon zu, der Plan kommt an niemanden (closed), es gibt keinen Fehler
+  await ev(`window.__calls.play.length = 0; window.__calls.close = 0; window.__playResults.push({ request: 'next', positionMs: 5395000, audioIndex: -1, subtitleIndex: -1, closeWhilePlanning: true })`);
+  const r9 = await ev(`window.jc.play({ itemId: '${epA.Id}', resume: false }).then(() => 'ok', (e) => e.message)`);
+  check('Player waehrend des Planens geschlossen: der Plan endet ohne Fehler und ohne weiteren Player', r9 === 'ok' && (await ev('window.__calls.play.length')) === 2 && (await ev('window.__calls.close')) === 0, String(r9));
+  // Bitte "next" ohne naechste Folge (Film): die Huelle schliesst den wartenden Player
+  await ev(`window.__calls.play.length = 0; window.__playResults.push({ request: 'next', positionMs: 1000, audioIndex: -1, subtitleIndex: -1 })`);
+  const r10 = await ev(`window.jc.play({ itemId: '${movie.Id}', resume: false }).then(() => 'ok', (e) => e.message)`);
+  check('Bitte "next" ohne naechste Folge: der wartende Player wird geschlossen (close), kein zweiter Plan', r10 === 'ok' && (await ev('window.__calls.play.length')) === 1 && (await ev('window.__calls.close')) === 1, String(r10));
+  // Spoilerschutz: von einer ungesehenen naechsten Folge weder Bild noch Beschreibung; eine gesehene zeigt beides (wie unter Windows)
+  const iUnseen = eps.findIndex((e, i) => i > 0 && e.UserData?.Played !== true);
+  const iSeen = eps.findIndex((e, i) => i > 0 && e.UserData?.Played === true);
+  await ev(`window.jc.setSettings({ general: { spoilerProtection: true } })`);
+  const nextOf = async (i) => {
+    await ev(`window.__calls.play.length = 0`);
+    await ev(`window.jc.play({ itemId: '${eps[i - 1]?.Id}', resume: false })`);
+    return (await ev(`window.__calls.play`))[0]?.next ?? {};
+  };
+  const n11 = iUnseen > 0 ? await nextOf(iUnseen) : {};
+  check('Spoilerschutz: naechste ungesehene Folge ohne Bild und Beschreibung, Nummer und Titel bleiben', iUnseen > 0 && n11.id === eps[iUnseen].Id && n11.imageUrl === '' && n11.overview === '' && n11.title === eps[iUnseen].Name, JSON.stringify({ iUnseen, n11 }));
+  const n12 = iSeen > 0 ? await nextOf(iSeen) : null;
+  check('Spoilerschutz: eine schon gesehene naechste Folge behaelt Bild und Beschreibung', iSeen < 0 || (n12.id === eps[iSeen].Id && n12.overview !== '' && (!eps[iSeen].ImageTags?.Primary || n12.imageUrl !== '')), JSON.stringify({ iSeen, n12 }));
+  await ev(`window.jc.setSettings({ general: { spoilerProtection: false } })`);
 
   // ---------- Bitrate ueber das Internet und Mehrkanal-Ausgabe (Plan P21) ----------
   Object.assign(state.limits, { local: false, user: 0, server: 8_000_000 });
@@ -230,6 +311,22 @@ module.exports = async (ctx) => {
   );
   check('7.1-Ausgabe (HDMI): beim Umwandeln bis 8 Kanaele', log6[0]?.maxAudioChannels === '8', String(log6[0]?.maxAudioChannels));
   check('HLS-Adresse ohne Token (Jellyfin haengt es als ApiKey an, Media3 sendet es im Kopf)', /master\.m3u8/.test(o6.url ?? '') && !/api_?key|mock-token/i.test(o6.url ?? '') && /Token="/.test(o6.authorization ?? ''), o6.url);
+  // P22: bei HLS kennt Media3 nur die Spur im Strom, die Auswahl kommt vom Server; ein Wechsel ist ein neuer Plan ab der Stelle, im offenen Player
+  const aud6 = o6.tracks?.audio ?? [];
+  check(
+    'HLS: eigene Spurwahl im Player (Ton und Untertitel vom Server, die gewaehlte markiert); Tags beginnen mit "Transcoding"',
+    aud6.length >= 1 && aud6.filter((a) => a.selected).length === 1 && Array.isArray(o6.tracks?.subtitles) && o6.tags?.[0]?.text === 'Transcoding' && o6.tags[0].highlighted === true,
+    JSON.stringify({ tracks: o6.tracks, tag: o6.tags?.[0] })
+  );
+  const other = aud6.find((a) => !a.selected) ?? aud6[0];
+  await ev(`window.__calls.play.length = 0; window.__playResults.push({ request: 'switch', positionMs: 50000, audioIndex: ${other?.index ?? -1}, subtitleIndex: -1 })`);
+  await ev(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
+  const c12 = await ev(`window.__calls.play`);
+  check(
+    'Bitte "switch": neuer Plan mit der gewaehlten Tonspur, ohne Untertitel, ab der erreichten Stelle, an den offenen Player',
+    c12.length === 2 && c12[1].continue === true && c12[1].startMs === 50000 && c12[1].audioIndex === (other?.index ?? -1) && c12[1].subtitleIndex === -1 && c12[1].tracks?.audio?.find((a) => a.selected)?.index === other?.index,
+    JSON.stringify(c12.map((c) => ({ cont: c.continue, start: c.startMs, a: c.audioIndex, s: c.subtitleIndex })))
+  );
   Object.assign(state.limits, { local: true, server: 0 });
   // Die Einstufung gilt zehn Minuten im selben Netz; der Testserver hat sie eben umgestellt, also neu pruefen (wie "Pruefen" in den Einstellungen)
   await ev(`window.__audioChannels = 2; window.jc.streamingLimits(true)`);
@@ -281,6 +378,24 @@ module.exports = async (ctx) => {
   const limitLabel = await waitFor(`[...document.querySelectorAll('.setting-label')].some((l) => l.textContent === 'Bitratengrenze')`);
   const limitValue = await ev(`(() => { const s = [...document.querySelectorAll('.setting')].find((x) => x.querySelector('.setting-label')?.textContent === 'Bitratengrenze'); return s?.querySelector('button')?.textContent.trim() ?? null; })()`);
   check('Netzwerk: "Bitratengrenze" mit "Automatisch"', limitLabel && limitValue === 'Automatisch', String(limitValue));
+  // P22 (B2): nur Einstellungen, die der Player auf dem Handy umsetzt
+  const titles = () => ev(`[...document.querySelectorAll('.group-title')].map((x) => x.textContent)`);
+  const labels = () => ev(`[...document.querySelectorAll('.setting-label')].map((x) => x.textContent)`);
+  const netTitles = await titles();
+  await ev(`location.hash = '#/settings/behavior'`);
+  await waitFor(`[...document.querySelectorAll('.group-title')].some((x) => x.textContent === 'Überspringen')`);
+  const behTitles = await titles();
+  const behLabels = await labels();
+  await ev(`location.hash = '#/settings/subtitles'`);
+  await waitFor(`[...document.querySelectorAll('.setting-label')].some((x) => x.textContent === 'Umrandung')`);
+  const subLabels = await labels();
+  const outlineSwitch = await ev(`!!document.querySelector('.switch[aria-label="Umrandung"]')`);
+  check(
+    'Android zeigt nur, was sein Player kann: ohne Puffer, Zertifikate, Bedienung, Pausenbildschirm, System, Vollbild beim Start und Schriftart; Umrandung als Schalter; Ueberspringen und Bild bleiben',
+    !netTitles.includes('Puffer') && !netTitles.includes('Sicherheit') && !behTitles.includes('Bedienung') && !behTitles.includes('Pausenbildschirm') && !behTitles.includes('System') &&
+      behTitles.includes('Überspringen') && behTitles.includes('Bild') && !behLabels.includes('Wiedergabe im Vollbild starten') && !subLabels.includes('Schriftart') && outlineSwitch,
+    JSON.stringify({ netTitles, behTitles, sub: subLabels.filter((l) => /Umrandung|Schrift/.test(l)), outlineSwitch })
+  );
 
   // ---------- Auf diesem Geraet fortsetzen (P19): auf dem Handy ueber der Reiterleiste ----------
   await fetch('http://127.0.0.1:8097/__debug/session?device=Wohnzimmer%20Apple%20TV&at=120', { method: 'POST' });

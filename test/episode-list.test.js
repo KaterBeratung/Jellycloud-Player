@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildEpisodeList, nextEpisode, MAX_EPISODES } = require('../src/main/episode-list');
-const { skipCountdownSec, DEFAULT_SETTINGS } = require('../src/main/config');
+const { DEFAULT_SETTINGS } = require('../src/main/config');
 
 const ep = (n, o = {}) => ({ Id: `e${n}`, Name: `Folge ${n}`, IndexNumber: n, ParentIndexNumber: 1, SeasonName: 'Staffel 1', RunTimeTicks: 2700 * 1e7, ImageTags: { Primary: `t${n}` }, UserData: { Played: false, PlaybackPositionTicks: 0 }, ...o });
 
@@ -54,13 +54,8 @@ test('nextEpisode: die Folge danach, auch ueber die Staffelgrenze, am Ende null'
   assert.equal(nextEpisode(null, 'e1'), null);
 });
 
-test('skipCountdownSec: Standard 6 s, 0 = aus, begrenzt auf 0..30, Unsinn faellt auf den Standard', () => {
-  assert.equal(DEFAULT_SETTINGS.player.skipCountdown, 6);
-  assert.equal(skipCountdownSec(6), 6);
-  assert.equal(skipCountdownSec(0), 0);
-  assert.equal(skipCountdownSec('10'), 10);
-  assert.equal(skipCountdownSec(2.6), 3);
-  assert.equal(skipCountdownSec(-4), 0);
-  assert.equal(skipCountdownSec(999), 30);
-  for (const bad of [undefined, null, '', 'abc', NaN, {}]) assert.equal(skipCountdownSec(bad), 6, String(bad));
+test('Ueberspringen (Plan P22): Standard wie die Apple-App, Wartezeit 5 s, Rueckblick und Vorschau aus', () => {
+  const p = DEFAULT_SETTINGS.player;
+  assert.deepEqual([p.skipIntro, p.skipOutro, p.skipRecap, p.skipPreview, p.skipDelay, p.videoFormat], ['button', 'button', 'off', 'off', 5, 'auto']);
+  assert.equal('skipCountdown' in p, false, 'der alte Countdown ist weg');
 });

@@ -170,9 +170,9 @@ module.exports = async (ctx) => {
   await ev(`window.player.send({ type: 'sub', id: null })`);
   await ctx.wait(500);
   check('Untertitel abschaltbar', (await player.mpv.getProperty('sid')) === false || (await player.mpv.getProperty('sid')) === 'no');
-  await ev(`window.player.send({ type: 'aspect', mode: '4:3' })`);
+  await ev(`window.player.send({ type: 'format', mode: 'fill' })`);
   await ctx.wait(400);
-  check('Bildformat 4:3', Math.abs((await player.mpv.getProperty('video-aspect-override')) - 4 / 3) < 0.01);
+  check('Bildformat Fuellen (panscan 1)', Number(await player.mpv.getProperty('panscan')) === 1, String(await player.mpv.getProperty('panscan')));
 
   // Groessenaenderung: mpv bleibt oben und sichtbar
   player.host.setContentSize(1000, 660);

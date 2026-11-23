@@ -88,7 +88,7 @@ module.exports = async (ctx) => {
   const stored = JSON.parse(await ev(`localStorage.getItem('jellycloud.config')`));
   const srv = stored.servers[0];
   check('Konfiguration liegt in localStorage, das Konto ist drin, das Token nur kodiert', !!srv && srv.token.startsWith('plain:') && !srv.token.includes('mock') && stored.activeServerId === srv.id && /^[0-9a-f]{12}$/.test(srv.id), srv?.token.slice(0, 12));
-  check('Standardeinstellungen sind vollstaendig', stored.settings?.player?.skipCountdown === 6 && stored.settings?.home?.heroSlides >= 3 && stored.settings?.appearance?.theme !== undefined);
+  check('Standardeinstellungen sind vollstaendig', stored.settings?.player?.skipDelay === 5 && stored.settings?.home?.heroSlides >= 3 && stored.settings?.appearance?.theme !== undefined);
   const info = await ev(`window.jc.getState()`);
   check('Zustand: angemeldet, Plattform "web", keine Desktop-Funktionen', info.loggedIn === true && info.platform === 'web' && info.mpv === null && info.autostartSupported === false && info.update === null && info.servers.length === 1 && info.servers[0].token === undefined, JSON.stringify({ p: info.platform, l: info.loggedIn }));
 

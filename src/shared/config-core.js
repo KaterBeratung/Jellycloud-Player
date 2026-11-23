@@ -3,9 +3,9 @@
    Wohin gespeichert wird und wie Zugangsdaten verschluesselt werden, steckt in `io` und `codec` (Hauptprozess: Datei und Windows-DPAPI in src/main/config.js,
    Web/Handy: localStorage bzw. der sichere Speicher des Geraets in src/web/jc-web.js). Der Aufbau der Konfiguration und alle Regeln beim Laden sind fuer alle gleich. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./home-rows'), require('./glow'));
-  else root.JCConfig = factory(root.JCHomeRows, root.JCGlow);
-})(typeof self !== 'undefined' ? self : this, function (HomeRows, Glow) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./home-rows'), require('./glow'), require('./player-rules'));
+  else root.JCConfig = factory(root.JCHomeRows, root.JCGlow, root.JCPlayerRules);
+})(typeof self !== 'undefined' ? self : this, function (HomeRows, Glow, PlayerRules) {
   'use strict';
 /** Standardwerte aller Einstellungen. Neue Schluessel werden beim Laden automatisch ergaenzt. */
 /**
@@ -86,9 +86,15 @@ const DEFAULT_SETTINGS = {
     subtitleAssStyle: false, // true: eigenen Stil auch auf ASS-Untertitel anwenden
     // Verhalten
     autoplayNext: true,
+    // Ueberspringen wie in der Apple-App (Plan P22, E10; Regeln in src/shared/player-rules.js): ueber dem Bild nur "Intro ueberspringen"; der Abspann
+    // bestimmt den Countdown zur naechsten Folge; Rueckblick und Vorschau nur automatisch oder gar nicht. skipDelay: Wartezeit bei "Automatisch" (0/3/5/8/10 s).
     skipIntro: 'button', // button | auto | off
     skipOutro: 'button', // button | auto | off
-    skipCountdown: 6, // Sekunden, die sich "Intro/Abspann ueberspringen" und "Naechste Folge" fuellen, bevor es von selbst weitergeht (wie bei Netflix); 0 = aus
+    skipRecap: 'off', // auto | off
+    skipPreview: 'off', // auto | off
+    skipDelay: 5,
+    // Standardbild (Bildformat beim Start): auto | fit | fill | stretch; im Player je Wiedergabe umschaltbar
+    videoFormat: 'auto',
     resumeRewindSec: 5,
     seekSmall: 5, // Pfeiltasten
     seekBig: 10, // J / L und Knoepfe
@@ -133,13 +139,6 @@ const DEFAULT_SETTINGS = {
 
 function isPlainObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
-}
-
-/** Sekunden fuer den Countdown an "Ueberspringen" / "Naechste Folge": ganze Zahl 0..30 (0 = aus); alles andere (fehlt, Text, negativ) faellt auf den Standard zurueck. */
-function skipCountdownSec(v) {
-  const n = Number(v);
-  if (v === null || v === undefined || v === '' || !Number.isFinite(n)) return DEFAULT_SETTINGS.player.skipCountdown;
-  return Math.min(30, Math.max(0, Math.round(n)));
 }
 
 /** Verschmilzt `patch` rekursiv in `base`, ohne unbekannte Typen zu uebernehmen. */
@@ -265,6 +264,19 @@ class ConfigCore {
         if (this.data.homeRowsAdopted) for (const s of this.data.servers) this.setHomeRows(hide(this.homeRows(s.id)), s.id, { save: false });
       }
       delete look.homeTrending;
+      // Seit 1.2.21 (Plan P22, E10): statt des Countdowns an den Knoepfen (0/3/6/10/15 s) eine Wartezeit fuer "Automatisch" (0/3/5/8/10 s), die naechste
+      // passende gilt; der Rueckblick hatte keinen eigenen Schalter und folgte "Intro" auf "Automatisch". Laeuft, bis die Datei ohne die alten Werte gespeichert ist.
+      const play = this.data.settings.player;
+      const rawPlay = raw.settings?.player ?? {};
+      if (rawPlay.skipCountdown !== undefined && rawPlay.skipDelay === undefined) play.skipDelay = PlayerRules.delayFromCountdown(rawPlay.skipCountdown);
+      if (rawPlay.skipCountdown !== undefined && rawPlay.skipRecap === undefined) play.skipRecap = rawPlay.skipIntro === 'auto' ? 'auto' : 'off';
+      delete play.skipCountdown;
+      if (!PlayerRules.SKIP_DELAYS.includes(play.skipDelay)) play.skipDelay = PlayerRules.DEFAULT_SKIP_DELAY;
+      for (const type of PlayerRules.SEGMENT_TYPES) {
+        const key = PlayerRules.SETTING_KEYS[type];
+        if (!PlayerRules.SKIP_MODES[type].includes(play[key])) play[key] = PlayerRules.DEFAULT_MODES[type];
+      }
+      play.videoFormat = PlayerRules.videoFormat(play.videoFormat);
       if (typeof raw.seerrAddress === 'string' && raw.seerrAddress) this.data.seerrAddress = raw.seerrAddress.slice(0, 300);
       // Seerr bis Version 9: eine Verbindung fuer das ganze Geraet. Sie geht an das aktive Profil, wenn der Benutzername passt (Jellyfin-Konto); sonst wird
       // nur die Adresse vorbelegt. Verbindungen mit API-Schluessel verfallen (Entscheidung E12): einmal mit dem Jellyfin-Konto neu anmelden.
@@ -532,5 +544,5 @@ class ConfigCore {
     this._save();
   }
 }
-return { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec };
+return { ConfigCore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge };
 });

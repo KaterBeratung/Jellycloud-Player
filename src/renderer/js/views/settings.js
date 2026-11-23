@@ -571,6 +571,7 @@ export function settingsView({ section, query: q }) {
       paint();
     };
     paint();
+    const desktop = state.platform === 'desktop';
 
     const colors = h('div', { class: 'swatches' });
     SUB_COLORS.forEach((c) => {
@@ -616,10 +617,13 @@ export function settingsView({ section, query: q }) {
         setting(t('set.subScale'), t('set.subScaleDesc'), slider({ min: 0.5, max: 2, step: 0.05, value: pl().subtitleScale, format: (v) => `${Math.round(v * 100)}%`, onInput: (v) => set({ subtitleScale: v }) })),
         setting(t('set.subPos'), t('set.subPosDesc'), slider({ min: 50, max: 100, step: 1, value: pl().subtitlePos, format: (v) => `${v}%`, onInput: (v) => set({ subtitlePos: v }) })),
         setting(t('set.subColor'), null, colors),
-        setting(t('set.subOutline'), null, slider({ min: 0, max: 6, step: 0.5, value: pl().subtitleOutline, format: (v) => `${v} px`, onInput: (v) => set({ subtitleOutline: v }) })),
+        // Android (Media3) zeichnet die Umrandung in fester Staerke und kennt die Schriften von Windows nicht: dort ein Schalter und keine Schriftwahl (Plan P22, B2)
+        desktop
+          ? setting(t('set.subOutline'), null, slider({ min: 0, max: 6, step: 0.5, value: pl().subtitleOutline, format: (v) => `${v} px`, onInput: (v) => set({ subtitleOutline: v }) }))
+          : setting(t('set.subOutline'), null, toggle(pl().subtitleOutline > 0, (v) => set({ subtitleOutline: v ? 2 : 0 }), t('set.subOutline'))),
         setting(t('set.subBackground'), t('set.subBackgroundDesc'), slider({ min: 0, max: 80, step: 5, value: pl().subtitleBackground, format: (v) => `${v}%`, onInput: (v) => set({ subtitleBackground: v }) })),
         setting(t('set.subBold'), null, toggle(pl().subtitleBold, (v) => set({ subtitleBold: v }), t('set.subBold'))),
-        setting(t('set.subFont'), null, menuSelect(FONTS.map((f) => ({ value: f, label: f })), pl().subtitleFont, (v) => set({ subtitleFont: v }))),
+        desktop ? setting(t('set.subFont'), null, menuSelect(FONTS.map((f) => ({ value: f, label: f })), pl().subtitleFont, (v) => set({ subtitleFont: v }))) : null,
         setting(t('set.subAss'), t('set.subAssDesc'), toggle(pl().subtitleAssStyle, (v) => set({ subtitleAssStyle: v }), t('set.subAss')))
       )
     );
@@ -627,31 +631,67 @@ export function settingsView({ section, query: q }) {
 
   // ---------- Wiedergabe-Verhalten ----------
   function behaviorPanel() {
-    const skipOptions = [
-      { value: 'button', label: t('set.skipButton') },
-      { value: 'auto', label: t('set.skipAuto') },
-      { value: 'off', label: t('set.animOff') }
-    ];
-    return h(
+    // Ueberspringen wie in der Apple-App (Plan P22, E10; Regeln in src/shared/player-rules.js): ueber dem Bild nur "Intro ueberspringen", Rueckblick und
+    // Vorschau nur automatisch oder gar nicht; "Automatisch springen" wirkt nur, wenn eine Art auf "Automatisch" steht (sonst ausgeschaltet, mit Grund)
+    const Rules = window.JCPlayerRules;
+    const modeLabel = { button: t('set.skipButton'), auto: t('set.skipAuto'), off: t('set.off') };
+    const skipPrefs = { ...pl() };
+    const delayHost = h('div');
+    const skipFoot = h('p', { class: 'group-foot' });
+    const paintSkipDelay = () => {
+      const auto = Rules.skipsAutomatically(skipPrefs);
+      delayHost.replaceChildren(
+        menuSelect(
+          Rules.SKIP_DELAYS.map((v) => ({ value: v, label: v ? t('set.skipAfter', { n: v }) : t('set.skipNow') })),
+          Rules.skipDelay(skipPrefs),
+          (v) => {
+            skipPrefs.skipDelay = v;
+            setPlayer({ skipDelay: v });
+          }
+        )
+      );
+      delayHost.querySelector('button').disabled = !auto;
+      delayHost.closest('.setting')?.classList.toggle('is-off', !auto);
+      skipFoot.textContent = auto ? t('set.skipFoot') : `${t('set.skipFoot')} ${t('set.skipDelayUnused')}`;
+    };
+    const skipRow = (type, label) => {
+      const key = Rules.SETTING_KEYS[type];
+      return setting(
+        label,
+        null,
+        segmented(
+          Rules.SKIP_MODES[type].map((m) => ({ value: m, label: modeLabel[m] })),
+          Rules.skipMode(skipPrefs, type),
+          (v) => {
+            skipPrefs[key] = v;
+            setPlayer({ [key]: v });
+            paintSkipDelay();
+          }
+        )
+      );
+    };
+    const delayRow = setting(t('set.skipDelay'), null, delayHost);
+    const formats = Rules.VIDEO_FORMATS.map((v) => ({ value: v, label: t(`set.fmt.${v}`) }));
+    // Nur der Player des Desktop-Programms (mpv-Fenster): Vollbild beim Start, Tastatur und Mausrad, Pausenbildschirm, Verhalten im Hintergrund. Auf dem
+    // Handy laeuft der Player immer im Vollbild, haelt im Hintergrund an und laesst den Bildschirm an (Plan P22, B2)
+    const desktop = state.platform === 'desktop';
+    const panel = h(
       'div',
       { class: 'settings-stack' },
       group(
         t('set.grp.start'),
         setting(t('set.autoNext'), t('set.autoNextDesc'), toggle(pl().autoplayNext, (v) => setPlayer({ autoplayNext: v }), t('set.autoNext'))),
-        setting(t('set.skipIntro'), t('set.skipIntroDesc'), segmented(skipOptions, pl().skipIntro, (v) => setPlayer({ skipIntro: v }))),
-        setting(t('set.skipOutro'), t('set.skipOutroDesc'), segmented(skipOptions, pl().skipOutro, (v) => setPlayer({ skipOutro: v }))),
-        setting(
-          t('set.skipCountdown'),
-          t('set.skipCountdownDesc'),
-          menuSelect(
-            [0, 3, 6, 10, 15].map((v) => ({ value: v, label: v ? `${v} s` : t('set.off') })),
-            pl().skipCountdown ?? 6,
-            (v) => setPlayer({ skipCountdown: v })
-          )
-        ),
         setting(t('set.rewind'), t('set.rewindDesc'), slider({ min: 0, max: 30, step: 1, value: pl().resumeRewindSec, format: (v) => `${v} s`, onInput: (v) => setPlayer({ resumeRewindSec: v }) })),
-        setting(t('set.fullscreenOnPlay'), t('set.fullscreenOnPlayDesc'), toggle(pl().fullscreenOnPlay, (v) => setPlayer({ fullscreenOnPlay: v }), t('set.fullscreenOnPlay')))
+        desktop ? setting(t('set.fullscreenOnPlay'), t('set.fullscreenOnPlayDesc'), toggle(pl().fullscreenOnPlay, (v) => setPlayer({ fullscreenOnPlay: v }), t('set.fullscreenOnPlay'))) : null
       ),
+      h(
+        'div',
+        { class: 'settings-block' },
+        h('h3', { class: 'group-title' }, t('set.grp.skip')),
+        h('div', { class: 'settings-group' }, skipRow('Intro', t('set.skipIntro')), skipRow('Outro', t('set.skipOutro')), skipRow('Recap', t('set.skipRecap')), skipRow('Preview', t('set.skipPreview')), delayRow),
+        skipFoot
+      ),
+      group(t('set.grp.image'), setting(t('set.videoFormat'), t('set.videoFormatDesc'), menuSelect(formats, Rules.videoFormat(pl().videoFormat), (v) => setPlayer({ videoFormat: v })))),
       group(
         t('set.grp.trailer'),
         setting(t('set.trailerAuto'), t('set.trailerAutoDesc'), toggle(!!state.settings.trailer?.autoplay, (v) => setTrailer({ autoplay: v }), t('set.trailerAuto'))),
@@ -686,7 +726,7 @@ export function settingsView({ section, query: q }) {
           )
         )
       ),
-      group(
+      !desktop ? null : group(
         t('set.grp.controls'),
         setting(t('set.seekSmall'), t('set.seekSmallDesc'), slider({ min: 1, max: 30, step: 1, value: pl().seekSmall, format: (v) => `${v} s`, onInput: (v) => setPlayer({ seekSmall: v }) })),
         setting(t('set.seekBig'), t('set.seekBigDesc'), slider({ min: 5, max: 120, step: 5, value: pl().seekBig, format: (v) => `${v} s`, onInput: (v) => setPlayer({ seekBig: v }) })),
@@ -704,7 +744,7 @@ export function settingsView({ section, query: q }) {
           )
         )
       ),
-      group(
+      !desktop ? null : group(
         t('set.grp.pause'),
         setting(t('set.pauseScreen'), t('set.pauseScreenDesc'), toggle(pl().pauseScreen, (v) => setPlayer({ pauseScreen: v }), t('set.pauseScreen'))),
         setting(
@@ -717,7 +757,7 @@ export function settingsView({ section, query: q }) {
           )
         )
       ),
-      group(
+      !desktop ? null : group(
         t('set.grp.system'),
         setting(t('set.pauseOnMinimize'), t('set.pauseOnMinimizeDesc'), toggle(pl().pauseOnMinimize, (v) => setPlayer({ pauseOnMinimize: v }), t('set.pauseOnMinimize'))),
         setting(t('set.preventSleep'), t('set.preventSleepDesc'), toggle(pl().preventSleep, (v) => setPlayer({ preventSleep: v }), t('set.preventSleep')))
@@ -732,6 +772,8 @@ export function settingsView({ section, query: q }) {
         foot(t('set.handoffFoot'))
       )
     );
+    paintSkipDelay();
+    return panel;
   }
 
   // ---------- Netzwerk & Qualitaet ----------
@@ -773,12 +815,15 @@ export function settingsView({ section, query: q }) {
         setting(t('set.quality'), t('set.qualityDesc'), menuSelect(bitrate, Number(pl().maxBitrateMbps) > 0 ? Number(pl().maxBitrateMbps) : 0, (v) => setPlayer({ maxBitrateMbps: v }))),
         setting(t('set.allowTranscode'), t('set.allowTranscodeDesc'), toggle(pl().allowTranscode, (v) => setPlayer({ allowTranscode: v }), t('set.allowTranscode')))
       ),
-      group(
-        t('set.grp.buffer'),
-        setting(t('set.buffer'), t('set.bufferDesc'), menuSelect(buffers, pl().bufferMb, (v) => setPlayer({ bufferMb: v }))),
-        setting(t('set.readahead'), t('set.readaheadDesc'), slider({ min: 10, max: 120, step: 5, value: pl().readaheadSec, format: (v) => `${v} s`, onInput: (v) => setPlayer({ readaheadSec: v }) }))
-      ),
-      group(t('set.grp.security'), setting(t('set.selfSigned'), t('set.selfSignedDesc'), toggle(pl().allowSelfSigned, (v) => setPlayer({ allowSelfSigned: v }), t('set.selfSigned'))))
+      // Puffer und eigene Zertifikate gelten nur fuer mpv im Desktop-Programm (Plan P22, B2)
+      state.platform !== 'desktop'
+        ? null
+        : group(
+            t('set.grp.buffer'),
+            setting(t('set.buffer'), t('set.bufferDesc'), menuSelect(buffers, pl().bufferMb, (v) => setPlayer({ bufferMb: v }))),
+            setting(t('set.readahead'), t('set.readaheadDesc'), slider({ min: 10, max: 120, step: 5, value: pl().readaheadSec, format: (v) => `${v} s`, onInput: (v) => setPlayer({ readaheadSec: v }) }))
+          ),
+      state.platform !== 'desktop' ? null : group(t('set.grp.security'), setting(t('set.selfSigned'), t('set.selfSignedDesc'), toggle(pl().allowSelfSigned, (v) => setPlayer({ allowSelfSigned: v }), t('set.selfSigned'))))
     );
   }
 

@@ -262,6 +262,99 @@
     return premium(src).concat(hd);
   }
 
+  // ---------- Player: was gerade laeuft (Plan P22, Y10; MediaTags.player und Delivery der Apple-App) ----------
+
+  /** Das HDR-Format, das bei unveraendertem Bild ankommt: Dolby Vision mit Erweiterungsschicht (Profil 7, DOVIWithEL...) laeuft als HDR10-Grundschicht (Apple-Geraete und mpv). */
+  function playedHDR(video) {
+    if (/^DOVIWithEL/i.test(String((video && video.VideoRangeType) || ''))) return tag('hdr10', 'HDR10');
+    return hdr(video);
+  }
+
+  /**
+   * Was der Server aus Bild und Ton macht, gelesen aus der Adresse des Stroms (TranscodingUrl von Jellyfin): Art der Lieferung, erlaubte Codecs (der erste,
+   * den er kann), ob er einen Grund gegen die Tonspur nennt, Grenzen fuer den Ton. outputChannels: die im Geraeteprofil angefragte Kanalgrenze, falls die
+   * Adresse keine nennt. method: PlayMethod (DirectPlay | DirectStream | Transcode).
+   */
+  function delivery(method, url, outputChannels) {
+    var kind = PLAYBACK[method] ? method : 'Transcode';
+    var d = { kind: kind, videoCodecs: [], audioCodecs: [], audioRejected: false, maxChannels: null, audioBitrate: null };
+    if (kind === 'DirectPlay' || !url) return d;
+    var query = String(url).split('?')[1] || '';
+    var values = {};
+    query.split('&').forEach(function (part) {
+      var i = part.indexOf('=');
+      var key = decodeURIComponent((i < 0 ? part : part.slice(0, i)).replace(/\+/g, ' ')).toLowerCase();
+      if (key && !(key in values)) values[key] = i < 0 ? '' : decodeURIComponent(part.slice(i + 1).replace(/\+/g, ' '));
+    });
+    var list = function (name) {
+      return String(values[name.toLowerCase()] || '').toLowerCase().split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    };
+    var int = function (v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; };
+    d.videoCodecs = list('VideoCodec');
+    d.audioCodecs = list('AudioCodec');
+    d.audioRejected = String(values.transcodereasons || '').split(',').some(function (r) { r = r.trim(); return r.indexOf('Audio') === 0 || r.indexOf('SecondaryAudio') === 0; });
+    d.maxChannels = int(values.transcodingmaxaudiochannels) || int(values.maxaudiochannels) || int(values.audiochannels) || (outputChannels > 0 ? outputChannels : null);
+    d.audioBitrate = int(values.audiobitrate);
+    return d;
+  }
+
+  /**
+   * Kommt die Tonspur unveraendert an? Bei Direct Play immer; sonst, wenn der Server sie kopieren kann: ihr Codec ist erlaubt, er nennt keinen Grund gegen
+   * sie, und Kanaele und Datenrate liegen in den Grenzen des Stroms (so entscheidet Jellyfin; im Zweifel gilt sie als gewandelt).
+   */
+  function keepsAudio(d, audio) {
+    if (d.kind === 'DirectPlay') return true;
+    var codec = String((audio && audio.Codec) || '').toLowerCase();
+    if (!codec || d.audioCodecs.indexOf(codec) < 0 || d.audioRejected) return false;
+    if (d.maxChannels && !(audio.Channels > 0 && audio.Channels <= d.maxChannels)) return false;
+    if (d.audioBitrate && audio.BitRate > d.audioBitrate) return false;
+    return true;
+  }
+
+  /**
+   * Tags des Players in seiner Reihenfolge (Vorgabe des Nutzers fuer die Apple-App): (1) wie der Server liefert, (2) die Aufloesung, die wirklich ankommt,
+   * (3) das HDR-Format, das wirklich ausgegeben wird, (4) das Tonformat, das wirklich ankommt, mit seinen Kanaelen, (5) der Bildcodec. Reicht der Platz
+   * nicht, fallen die hinteren weg.
+   * - Eine HDR-Datei, die neu verpackt an eine Ausgabe ohne HDR geht, gilt als Transcoding (der Server rechnet sie dann auf SDR um).
+   * - Aufloesung: die gemeldete Groesse des Bildes (presented { width, height }), sonst bei unveraendertem Bild die der Datei; beim Neukodieren keine.
+   * - HDR nur bei unveraendertem Bild und HDR-Ausgabe; Ton: Premium-Format nur, wenn die Spur unveraendert ankommt, sonst das Zielformat des Servers
+   *   (FLAC hervorgehoben) mit den Kanaelen, die danach bleiben; Bildcodec beim Neukodieren nur, wenn die Adresse genau einen nennt.
+   * o: { source, audio (gewaehlte Spur), delivery, hdrOutput, presented, lang }
+   */
+  function player(o) {
+    var src = o.source;
+    var d = o.delivery || delivery('DirectPlay');
+    var video = videoOf(src);
+    var audio = o.audio || defaultAudio(src);
+    var toneMapped = d.kind === 'DirectStream' && !o.hdrOutput && !!hdr(video);
+    var kind = toneMapped ? 'Transcode' : d.kind;
+    var videoKept = kind !== 'Transcode';
+    var out = [playback(kind)];
+    var res = o.presented ? resolution(o.presented.width, o.presented.height) : videoKept && video ? resolution(video.Width, video.Height) : null;
+    if (res) out.push(res);
+    if (videoKept && o.hdrOutput) {
+      var h = playedHDR(video);
+      if (h) out.push(h);
+    }
+    var count = audio && audio.Channels;
+    if (keepsAudio(d, audio)) {
+      var p = premiumAudio(audio);
+      var name = audioCodecName(audio && audio.Codec);
+      if (p) out.push(p);
+      else if (name) out.push(neutral(name));
+    } else {
+      var target = d.audioCodecs[0];
+      if (target === 'flac') out.push(tag('flac', 'FLAC'));
+      else if (audioCodecName(target)) out.push(neutral(audioCodecName(target)));
+      if (d.maxChannels && count > d.maxChannels) count = d.maxChannels;
+    }
+    var ch = channels(count, o.lang);
+    if (ch) out.push(neutral(ch));
+    var vcodec = videoKept ? String((video && video.Codec) || '').toLowerCase() : !toneMapped && d.videoCodecs.length === 1 ? d.videoCodecs[0] : '';
+    if (VIDEO_CODEC_NAMES[vcodec]) out.push(neutral(VIDEO_CODEC_NAMES[vcodec]));
+    return out.filter(Boolean);
+  }
+
   // ---------- Staende bei Seerr ----------
   /** Das Tag zu einem Stand bei Seerr (seerr-state.js STATES): Bezeichnung und Art kommen allein von dort. */
   function seerr(state, lang) {
@@ -292,6 +385,7 @@
     paint: paint, emphasis: emphasis, surfaceOver: surfaceOver, contrast: contrast, mix: mix, toned: toned, luminance: luminance,
     resolution: resolution, hdr: hdr, premiumAudio: premiumAudio, audioCodecName: audioCodecName, channels: channels,
     premium: premium, technical: technical, playback: playback, source: source, card: card, streamsOfItem: streamsOfItem, defaultAudio: defaultAudio,
+    playedHDR: playedHDR, delivery: delivery, keepsAudio: keepsAudio, player: player,
     seerr: seerr, seerrAvailability: seerrAvailability, seerrRequest: seerrRequest
   };
 });

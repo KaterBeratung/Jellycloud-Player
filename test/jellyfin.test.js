@@ -160,7 +160,7 @@ test('Fortschritt melden und Segmente laden', async () => {
   const c = await login();
   const ep = (await c.getItems({ includeItemTypes: 'Episode', recursive: true, limit: 1 })).Items[0];
   const segs = await c.getMediaSegments(ep.Id);
-  assert.equal(segs[0].Type, 'Intro');
+  assert.deepEqual(segs.map((s) => s.Type), ['Recap', 'Intro', 'Outro']);
   await c.reportStart({ ItemId: ep.Id, PositionTicks: 0 });
   await c.reportProgress({ ItemId: ep.Id, PositionTicks: 50_000_000, EventName: 'TimeUpdate' });
   await c.reportStopped({ ItemId: ep.Id, PositionTicks: 90_000_000 });

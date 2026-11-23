@@ -651,6 +651,8 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .link-row-tag { flex: none; color: var(--muted); font-size: 13px; }
 .link-row .link-row-chev { color: var(--faint); }
 .group-foot { padding: 8px 8px 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
+/* Einstellung, die gerade nicht wirkt (z. B. "Automatisch springen" ohne Abschnitt auf "Automatisch"): ausgegraut, der Grund steht darunter */
+.setting.is-off .setting-label { color: var(--muted); }
 .link-row:disabled { cursor: default; opacity: 0.45; }
 .link-row:disabled:hover { background: none; }
 /* Seerr (wie die Apple-App, SeerrSection): Stand der Verbindung mit Symbol und, wenn etwas nicht stimmt, einem Hinweis darunter */

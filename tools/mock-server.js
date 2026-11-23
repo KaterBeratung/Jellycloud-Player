@@ -1488,7 +1488,15 @@ const server = http.createServer(async (req, res) => {
   }
   if ((m = /^\/MediaSegments\/([0-9a-f]+)$/.exec(p))) {
     const it = items.get(m[1]);
-    const segs = it?.Type === 'Episode' ? [{ Id: id32(`seg${m[1]}`), ItemId: m[1], Type: 'Intro', StartTicks: 20 * TICKS, EndTicks: 85 * TICKS }] : [];
+    // Folgen: Rueckblick 0-12 s, Intro 20-85 s und ein Abspann bis ans Ende (5340-5400 s; der mpv-Simulator spielt 5400 s, FAKE_DURATION)
+    const segs =
+      it?.Type === 'Episode'
+        ? [
+            { Id: id32(`recap${m[1]}`), ItemId: m[1], Type: 'Recap', StartTicks: 0, EndTicks: 12 * TICKS },
+            { Id: id32(`seg${m[1]}`), ItemId: m[1], Type: 'Intro', StartTicks: 20 * TICKS, EndTicks: 85 * TICKS },
+            { Id: id32(`outro${m[1]}`), ItemId: m[1], Type: 'Outro', StartTicks: 5340 * TICKS, EndTicks: 5400 * TICKS }
+          ]
+        : [];
     return send(res, 200, { Items: segs, TotalRecordCount: segs.length });
   }
   // ---------- Verwaltung: nur mit state.admin, sonst 403 wie bei einem normalen Benutzer ----------

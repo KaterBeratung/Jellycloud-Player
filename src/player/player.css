@@ -23,6 +23,7 @@
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --glass: rgb(16 18 28 / 0.78);
+  --upnext-bg: rgb(7 8 12 / 0.96);
   color-scheme: dark;
 }
 :root[data-anim='reduced'] { --dur: 0.45; }
@@ -54,12 +55,17 @@ button { font: inherit; color: inherit; }
 .t1 { font: 700 20px/1.25 var(--font-display); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 12px rgb(0 0 0 / 0.6); }
 .t2 { display: flex; align-items: center; gap: 10px; color: rgb(255 255 255 / 0.78); font-weight: 600; margin-top: 2px; min-width: 0; }
 .t2 .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.badges { display: inline-flex; gap: 6px; flex: none; }
-.badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font: 800 10.5px var(--font); letter-spacing: 0.04em; text-transform: uppercase; background: rgb(255 255 255 / 0.16); border: 1px solid rgb(255 255 255 / 0.24); }
-.badge.res { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-.badge.hdr { background: rgb(255 255 255 / 0.92); color: #111; border-color: transparent; }
-.badge.dv { background: #111; border-color: rgb(255 255 255 / 0.5); }
-.badge.play { background: rgb(53 208 127 / 0.2); border-color: rgb(53 208 127 / 0.55); color: #6ff0ac; }
+.badges { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
+/* Tags wie auf Karten und Detailseite (Regeln und Farben: src/shared/media-tags.js, Zeichnung: src/renderer/js/tags.js; dieselben Regeln wie .tag in app.css) */
+.tags { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; }
+.tags.compact { gap: 4px; }
+.badges > .tags { flex: 1 1 auto; }
+.tag { position: relative; isolation: isolate; flex: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; border: 1px solid transparent; border-radius: 999px; white-space: nowrap; font-family: var(--font); font-weight: 700; letter-spacing: 0; line-height: 1; text-transform: none; }
+.tag[hidden] { display: none; }
+.tag.compact { height: 17px; min-width: 17px; padding: 0 6px; font-size: 9.5px; }
+.tag.hl { color: var(--ink); background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0) 50%, rgb(0 0 0 / 0.12)) padding-box, linear-gradient(90deg, var(--fa), var(--fb)) padding-box, linear-gradient(90deg, var(--oa), var(--ob)) border-box; }
+.tag.hl::before { content: ''; position: absolute; z-index: -1; inset: calc(-1px - var(--reach)); box-sizing: border-box; border-style: solid; border-color: transparent; border-width: var(--capv) var(--caph); border-image: var(--glow); pointer-events: none; }
+.tag.on-dark:not(.hl) { background: rgb(255 255 255 / 0.16); color: #fff; }
 
 /* ---------- Mitte: Puls + Ladeanzeige ---------- */
 .center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
@@ -117,19 +123,35 @@ button { font: inherit; color: inherit; }
 .chip { height: 34px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 0.12); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; transition: background var(--t-fast), var(--press-tr); }
 .chip:hover { background: rgb(255 255 255 / 0.24); }
 
-/* ---------- Schwebe-Spalte: Skip + Naechste Folge (immer ueber der Leiste) ---------- */
+/* ---------- Schwebe-Spalte: "Intro ueberspringen" (immer ueber der Leiste) ---------- */
 .floaters { position: absolute; right: 28px; bottom: 36px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; transition: bottom var(--t-med) var(--ease); pointer-events: none; z-index: 3; }
 .ui-on .floaters { bottom: calc(var(--bar-h) + 14px); }
 .floaters > * { pointer-events: auto; }
 .skip { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.25); background: var(--glass); font: 700 15px var(--font); cursor: pointer; box-shadow: 0 14px 36px rgb(0 0 0 / 0.5); animation: slide-in calc(420ms * var(--dur)) var(--ease) backwards; transition: background var(--t-fast), transform var(--t-fast) var(--ease), var(--press-tr); }
 /* "backwards" statt "both": Mit "both" haelt die Animation ihren Endwert (transform: none) fest und ueberschreibt die Hebung beim Zeigen, der Knopf hob sich nie an */
 .skip:hover { background: #fff; color: #111; transform: translateY(-2px); }
-.nextcard { display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 16px; width: 340px; max-width: calc(100vw - 56px); border-radius: 18px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.18); box-shadow: 0 18px 44px rgb(0 0 0 / 0.55); animation: slide-in calc(420ms * var(--dur)) var(--ease) both; }
-.nextcard .txt { min-width: 0; flex: 1; }
-.nextcard .k { color: var(--accent-fg, var(--accent)); font: 800 11px var(--font); text-transform: uppercase; letter-spacing: 0.08em; }
-.nextcard .n { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nextcard .go { flex: none; height: 38px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: var(--press-tr); }
 @keyframes slide-in { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Bildschirm "Naechste Folge" (Countdown, Plan P22) ----------
+   Liegt ueber allem und ersetzt die Bedienung. Im Abspann laeuft das Bild links klein weiter: mpv zeichnet es in genau den Ausschnitt von .upnext-hole,
+   dessen riesiger Schatten den Rest der Flaeche deckt (die runden Ecken decken auch die Ecken des Videos ab). Am Ende steht dort das Bild der naechsten Folge. */
+.upnext { position: absolute; inset: 0; z-index: 9; background: var(--upnext-bg); animation: upnext-in calc(360ms * var(--dur)) var(--ease) both; }
+.upnext.in-credits { background: transparent; }
+.upnext-hole { position: absolute; border-radius: 18px; box-shadow: 0 0 0 200vmax var(--upnext-bg), inset 0 0 0 1px rgb(255 255 255 / 0.14); pointer-events: none; }
+.upnext-thumb { position: absolute; left: 6%; top: 50%; width: 46%; max-height: 62%; aspect-ratio: 16 / 9; object-fit: cover; transform: translateY(-50%); border-radius: 18px; box-shadow: 0 24px 60px rgb(0 0 0 / 0.6), inset 0 0 0 1px rgb(255 255 255 / 0.14); background: rgb(255 255 255 / 0.06); }
+.upnext-body { position: absolute; left: 57%; right: 6%; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 560px; }
+.upnext-k { color: var(--accent-fg, var(--accent)); font: 800 13px var(--font); text-transform: uppercase; letter-spacing: 0.1em; }
+.upnext-label { color: rgb(255 255 255 / 0.72); font: 700 15px var(--font); font-variant-numeric: tabular-nums; }
+.upnext-title { margin: 0; font: 800 clamp(24px, 2.8vw, 38px) / 1.12 var(--font); overflow-wrap: anywhere; }
+.upnext-text { margin: 4px 0 0; color: rgb(255 255 255 / 0.78); font: 500 15px / 1.45 var(--font); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.upnext-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.upnext-play, .upnext-hide { height: 48px; padding: 0 24px; border-radius: 999px; font: 800 15px var(--font); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: background var(--t-fast), var(--press-tr); }
+.upnext-play { border: 0; background: #fff; color: #111; }
+.upnext-hide { border: 1px solid rgb(255 255 255 / 0.25); background: rgb(255 255 255 / 0.1); color: #fff; font-weight: 700; }
+.upnext-hide:hover { background: rgb(255 255 255 / 0.2); }
+.upnext-when { color: rgb(255 255 255 / 0.6); font: 600 13px var(--font); font-variant-numeric: tabular-nums; }
+.upnext-on .top, .upnext-on .bar, .upnext-on .floaters, .upnext-on .center, .upnext-on .pause { opacity: 0 !important; pointer-events: none !important; }
+@keyframes upnext-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---------- Panels (Audio & Untertitel, Menues) ---------- */
 .pop { position: absolute; bottom: calc(var(--bar-h) + 6px); z-index: 8; max-height: calc(100% - var(--bar-h) - var(--top-h) - 24px); min-width: 240px; max-width: calc(100% - 32px); overflow-y: auto; padding: 8px; border-radius: 18px; background: var(--glass); border: 1px solid rgb(255 255 255 / 0.16); box-shadow: 0 24px 60px rgb(0 0 0 / 0.6); opacity: 0; transform: translateY(10px) scale(0.97); transform-origin: bottom center; transition: opacity var(--t-fast), transform var(--t-med) var(--ease); }
@@ -173,7 +195,7 @@ button { font: inherit; color: inherit; }
   --lg-edge-top: rgb(255 255 255 / 0.6);
 }
 :root[data-blur='off'] { --lg-fill: rgb(30 32 46 / 0.97); }
-.pop, .info, .nextcard, .flash, .errcard, .skip, .pv-time {
+.pop, .info, .flash, .errcard, .skip, .pv-time {
   background:
     linear-gradient(150deg, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0.08) 30%, rgb(255 255 255 / 0.02) 58%, rgb(255 255 255 / 0.16) 100%),
     var(--lg-fill);
@@ -210,9 +232,9 @@ button { font: inherit; color: inherit; }
 .round, .ibtn.big, .chip { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 6px 18px rgb(0 0 0 / 0.3); }
 .round { background: linear-gradient(180deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.1)); border-color: rgb(255 255 255 / 0.24); }
 .chip { background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.1)); }
-.nextcard, .skip, .errcard, .info { border-radius: 26px; }
+.skip, .errcard, .info { border-radius: 26px; }
 .skip { border-radius: 999px; }
-.nextcard .go { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 8px 20px -6px rgb(var(--accent-rgb) / 0.8); }
+.upnext-play { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 10px 26px -8px rgb(0 0 0 / 0.7); }
 .skip:hover { background: linear-gradient(180deg, #fff, #e9e9f2); color: #111; }
 .pv-time { padding: 4px 12px; }
 @media (max-width: 760px) { .pop.cols { min-width: 0; flex-direction: column; } .info { width: min(344px, calc(100% - 56px)); } }
@@ -273,12 +295,7 @@ button { font: inherit; color: inherit; }
 .track { background: rgb(255 255 255 / 0.2); box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.08); }
 .track .played { background: var(--lg-accent, var(--accent)); box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.7); }
 .knob { background: linear-gradient(180deg, #ffffff, #e4e7f2); box-shadow: inset 0 1px 0 #fff, 0 3px 10px rgb(0 0 0 / 0.55); }
-.badge { background: linear-gradient(150deg, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.06) 50%, rgb(255 255 255 / 0.14)), rgb(18 20 32 / 0.45); border-color: rgb(255 255 255 / 0.3); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); }
-.badge.res { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); }
-.badge.hdr { background: linear-gradient(180deg, #fff, #dfe2ee); color: #11131a; }
-.badge.dv { background: linear-gradient(180deg, #2a2a30, #0d0d10); }
-.badge.play { background: linear-gradient(180deg, rgb(53 208 127 / 0.34), rgb(53 208 127 / 0.14)); }
-.nextcard .go { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); }
+.upnext-play { background: linear-gradient(180deg, #fff, #e9e9f2); }
 .spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.5)); }
 
 .pop .opts { display: flex; flex-direction: column; }
@@ -309,7 +326,7 @@ button { font: inherit; color: inherit; }
    Hinweis zur Leistung: Dieses Fenster ist durchsichtig und liegt ueber dem mpv-Fenster. Ein backdrop-filter kann nur Inhalt
    derselben Seite verwischen, nie das Video dahinter; er sah daher gleich aus, kostete aber bei jedem Bild GPU-Zeit. Deshalb gibt es keinen.
    ========================================================================== */
-.closing .top, .closing .bar, .closing .floaters, .closing .pop, .closing .info, .closing .flash, .closing .errcard { opacity: 0 !important; pointer-events: none !important; transition: opacity 90ms linear; }
+.closing .top, .closing .bar, .closing .floaters, .closing .pop, .closing .info, .closing .flash, .closing .errcard, .closing .upnext { opacity: 0 !important; pointer-events: none !important; transition: opacity 90ms linear; }
 .closing .status { opacity: 0; }.cluster .ibtn.lim:not(.on) { color: var(--accent-fg, var(--accent)); }
 
 /* ==========================================================================
@@ -339,7 +356,7 @@ button { font: inherit; color: inherit; }
 .pause-ep .k { color: var(--accent-fg, var(--accent)); font: 800 12px var(--font); letter-spacing: 0.14em; text-transform: uppercase; }
 .pause-ep .n { font: 700 clamp(18px, 1.9vw, 26px)/1.25 var(--font-display); letter-spacing: -0.01em; text-shadow: 0 3px 16px rgb(0 0 0 / 0.6); }
 .pause-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; color: rgb(255 255 255 / 0.86); font: 600 15px var(--font); }
-.pause-meta > span:not(.badge) { display: inline-flex; align-items: center; gap: 5px; }
+.pause-meta > span { display: inline-flex; align-items: center; gap: 5px; }
 .pause-rating { height: 22px; padding: 0 7px; border-radius: 6px; border: 1px solid rgb(255 255 255 / 0.5); font: 700 12px var(--font); }
 .pause-score { color: #ffd166; font-weight: 700; }
 .pause-score .ico { color: #ffd166; }
@@ -362,18 +379,18 @@ button { font: inherit; color: inherit; }
 .ibtn::before, .round::before, .stepper button::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
 /* Druecken wie in der Oberflaeche (PressFeedback der Apple-App): eine Reaktion je Knopf, sofort kleiner und blasser, weich zurueck (--press-tr am Knopf). Waehrend des
    Drueckens waechst der unsichtbare Rand so weit, wie der Knopf schrumpft: ein Klick ganz am Rand geht nicht verloren. */
-:is(.ibtn, .round, .chip, .skip, .nextcard .go, .stepper button, .pause-go, .opt):not(:disabled):active { scale: var(--press-scale); opacity: var(--press-opacity); transition: scale var(--t-press-in) ease-out, opacity var(--t-press-in) ease-out; }
+:is(.ibtn, .round, .chip, .skip, .upnext-play, .upnext-hide, .stepper button, .pause-go, .opt):not(:disabled):active { scale: var(--press-scale); opacity: var(--press-opacity); transition: scale var(--t-press-in) ease-out, opacity var(--t-press-in) ease-out; }
 .opt:not(:disabled):active { scale: var(--press-scale-wide); } /* Zeilen der Menues: breit, derselbe sichtbare Weg */
-:where(.chip, .nextcard .go, .opt) { position: relative; }
-.chip::before, .nextcard .go::before, .opt::before { content: ''; position: absolute; inset: 0; border-radius: inherit; }
-:is(.ibtn, .round, .chip, .skip, .nextcard .go, .stepper button, .pause-go, .opt):active::before { inset: -3.5% -3.5% calc(-3.5% - 4px); }
+:where(.chip, .upnext-hide, .opt) { position: relative; }
+.chip::before, .upnext-play::before, .upnext-hide::before, .opt::before { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+:is(.ibtn, .round, .chip, .skip, .upnext-play, .upnext-hide, .stepper button, .pause-go, .opt):active::before { inset: -3.5% -3.5% calc(-3.5% - 4px); }
 /* Countdown an "Ueberspringen" und "Naechste Folge" (wie bei Netflix): hinter dem Text fuellt sich der Knopf von links nach rechts (die Breite setzt player.js, kein CSS-Ablauf: er muss bei
    "Animationen aus" genauso zaehlen). Eigene Huelle mit Rundung und overflow, damit der unsichtbare Trefferstreifen (::before) des Knopfes nicht abgeschnitten wird. */
-.skip, .nextcard .go { position: relative; isolation: isolate; }
+.skip, .upnext-play { position: relative; isolation: isolate; }
 .cd { display: none; position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
 .counting > .cd { display: block; }
 .cd > i { position: absolute; inset: 0; background: rgb(255 255 255 / 0.3); transform: scaleX(0); transform-origin: left center; will-change: transform; }
-.nextcard .go .cd > i { background: rgb(255 255 255 / 0.4); }
+.upnext-play .cd > i { background: rgb(0 0 0 / 0.13); }
 .pause-hint { color: rgb(255 255 255 / 0.55); font: 600 12.5px var(--font); }
 .pause-hint kbd { padding: 3px 9px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.28); background: rgb(255 255 255 / 0.1); font: 700 11.5px var(--font); letter-spacing: 0.02em; }
 /* Solange er steht, gehoeren Leiste und Kopf nicht ins Bild (jede Regung holt sie zurueck) */

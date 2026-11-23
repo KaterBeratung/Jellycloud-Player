@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, se
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
+const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE } = require('./config');
 const { PlayerController } = require('./player');
 const { AudioOutputProbe } = require('./audio-output');
 const { autostartSupported, setAutostart, syncAutostart, shouldStartMinimized } = require('./autostart');
@@ -537,8 +537,6 @@ async function startUp() {
       language: config.settings.language === 'auto' ? app.getLocale() : config.settings.language,
       playback: { seekSmall: config.settings.player.seekSmall, seekBig: config.settings.player.seekBig, wheelAction: config.settings.player.wheelAction },
       pauseScreen: { on: config.settings.player.pauseScreen !== false, sec: Number(config.settings.player.pauseScreenSec) || 6 },
-      // Countdown an den Knoepfen "Ueberspringen" und "Naechste Folge": Sekunden (0 = aus); die naechste Folge nur mit automatischem Abspielen
-      autoSkip: { sec: skipCountdownSec(config.settings.player.skipCountdown), next: config.settings.player.autoplayNext !== false },
       subtitleLanguage: config.settings.player.subtitleLanguage // bevorzugte Sprache: lange Untertitel-Listen zeigen sie zuerst
     }),
     paths: {
