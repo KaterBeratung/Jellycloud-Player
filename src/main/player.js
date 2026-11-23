@@ -908,6 +908,11 @@ class PlayerController extends EventEmitter {
     this.getClient()?.reportProgress(this._payload({ EventName: eventName }));
   }
 
+  /** Stelle sofort an den Server, ohne etwas zu beenden (Lebenszyklus, src/shared/lifecycle.js). */
+  savePosition() {
+    this._report('TimeUpdate');
+  }
+
   /**
    * Haelt den aktuellen Eintrag als beendet fest (Position, Meldung) und raeumt `cur` sofort ab, ohne zu warten.
    * Die Meldung selbst verschickt `_sendStopReport` im Hintergrund.
@@ -927,7 +932,8 @@ class PlayerController extends EventEmitter {
     return {
       client,
       payload: { ItemId: c.item.Id, MediaSourceId: c.res.mediaSourceId, PlaySessionId: c.res.playSessionId, PositionTicks: ticks },
-      encoding: c.res.isTranscode ? c.res.playSessionId : null
+      // Ende der Umsetzung bei jedem Strom, den der Server baut (Transcode und Direct Stream ueber HLS), nur die eigene (Plan P20, X6)
+      encoding: c.res.isHls ? c.res.playSessionId : null
     };
   }
 

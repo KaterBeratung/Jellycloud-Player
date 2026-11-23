@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog, Notification, powerMonitor } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
@@ -15,6 +15,8 @@ const { DiscordPresence, createPosterResolver } = require('./discord-presence');
 const { pipePath: discordPipePath } = require('./discord-ipc');
 const { SystemNotifier } = require('./system-notify');
 const { RemoteChannel } = require('./remote-channel');
+const { attachPowerLifecycle } = require('./power');
+const { createLifecycle } = require('../shared/lifecycle');
 
 const ROOT = path.join(__dirname, '..', '..');
 const EMBED_REFERER = 'https://jellycloud.player/';
@@ -50,6 +52,8 @@ let updater = null;
 
 /** @type {DiscordPresence|null} Rich Presence: zeigt in Discord, was gerade laeuft (siehe discord-presence.js) */
 let presence = null;
+/** Lebenszyklus der Wiedergabe (Plan P20, src/main/power.js): { lifecycle, clock } */
+let power = null;
 
 /**
  * Mitteilungen des Systems (Plan P18, src/main/system-notify.js): Benachrichtigungen von Windows, solange das Programm laeuft. Antippen holt das Fenster nach
@@ -546,6 +550,8 @@ async function startUp() {
     pathFor: (i) => (DEV && process.env.JC_DISCORD_PIPE ? `${process.env.JC_DISCORD_PIPE}${i}` : discordPipePath(i))
   });
   player.on('nowplaying', () => presence.refresh());
+  // Lebenszyklus (Plan P20, src/main/power.js): Ruhezustand beendet die Sitzung sofort, langer Schlaf nach dem Aufwachen; ein Fenster im Hintergrund spielt weiter
+  power = attachPowerLifecycle({ player, power: powerMonitor, createLifecycle, log: DEV ? (text) => console.log(`JCLifecycle ${text}`) : undefined });
   presence.refresh(); // ist es schon eingeschaltet, steht die Verbindung, bevor etwas laeuft
   player.on('closed', (info) => {
     if (quitting) return;
@@ -582,6 +588,11 @@ async function startUp() {
         notifier,
         /** Steuerkanal waehrend der Wiedergabe (tools/shots/handoff.js) */
         channel,
+        /** Lebenszyklus der Wiedergabe (tools/shots/back-latency.js); powerMonitor, um Ruhezustand und Aufwachen nachzustellen */
+        get power() {
+          return power;
+        },
+        powerMonitor,
         wait: (ms) => new Promise((r) => setTimeout(r, ms)),
         /** Startanimation fuer die naechsten Starts (Neu laden) ein- oder ausschalten; die Szenarien beginnen ohne (devNoSplash) */
         splash: (on) => {

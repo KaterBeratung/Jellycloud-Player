@@ -1641,7 +1641,11 @@ const server = http.createServer(async (req, res) => {
     state.log.push({ at: 'subtitle', hasAuthHeader: /Token="/.test(req.headers.authorization ?? '') });
     return send(res, 200, srt(), 'application/x-subrip');
   }
-  if (p === '/Videos/ActiveEncodings') return send(res, 204, '');
+  // Ende einer Umsetzung (Plan P20, X6): mitgeschrieben, damit sich pruefen laesst, dass nur die eigene beendet wird und erst nach der Meldung der Stelle
+  if (p === '/Videos/ActiveEncodings') {
+    state.log.push({ at: 'ActiveEncodings', method, deviceId: q.get('deviceId'), playSessionId: q.get('playSessionId') });
+    return send(res, 204, '');
+  }
   return send(res, 404, { Message: `Mock: ${method} ${p} nicht implementiert` });
 });
 

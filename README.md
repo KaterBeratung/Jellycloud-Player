@@ -218,6 +218,29 @@ Die Bedienung wartet nie auf den Server. *Zurück* (Knopf, Esc, Backspace, Maus-
 Position geht im Hintergrund an den Server (Zeitgrenze 8 s). Die Listen „Weiterschauen“ und „Als Nächstes“ laden erst neu, wenn die Position angekommen ist (höchstens 1,5 s Wartezeit,
 bei langsamem Server ein zweites Mal danach). Ein Start, der beim Schließen noch lädt, wird still abgebrochen. Beim Beenden der App wartet sie kurz auf die letzte Meldung.
 
+## Stream-Beendigung
+
+**Seit 1.2.19 (Plan P20, nach `Playback/PlaybackLifecycle.swift` und `Notizen/stream-beendigung.md` der Apple-App).** Findet keine beabsichtigte
+Wiedergabe mehr statt, endet die Sitzung beim Server spätestens nach 30 Sekunden; sonst liefe ein Strom (und beim Server eine Umsetzung) weiter, nachdem
+der Rechner eingeschlafen oder die App verlassen worden ist. Beendet wird immer über den vorhandenen Weg des Schließens (Stelle und `Playing/Stopped` an
+den Server, dann das Ende der eigenen Umsetzung), genau einmal; Anhalten, Springen, Puffern und Spurwechsel berühren die Regel nicht.
+
+- **Gemeinsame Regel** (`src/shared/lifecycle.js`): beabsichtigt ist eine Wiedergabe, solange die App vorne ist (spielend oder angehalten) oder sie außerhalb
+  der App weiterläuft. Beim Verlassen wird die Stelle gesichert, nach 20 s endet die Sitzung; wer früher zurückkommt, spielt weiter, wer nach mehr als
+  30 s zurückkommt, findet den Player geschlossen. Ein Herzschlag alle 5 s bemerkt, dass das Gerät länger als 30 s geschlafen hat. Eine Frist gehört zu
+  genau der Wiedergabe, für die sie begann: ein danach gestarteter Film wird von ihr nie beendet.
+- **Windows** (`src/main/power.js`): wie auf dem Mac spielt ein Fenster, das nicht vorne ist, weiter (*Pause beim Minimieren* bleibt eine eigene
+  Einstellung). Vor dem **Ruhezustand** (`powerMonitor` „suspend“) geht das Ende sofort hinaus und der Player schließt. Nach dem Aufwachen endet eine
+  Wiedergabe, wenn der Rechner länger als 30 s geschlafen hat; als Schlaf zählen die Zeit zwischen „suspend“ und „resume“ und jede Lücke, in der der
+  Hauptprozess nicht lief (Modern Standby friert Programme ein, ohne „suspend“ zu melden).
+- **Android** (`PlayerActivity`): verlässt man den Player (Home, Sperren, andere App), hält er an, sichert die Stelle und schließt nach 20 s; nach mehr
+  als 30 s Abwesenheit schließt er bei der Rückkehr.
+- **Umsetzung des Servers beenden:** liefert der Server einen HLS-Strom (Transcode oder Direct Stream über `TranscodingUrl`), folgt dem Ende
+  `DELETE /Videos/ActiveEncodings?deviceId=…&playSessionId=…` (vorher nur beim Transcode).
+- Tests: `test/lifecycle.test.js` (die 20 Fälle aus `PlaybackLifecycleTests` und einer mehr), `test/power.test.js`; 18 Gegenproben. Szenario
+  `back-latency.js` mit Ruhezustand während eines Transcodes und Aufwachen ohne Schlaf. **Nicht geprüft:** ein echter Ruhezustand des Rechners und
+  Modern Standby, Android am Gerät.
+
 ## Detailseite und Kontextmenü
 
 **Seit 1.2.15 (Plan P16, wie `DetailView`, `PlayAction`, `SeasonChoice` und `ItemActions` der Apple-App).**
@@ -878,7 +901,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `web-mode.js` | **Oberfläche ohne Electron** (42 Prüfungen, eigenes Fenster ohne Vorlade-Datei, Mock-Server mit CORS): `window.jc` aus `src/web/jc-web.js`, Anmeldung und Fehler (401), Konfiguration in localStorage (Token kodiert), Neustart bleibt angemeldet, Startseite, Film, Serie, Suche, Einstellungen ohne Desktop-Bereiche, Bilder direkt vom Server, Wiedergabe-Haken (`JCHost.play`), Ereignisse der Hülle, gebauter Ordner `www`; **kompakte Ansicht** bei 390 px (Tab-Leiste unten, keine Überlappung, kein Scrollbalken, Poster über dem Titel, drei Spalten, kein seitlicher Überlauf, Anmeldekarte im Bild) und wieder 1280 px (Desktop-Layout wie zuvor), Aufnahmen `W-02` bis `W-08` |
 | `player-fullscreen.js` | **Vollbild im Player** (9 Prüfungen, Simulator, native Messung per GetWindowRect): im Fenster deckt das Overlay genau den Host, im Vollbild den ganzen Bildschirm mit mindestens einem Bildpunkt Reserve ringsum (gegen den Taskleistenstreifen unten), nach erneutem Angleichen unverändert, zurück im Fenster wieder ohne Rand |
 | `player-episodes.js` | **Folgen und Staffeln im Player** (27 Prüfungen, Simulator): Knopf nur bei Serien, Liste mit Staffel-Reitern, laufende Folge, Wechsel mit Server-Log, Taste E/Escape, Mausrad, Spoiler-Schutz, schmales Fenster |
-| `back-latency.js` | Zurück-Taste bei langsamem Server (4 s Verzögerung der Stopped-Antwort), Schließen während des Ladens, Esc/Backspace/Maustaste, Mehrfachklick |
+| `back-latency.js` | Zurück-Taste bei langsamem Server (4 s Verzögerung der Stopped-Antwort), Schließen während des Ladens, Esc/Backspace/Maustaste, Mehrfachklick; Ruhezustand während eines Transcodes (schließt sofort, ein Ende, dann `ActiveEncodings`), Aufwachen ohne Schlaf spielt weiter |
 | `transcode-audio.js` | Spurwechsel im Transcode, Qualitätswahl im Player, Rückfall auf Transcode, Stereo-Profil, Bitstream-Schutz, Ton-Rückfall, Kanalumschaltung, Statistik nur bei offener Info |
 | `reload.js` | F5, Neu-laden-Knopf, Metadaten aktualisieren (Refresh, Ersetzen, 403), Statuscodes aus dem Hauptprozess |
 | `trailer.js` | Trailer auf der Detailseite gegen **echtes YouTube** (Verzögerung, stumm, 4K/Full HD/720p, Lautstärke, kein Nebel, freier Blick: Absinken und Ausblenden über 9 s, Ton-Knopf, Ausblenden, Stopp bei Wiedergabe); braucht Internet |

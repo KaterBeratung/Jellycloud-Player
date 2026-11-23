@@ -1,4 +1,5 @@
 // Zurueck-Taste im Player: reagiert sofort, auch bei langsamem Server und waehrend des Ladens (JC_DEV=1, JC_FAKE_MPV=1).
+// Seit P20 auch der Lebenszyklus: Ruhezustand beendet sofort und genau einmal (danach das Ende der eigenen Umsetzung), Aufwachen ohne Schlaf nichts.
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/back-latency.js
 const { server, items, state } = require('../mock-server');
 
@@ -103,6 +104,40 @@ module.exports = async (ctx) => {
   player.stop = origStop;
   check('Mehrfachklick auf Zurueck schliesst genau einmal', closeCmds === 1, `stop() ${closeCmds}x aufgerufen`);
   await ctx.wait(1800);
+
+  // ---------- 5. Ruhezustand (Plan P20): die Sitzung endet sofort, genau einmal; danach endet die eigene Umsetzung beim Server ----------
+  await ctx.run(`window.jc.setSettings({ player: { maxBitrateMbps: 4 } })`); // Grenze: der Server setzt um (HLS)
+  await ctx.wait(300);
+  state.log.length = 0;
+  await ctx.run(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
+  check('Wiedergabe als Umsetzung des Servers (HLS) gestartet', await waitFor(() => player.state.phase === 'playing' && !!player.cur?.res.isHls), `phase=${player.state.phase} method=${player.cur?.res.method}`);
+  await ctx.wait(800);
+  const tS = Date.now();
+  ctx.powerMonitor.emit('suspend');
+  ctx.powerMonitor.emit('suspend');
+  const gone5 = await waitFor(() => !player.mpv && !player.overlay, 3000);
+  const dt5 = Date.now() - tS;
+  await waitFor(() => state.log.some((l) => l.at === 'ActiveEncodings'), 3000);
+  const ends5 = state.log.filter((l) => l.at === '/Sessions/Playing/Stopped');
+  const order5 = state.log.map((l) => l.at).filter((a) => a === '/Sessions/Playing/Stopped' || a === 'ActiveEncodings');
+  const enc5 = state.log.find((l) => l.at === 'ActiveEncodings');
+  check('Ruhezustand: der Player schliesst sofort und meldet das Ende mit der Stelle, genau einmal', gone5 && dt5 < 1500 && ends5.length === 1 && ends5[0].PositionTicks > 0, `${dt5} ms, ${ends5.length} Enden`);
+  check('...danach endet die eigene Umsetzung (erst die Stelle, dann das Ende des Stroms, nur die eigene Sitzung)', JSON.stringify(order5) === JSON.stringify(['/Sessions/Playing/Stopped', 'ActiveEncodings']) && enc5?.method === 'DELETE' && enc5?.playSessionId === 'mock-session' && !!enc5?.deviceId, JSON.stringify({ order5, enc5 }));
+  ctx.powerMonitor.emit('resume');
+  await ctx.run(`window.jc.setSettings({ player: { maxBitrateMbps: 0 } })`);
+  await ctx.wait(1500);
+
+  // ---------- 6. Aufwachen nach kurzer Zeit, ein Herzschlag spaeter: nichts endet; ein Fenster im Hintergrund spielt weiter ----------
+  await ctx.run(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
+  await waitFor(() => player.state.phase === 'playing');
+  ctx.powerMonitor.emit('resume'); // ohne vorheriges "suspend": kein Schlaf
+  ctx.win.blur();
+  await ctx.wait(6500); // mehr als ein Herzschlag
+  check('Aufwachen ohne Schlaf und ein Fenster im Hintergrund beenden nichts (der Herzschlag laeuft mit)', player.active && !!player.mpv && player.state.phase === 'playing' && !!ctx.power?.lifecycle.session);
+  await player.stop();
+  await waitFor(() => !player.mpv, 4000);
+  check('...nach dem Schliessen ueberwacht der Lebenszyklus nichts mehr', !ctx.power.lifecycle.session && ctx.power.lifecycle.endedCount === 1, `beendet ${ctx.power.lifecycle.endedCount}x`);
+  await ctx.wait(1500);
 
   check('Keine unbehandelten Fehler', errors.length === 0, errors.join('; '));
   const pass = results.filter(Boolean).length;

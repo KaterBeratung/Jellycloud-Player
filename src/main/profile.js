@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /**
  * Direct-Play-Logik. mpv kann praktisch jedes Format abspielen, deshalb meldet das
@@ -88,12 +88,14 @@ function resolvePlayback({ info, base, itemId, mediaSourceId, deviceId, forceTra
 
   let method;
   let url;
+  let isHls = false; // der Server baut den Strom (HLS, auch beim Direct Stream): sein Prozess muss beim Ende beendet werden (Plan P20, X6)
   if (source.SupportsDirectPlay && !forceTranscode) {
     method = 'DirectPlay';
     url = `${base}/Videos/${itemId}/stream?${q}`;
   } else if (source.TranscodingUrl) {
     method = source.SupportsDirectStream && !forceTranscode ? 'DirectStream' : 'Transcode';
     url = absolute(base, source.TranscodingUrl);
+    isHls = true;
   } else if (source.SupportsDirectStream) {
     method = 'DirectStream';
     url = `${base}/Videos/${itemId}/stream?${q}`;
@@ -121,6 +123,7 @@ function resolvePlayback({ info, base, itemId, mediaSourceId, deviceId, forceTra
     playSessionId: info.PlaySessionId ?? null,
     mediaSourceId: source.Id,
     isTranscode,
+    isHls,
     externalSubtitles: external,
     defaultAudioIndex: source.DefaultAudioStreamIndex ?? null,
     defaultSubtitleIndex: source.DefaultSubtitleStreamIndex ?? null
