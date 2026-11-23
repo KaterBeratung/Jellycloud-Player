@@ -8,7 +8,6 @@ import { applyNotices, readNotices, syncNotices } from '../notices.js';
 
 const N = window.JCNotifications; // Wortlaut, Stand (src/shared/notifications.js)
 const Tags = window.JCMediaTags;
-const SeerrState = window.JCSeerrState;
 const TMDB_PATH = /^\/[\w-]{8,64}\.(?:jpg|jpeg|png|webp)$/;
 
 /** "vor 3 Minuten", "gestern" in der Sprache der Oberflaeche. */
@@ -86,8 +85,7 @@ export function notificationsView() {
     const open = () => {
       if (!n.read) act(() => window.jc.notificationRead({ id: n.id }));
       // Was die Mitteilung ueber den Titel weiss, zeigt seine Seite sofort, mit einem Stand, der zur Nachricht passt (kein "Anfragen" fuer einen Augenblick)
-      const known = { mediaType: n.mediaType, id: n.tmdbId, title: n.title, year: null, overview: '', posterPath: n.posterPath, status: SeerrState.placeholderMediaStatus(N.stateOf(n)) };
-      openSeerrTitle({ mediaType: n.mediaType, tmdbId: n.tmdbId, known });
+      openSeerrTitle({ mediaType: n.mediaType, tmdbId: n.tmdbId, known: N.knownTitle(n) });
     };
     c.addEventListener('click', open);
     c.addEventListener('keydown', (e) => {

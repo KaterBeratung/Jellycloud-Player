@@ -4,7 +4,7 @@ import { state, refreshState, activeServer, updateSettings } from './state.js';
 import { applyAppearance } from './theme.js';
 import { api } from './api.js';
 import { route, start, refresh, navigate, invalidate } from './router.js';
-import { toast, closeMenu, initialsOf, pageStatus, openMenu, confirmDialog } from './ui.js';
+import { toast, closeMenu, initialsOf, pageStatus, openMenu, confirmDialog, dismissModal } from './ui.js';
 import { closeQuickConnect, openQuickConnect } from './views/quick-connect.js';
 import { requestsView } from './views/requests.js';
 import { syncAmbient } from './ambient.js';
@@ -23,13 +23,25 @@ import { installCompact } from './compact.js';
 import { playSplash, splashActive, afterSplash } from './splash.js';
 import { installMotion } from './motion.js';
 import { runConnectionCheck } from './connection.js';
-import { installNotices, notices, readNotices } from './notices.js';
+import { installNotices, notices, readNotices, noticesReady, setSystemOpener } from './notices.js';
 import { notificationsView } from './views/notifications.js';
+import { openSeerrTitle } from './seerr-open.js';
 
 installNoDrag();
 installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (data-anim)
 installCompact(); // Handy: <html data-compact="on"> bei schmalem Fenster (im Desktop-Programm ohne Wirkung)
 installNotices(); // Mitteilungen: Zahl fuer den roten Punkt, Abgleich bei bestaetigter Verbindung und im Takt der offenen App (notices.js)
+/**
+ * Antippen einer Mitteilung des Systems (Plan P18): wie eine Karte der Uebersicht, im gewaehlten Reiter, nie eine Wiedergabe. Offene Fenster, Menues und die
+ * Quick-Connect-Maske schliessen sich (sonst laege die Seite unsichtbar darunter, wie die Einstellungen der Apple-App).
+ */
+setSystemOpener((target) => {
+  if (!state.loggedIn || !$('#view')) return;
+  closeQuickConnect();
+  closeMenu();
+  dismissModal();
+  openSeerrTitle({ mediaType: target.mediaType, tmdbId: target.tmdbId, known: window.JCNotifications.knownTitle(target) });
+});
 const root = $('#app');
 let routerStarted = false;
 let splashStarted = false; // die Startanimation gibt es nur beim Start der App, nicht bei jedem Neuaufbau (erneute Anmeldung, Sprache, Neu laden)
@@ -343,6 +355,7 @@ async function boot() {
     routerStarted = true;
     await start();
   }
+  noticesReady(); // eine Mitteilung des Systems, die die App gestartet hat (oder waehrend des Aufbaus angetippt wurde), oeffnet jetzt ihren Titel
   // Ein Update, das schon vor der Anmeldung oder dem Aufbau gefunden wurde, meldet sich jetzt (der Punkt am Zahnrad ist ohnehin da)
   afterSplash(() => setTimeout(announceUpdate, 1500));
 }

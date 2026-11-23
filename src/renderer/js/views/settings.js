@@ -1149,13 +1149,55 @@ export function settingsView({ section, query: q }) {
   }
   // ---------- Mitteilungen (Plan P17, wie NotificationSettingsSection der Apple-App) ----------
   /**
-   * Je Profil und Seerr-Server: Hauptschalter (aus: kein Abgleich, kein Punkt; die Liste bleibt), darunter die Arten einzeln; "Neue Anfragen" nur fuer
-   * Konten, die alle Anfragen sehen. Ohne Seerr nur der Hinweis. (Mitteilungen des Systems kommen mit Paket P18.)
+   * Je Profil und Seerr-Server: Hauptschalter (aus: kein Abgleich, kein Punkt; die Liste bleibt), darunter die Mitteilungen des Systems (Plan P18) und die
+   * Arten einzeln; "Neue Anfragen" nur fuer Konten, die alle Anfragen sehen. Ohne Seerr nur der Hinweis.
+   * Mitteilungen des Systems (SystemNotificationRows der Apple-App): Standard aus; die Erlaubnis fragt die App erst beim Einschalten (Android ab 13), nie beim
+   * Start. Der Schalter ist der Wunsch fuer dieses Profil, die Erlaubnis gilt fuer das Geraet: er steht nur auf "Ein", wenn beides stimmt; nimmt der Nutzer
+   * die Erlaubnis zurueck, bleibt der Wunsch gemerkt (gibt er sie wieder, kommen die Mitteilungen ohne weiteren Schritt). Verweigert: der Weg in die
+   * Einstellungen des Systems und der Hinweis. Windows sagt nicht, ob es sie zeigt: dort steht der Weg in seine Einstellungen bei eingeschaltetem Schalter.
    */
   function notificationsPanel() {
     const box = h('div', { class: 'settings-stack' });
+    const desktop = state.platform === 'desktop';
     let data = null;
     let busy = false;
+    let system = null; // { supported, permission: granted | denied | prompt | unknown | unsupported, settings }
+    // Nur ein anderer Stand zeichnet neu (die Rueckkehr ins Fenster nimmt sonst den Fokus aus dem Bereich)
+    const readSystem = () =>
+      (window.jc.notificationSystemStatus ? window.jc.notificationSystemStatus() : Promise.resolve(null)).then(
+        (s) => {
+          if (JSON.stringify(s) === JSON.stringify(system)) return;
+          system = s;
+          paint();
+        },
+        () => {}
+      );
+    // Einschalten: erst der Wunsch, dann (wenn das System fragen darf) die Erlaubnis; lehnt der Nutzer ab, steht der Schalter wieder auf "Aus"
+    const switchSystem = (on) => {
+      const changed = on !== data?.preferences?.system;
+      if (changed) save({ system: on }); // zeichnet danach neu
+      if (on && system?.permission === 'prompt' && window.jc.notificationSystemRequest) {
+        window.jc.notificationSystemRequest().then(
+          (s) => {
+            system = s;
+            paint();
+          },
+          () => paint()
+        );
+      } else if (!changed) paint(); // Wunsch schon gemerkt, Erlaubnis verweigert: der Schalter springt zurueck
+    };
+    const systemBlock = (p) => {
+      const denied = system.permission === 'denied';
+      // "Ein" nur mit Erlaubnis (Windows: unbekannt, es fragt nicht). Nach einer Ablehnung darf Android noch einmal fragen ("prompt"): der Schalter steht dann
+      // auf "Aus", erneutes Einschalten fragt wieder; erst danach gilt "verweigert" mit dem Weg in die Einstellungen
+      const on = p.system && (system.permission === 'granted' || system.permission === 'unknown');
+      const rows = [setting(t('notify.sys.title'), t(desktop ? 'notify.sys.descDesktop' : 'notify.sys.descMobile'), toggle(on, switchSystem, t('notify.sys.title')))];
+      if (system.settings && (denied || (on && system.permission === 'unknown'))) {
+        rows.push(linkRow({ ico: 'external', label: t(desktop ? 'notify.sys.openDesktop' : 'notify.sys.open'), chevron: false, onclick: () => window.jc.notificationSystemSettings().catch((e) => toast(e.message, { type: 'error' })) }));
+      }
+      const note = [denied ? t('notify.sys.denied') : '', t(desktop ? 'notify.sys.limitsDesktop' : 'notify.sys.limitsMobile')].filter(Boolean).join(' ');
+      return h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, ...rows), foot(note));
+    };
     const KIND_ROWS = [
       ['available', true],
       ['partiallyAvailable', false],
@@ -1194,6 +1236,7 @@ export function settingsView({ section, query: q }) {
       );
       const blocks = [main];
       if (p.enabled) {
+        if (system?.supported) blocks.push(systemBlock(p));
         const rows = KIND_ROWS.filter(([k]) => k !== 'newRequest' || data.manages).map(([k, withDesc]) =>
           setting(t(`notify.kind.${k}`), withDesc ? t(`notify.kind.${k}Desc`) : null, toggle(p.kinds.includes(k), (v) => save({ kinds: v ? [...p.kinds, k] : p.kinds.filter((x) => x !== k) }), t(`notify.kind.${k}`)))
         );
@@ -1207,9 +1250,18 @@ export function settingsView({ section, query: q }) {
         paint();
       }, () => {});
     load();
+    readSystem();
     const onChange = () => !busy && load();
     document.addEventListener('notices-changed', onChange);
     cleanups.push(() => document.removeEventListener('notices-changed', onChange));
+    // Bei jeder Rueckkehr in die App (aus den Einstellungen des Systems): den Stand der Erlaubnis neu lesen
+    const onVisible = () => document.visibilityState === 'visible' && readSystem();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    cleanups.push(() => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    });
     return box;
   }
 

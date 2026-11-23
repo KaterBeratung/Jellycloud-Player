@@ -13,6 +13,10 @@
      play(req, ctx)        spielt einen Eintrag mit dem nativen Player ab; ctx = { client } mit baseUrl, token (Header: client.authHeader())
      outlook(req, ctx)     wie der Server diesen Eintrag liefern wuerde, ohne abzuspielen: { method: 'DirectPlay' | 'DirectStream' | 'Transcode' }
      openExternal(url)     Link im Systembrowser oeffnen
+     notifyStorage         eigene Ablage der Mitteilungen {get,set,remove,keys} (Standard: localStorage)
+     systemNotify          Mitteilungen des Systems (Plan P18): status() und request() -> { supported, permission: 'granted'|'denied'|'prompt'|'unsupported',
+                           settings }, openSettings(), show(list), withdraw(ids), withdrawProfile(key), takeTap() -> Ziel der angetippten Mitteilung oder null,
+                           onTap(cb): cb() ohne Daten, sobald eine angetippte wartet. Ohne: keine Mitteilungen des Systems
    Fuer Ereignisse des Gehaeuses: window.JCWeb.playerActive(bool) und window.JCWeb.playerClosed(info). window.JCWeb.back() fuer die Zurueck-Taste des Geraets:
    true, wenn die Oberflaeche etwas getan hat (Menue oder Fenster geschlossen, eine Seite zurueck), false, wenn nichts mehr zurueck geht. */
 (function () {
@@ -117,6 +121,9 @@
 
   const doFetch = host.fetch ?? ((url, init) => window.fetch(url, init));
   const platform = host.platform ?? 'web';
+  /** Mitteilungen des Systems der Huelle (Android: NotificationPlugin.java); im Browser keine. */
+  const sysNotify = host.systemNotify ?? null;
+  const NO_SYSTEM = Object.freeze({ supported: false, permission: 'unsupported', settings: false });
 
   // Konfiguration und Rueckseite entstehen erst, wenn die Ablage bereit ist (host.ready: Android laedt den sicheren Speicher asynchron);
   // jeder Aufruf von window.jc wartet darauf (call), ohne Huelle sofort
@@ -134,7 +141,8 @@
         deviceName: host.deviceName,
         extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false }),
         notifyIo,
-        onNotifications: (summary) => listeners.notices.forEach((cb) => cb(summary))
+        onNotifications: (summary) => listeners.notices.forEach((cb) => cb(summary)),
+        systemNotify: sysNotify ? { show: (list) => sysNotify.show(list), withdraw: (ids) => sysNotify.withdraw(ids), withdrawProfile: (key) => sysNotify.withdrawProfile(key) } : null
       });
       backend.buildSeerr();
       if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
@@ -152,11 +160,17 @@
   }
   const unsupported = (what) => () => call(async () => Promise.reject(new Error(`${what} gibt es in dieser Fassung nicht`)));
 
-  const listeners = { player: new Set(), closed: new Set(), notices: new Set() };
+  const listeners = { player: new Set(), closed: new Set(), notices: new Set(), open: new Set() };
   const subscribe = (set) => (cb) => {
     set.add(cb);
     return () => set.delete(cb);
   };
+  // Eine angetippte Mitteilung des Systems wartet: die Oberflaeche holt ihr Ziel (notificationTakeOpen), sobald sie bereit ist
+  try {
+    sysNotify?.onTap?.(() => listeners.open.forEach((cb) => cb()));
+  } catch {
+    /* Huelle ohne Ereignis: die Oberflaeche fragt beim Start und bei der Rueckkehr in die App nach */
+  }
   window.JCWeb = {
     playerActive: (on) => listeners.player.forEach((cb) => cb(!!on)),
     playerClosed: (info) => listeners.closed.forEach((cb) => cb(info)),
@@ -250,6 +264,21 @@
     notificationsRemoveAll: () => call(() => backend.notificationsRemoveAll()),
     notificationPrefs: (p) => call(() => backend.notificationPrefs(p && typeof p === 'object' ? p : {})),
     onNotifications: subscribe(listeners.notices),
+    notificationSystemStatus: () => call(async () => (sysNotify ? sysNotify.status() : NO_SYSTEM)),
+    notificationSystemRequest: () => call(async () => (sysNotify ? sysNotify.request() : NO_SYSTEM)),
+    notificationSystemSettings: () =>
+      call(async () => {
+        if (!sysNotify) throw new Error('Mitteilungen des Systems gibt es in dieser Fassung nicht');
+        await sysNotify.openSettings();
+        return true;
+      }),
+    // Ziel der angetippten Mitteilung (gehoert sie zum aktiven Profil, gilt sie als gelesen); sonst null
+    notificationTakeOpen: () =>
+      call(async () => {
+        const raw = sysNotify ? await sysNotify.takeTap() : null;
+        return raw ? backend.systemNotificationTapped(raw) : null;
+      }),
+    onNotificationOpen: subscribe(listeners.open),
     discordStatus: () => call(async () => ({ state: 'off', error: '', user: '' })),
     discordTest: unsupported('Discord'),
     cacheInfo: () => call(async () => ({ images: 0, bytes: 0 })),

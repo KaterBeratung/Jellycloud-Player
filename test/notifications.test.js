@@ -1,7 +1,8 @@
 'use strict';
 /**
  * Mitteilungen der App (src/shared/notifications.js): Erkennung, Wortlaut, Ablage und Abgleich. Faelle aus JellycloudTests/NotificationRulesTests.swift (14) und
- * NotificationCenterTests.swift der Apple-App; deren Faelle zu den Mitteilungen des Systems (Zustellung, Zahl am App-Symbol, Zuruecknehmen) gehoeren zu P18.
+ * NotificationCenterTests.swift der Apple-App; deren Faelle zu den Mitteilungen des Systems (Zustellung, Zuruecknehmen) und SystemNotificationTests.swift (6)
+ * stehen am Ende (Plan P18). Die Zahl am App-Symbol ist zurueckgestellt (Entscheidung E15), ihre Faelle fehlen.
  * Der gestellte Seerr nennt den Stand der Anfragen wie der StubServer der Apple-App; ein Fall laeuft durch den echten SeerrClient.
  */
 const test = require('node:test');
@@ -247,9 +248,19 @@ const manager = { id: 7, permissions: 48, displayName: 'anna' }; // anfragen und
 function setup({ clock } = {}) {
   const io = N.memoryIo();
   const changes = [];
-  const center = N.createCenter({ io, hash, now: clock ?? (() => Date.now()), onChange: (s) => changes.push(s) });
+  const delivered = []; // je Zustellung an das System die Kennungen
+  const withdrawn = []; // je Ruecknahme die Kennungen (sortiert), null fuer alle des Profils
+  const profiles = []; // das Profil jeder Zustellung und Ruecknahme
+  const center = N.createCenter({
+    io,
+    hash,
+    now: clock ?? (() => Date.now()),
+    onChange: (s) => changes.push(s),
+    onDeliver: (items, profile) => (delivered.push(items.map((x) => x.id)), profiles.push(profile)),
+    onWithdraw: (list, profile) => (withdrawn.push(list === null ? null : [...list].sort()), profiles.push(profile))
+  });
   center.activate({ profile: 'server|anna', seerr: 'https://melden.seerr.test' });
-  return { center, seerr: fakeSeerr(), io, changes };
+  return { center, seerr: fakeSeerr(), io, changes, delivered, withdrawn, profiles };
 }
 const ids = (center) => center.list().items.map((x) => x.id);
 
@@ -570,4 +581,181 @@ test('Gegen einen Seerr wie in der Apple-App (SeerrClient): die eigenen mit requ
   assert.deepEqual(ids(center), ['seerr-1-available']);
   assert.equal(center.list().items[0].title, 'Film 1001');
   assert.deepEqual(seen, ['/api/v1/request?requestedBy=7&take=50', '/api/v1/request?requestedBy=7&take=50', '/api/v1/movie/1001']);
+});
+
+// ---------- Mitteilungen des Systems: Zustellen und Zuruecknehmen (NotificationCenterTests, Plan P18) ----------
+
+test('An das System geht nur, was neu ist, und nur, wenn der Nutzer Mitteilungen des Systems eingeschaltet hat', async () => {
+  const { center, seerr, delivered, profiles } = setup();
+  seerr.set(1, 2, 3);
+  seerr.set(2, 2, 3);
+  await center.sync({ seerr, user, force: true });
+  seerr.set(1, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  assert.deepEqual(delivered, [], 'in der App ja, als Mitteilung des Systems nicht');
+  assert.equal(center.list().items.length, 1);
+  center.setPreferences({ system: true });
+  seerr.set(2, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  await center.sync({ seerr, user, force: true });
+  assert.deepEqual(delivered, [['seerr-2-available']]);
+  assert.deepEqual(profiles, ['server|anna'], 'mit dem Profil, zu dem sie gehoert');
+});
+
+test('Gelesen oder entfernt: die Mitteilung des Systems dazu wird zurückgenommen; wieder ungelesen holt keine zurück', async () => {
+  const { center, seerr, withdrawn, delivered } = setup();
+  for (const id of [1, 2, 3]) seerr.set(id, 2, 3);
+  await center.sync({ seerr, user, force: true });
+  for (const id of [1, 2, 3]) seerr.set(id, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  assert.equal(center.list().items.length, 3);
+  center.markRead('seerr-1-available');
+  center.markRead('seerr-1-available', false);
+  center.markRead('seerr-1-available', false); // unveraendert: nichts
+  center.remove('seerr-2-available');
+  center.markAllRead();
+  center.markAllRead(); // alles schon gelesen: keine leere Ruecknahme
+  assert.deepEqual(withdrawn, [['seerr-1-available'], ['seerr-2-available'], ['seerr-1-available', 'seerr-3-available']]);
+  assert.deepEqual(delivered, [], 'wieder ungelesen holt keine zurueck');
+});
+
+test('Alle entfernen: Mitteilungen des Systems zurückgenommen, nichts kommt wieder; ohne Einträge keine leere Rücknahme', async () => {
+  const { center, seerr, withdrawn, delivered } = setup();
+  center.setPreferences({ system: true });
+  for (const id of [1, 2, 3]) seerr.set(id, 2, 3);
+  await center.sync({ seerr, user, force: true });
+  for (const id of [1, 2, 3]) seerr.set(id, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  assert.equal(delivered.length, 1, 'eine Zustellung fuer den Abgleich');
+  assert.deepEqual([...delivered[0]].sort(), ['seerr-1-available', 'seerr-2-available', 'seerr-3-available']);
+  center.removeAll();
+  assert.deepEqual(withdrawn.at(-1), ['seerr-1-available', 'seerr-2-available', 'seerr-3-available']);
+  await center.sync({ seerr, user, force: true });
+  assert.equal(center.list().items.length, 0);
+  assert.equal(delivered.length, 1, 'das Entfernte kommt auch beim System nicht wieder');
+  const before = withdrawn.length;
+  center.removeAll();
+  assert.equal(withdrawn.length, before);
+});
+
+test('Zwei Abgleiche laufen nie zugleich: eine Änderung geht einmal an das System', async () => {
+  const { center, seerr, delivered } = setup();
+  center.setPreferences({ system: true });
+  seerr.set(1, 2, 3);
+  await center.sync({ seerr, user, force: true });
+  seerr.listDelay = 150;
+  const first = center.sync({ seerr, user, force: true });
+  await wait(40);
+  seerr.listDelay = 0;
+  seerr.titleDelay = 60;
+  seerr.set(1, 5, 5);
+  await Promise.all([first, center.sync({ seerr, user, force: true }), center.sync({ seerr, user, force: true })]);
+  assert.deepEqual(delivered, [['seerr-1-available']]);
+});
+
+test('Ausgeschaltet: auch keine Mitteilungen des Systems; wieder eingeschaltet still, danach genau eine', async () => {
+  const { center, seerr, delivered } = setup();
+  center.setPreferences({ system: true });
+  seerr.set(1, 2, 3);
+  seerr.set(2, 1, 2);
+  await center.sync({ seerr, user, force: true });
+  seerr.set(1, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  assert.deepEqual(delivered, [['seerr-1-available']]);
+  center.setPreferences({ enabled: false });
+  seerr.set(2, 3, 1); // in der ausgeschalteten Zeit abgelehnt
+  await center.sync({ seerr, user, force: true });
+  center.setPreferences({ enabled: true });
+  await center.sync({ seerr, user });
+  assert.deepEqual(delivered, [['seerr-1-available']], 'nichts aus der ausgeschalteten Zeit');
+  seerr.set(3, 1, 2);
+  await center.sync({ seerr, user, force: true });
+  seerr.set(3, 2, 3);
+  await center.sync({ seerr, user, force: true });
+  assert.deepEqual(delivered, [['seerr-1-available'], ['seerr-3-approved']]);
+  center.setPreferences({ system: false });
+  seerr.set(3, 5, 5);
+  await center.sync({ seerr, user, force: true });
+  assert.equal(delivered.length, 2, 'Mitteilungen des Systems aus: nur in der App');
+  assert.ok(ids(center).includes('seerr-3-available'));
+});
+
+test('Profil entfernt, abgemeldet oder Seerr getrennt: alle Mitteilungen des Systems dieses Profils gehen mit', async () => {
+  const { center, withdrawn, profiles } = setup();
+  center.forget('server|ben');
+  center.forget('server|anna', 'https://melden.seerr.test');
+  assert.deepEqual(withdrawn, [null, null]);
+  assert.deepEqual(profiles, ['server|ben', 'server|anna']);
+});
+
+// ---------- Mitteilungen des Systems: Inhalt und Ziel (SystemNotificationTests, Plan P18) ----------
+
+const SeerrState = require('../src/shared/seerr-state');
+const systemProfile = 'https://jellyfin.example.net|4f1c2e9a8b7d4c6f';
+function systemNote(kind = 'available', seasons = []) {
+  const r = { id: 12, status: 5, is4k: false, created: null, mediaType: seasons.length ? 'tv' : 'movie', tmdbId: 1002, mediaStatus: 5, seasons, requesterId: 7, requesterName: 'anna' };
+  return N.notificationOf({ kind, request: r }, { title: 'The Silent Tide', posterPath: '/abcdefgh.jpg', date: 1_800_000_000_000 });
+}
+const message = (n = systemNote(), profile = systemProfile, lang = 'de') => N.systemNotificationOf(n, { profile, hash, lang });
+
+test('Inhalt: Wortlaut der App; Kennung je Profil und Eintrag (dieselbe Nachricht ersetzt sich, die eines anderen Profils bleibt)', () => {
+  const m = message();
+  assert.equal(m.id, N.systemId('seerr-12-available', systemProfile, hash));
+  assert.ok(m.id.endsWith('.seerr-12-available'));
+  assert.equal(m.id, message().id);
+  assert.notEqual(m.id, message(systemNote(), 'https://jellyfin.example.net|anderer').id);
+  assert.ok(!m.id.includes('jellyfin.example.net'));
+  assert.equal(m.title, 'Dein angefragter Film ist jetzt verfügbar');
+  assert.equal(m.body, '„The Silent Tide“ wurde deiner Mediathek hinzugefügt und kann jetzt abgespielt werden.');
+  assert.equal(m.preview, 'Neuigkeit zu einer Anfrage', 'verborgene Inhalte: nur die Art der Nachricht');
+  const en = message(systemNote(), systemProfile, 'en-US');
+  assert.equal(en.title, 'Your requested movie is now available');
+  assert.equal(en.preview, 'News about a request');
+});
+
+test('Das Ziel steht in der Mitteilung und kommt beim Antippen unverändert zurück (auch als Text durch die Hülle)', () => {
+  const t = N.targetOf(JSON.parse(JSON.stringify(message().target)));
+  assert.deepEqual([t.id, t.mediaType, t.tmdbId, t.title, t.posterPath, t.state], ['seerr-12-available', 'movie', 1002, 'The Silent Tide', '/abcdefgh.jpg', 'available']);
+  assert.equal(N.targetOf(message(systemNote('approved')).target).state, 'approved');
+});
+
+test('In der Mitteilung stehen weder die Adresse des Servers noch die Kennung des Benutzers, nur ein Kennwert des Profils', () => {
+  const text = JSON.stringify(message());
+  assert.ok(!text.includes('jellyfin.example.net'));
+  assert.ok(!text.includes('4f1c2e9a8b7d4c6f'));
+  assert.ok(!text.toLowerCase().includes('connect.sid'));
+});
+
+test('Antippen gilt nur im Profil der Mitteilung: ein anderes Profil, kein Profil oder ein unlesbares Ziel führen nirgendwohin', () => {
+  const t = N.targetOf(message().target);
+  assert.equal(N.belongs(t, systemProfile, hash), true);
+  assert.equal(N.belongs(t, 'https://jellyfin.example.net|anderer', hash), false);
+  assert.equal(N.belongs(t, null, hash), false);
+  assert.equal(N.targetOf({}), null);
+  assert.equal(N.targetOf(null), null);
+  assert.equal(N.targetOf({ id: 'seerr-1-available', mediaType: 'person', tmdbId: 1, title: 't', profile: 'abcdef12' }), null);
+  assert.equal(N.targetOf({ id: 'seerr-1-available', mediaType: 'movie', tmdbId: 'keine Zahl', title: 't', profile: 'abcdef12' }), null);
+  assert.equal(N.targetOf({ id: 'x', mediaType: 'movie', tmdbId: 1, title: 't', profile: 'abcdef12' }), null, 'fremde Kennung');
+  assert.equal(N.targetOf({ id: 'seerr-1-available', mediaType: 'movie', tmdbId: 1, title: 't', profile: 'https://server' }), null, 'eine Adresse ist kein Kennwert');
+});
+
+test('Neue Anfrage: die Mitteilung des Systems nennt keinen Benutzer', () => {
+  const r = { id: 4, status: 1, is4k: false, created: null, mediaType: 'movie', tmdbId: 1004, mediaStatus: 2, seasons: [], requesterId: 9, requesterName: 'Anna Beispiel' };
+  const n = N.notificationOf({ kind: 'newRequest', request: r }, { title: 'Glass Orchard', posterPath: null, date: 1_800_000_000_000 });
+  assert.equal(N.message(n, 'de'), 'Anna Beispiel hat „Glass Orchard“ angefragt.');
+  const m = message(n);
+  assert.equal(m.title, 'Neue Anfrage');
+  assert.equal(m.body, '„Glass Orchard“ wurde angefragt.');
+  assert.ok(!JSON.stringify(m).includes('Anna'));
+});
+
+test('Der Stand der Nachricht reist mit: die Seite beginnt nicht mit „anfragen“', () => {
+  for (const [kind, requestable] of [['approved', false], ['failed', false], ['partiallyAvailable', false], ['available', false], ['newRequest', false], ['declined', true]]) {
+    const t = N.targetOf(JSON.parse(JSON.stringify(message(systemNote(kind)).target)));
+    assert.equal(t.state, N.stateOf(systemNote(kind)), kind);
+    assert.equal(SeerrState.isRequestable(N.knownTitle(t).status), requestable, kind);
+    assert.equal(SeerrState.isRequestable(N.knownTitle(systemNote(kind)).status), requestable, kind);
+  }
+  assert.equal(N.knownTitle(systemNote()).status, SeerrState.SEERR_MEDIA.AVAILABLE);
+  assert.equal(N.knownTitle(systemNote()).title, 'The Silent Tide');
 });

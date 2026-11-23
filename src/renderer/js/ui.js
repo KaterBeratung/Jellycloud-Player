@@ -523,10 +523,15 @@ export function openModal({ title, body, actions = [], wide = false, onCancel = 
   });
   document.addEventListener('keydown', onKey, true);
   document.body.append(scrim);
-  openModalState = { el: scrim, close };
+  openModalState = { el: scrim, close, cancel };
   // Fokus: das erste Eingabefeld, sonst der vorgesehene Knopf (bei gefaehrlichen Aktionen der Abbrechen-Knopf)
   requestAnimationFrame(() => (box.querySelector('input, textarea, select') ?? btns.find((_, i) => actions[i].focus) ?? btns.at(-1))?.focus());
   return { close, el: box, buttons: btns };
+}
+
+/** Schliesst ein offenes Fenster wie "Abbrechen" (eine Rueckfrage antwortet dann mit Nein): wenn die App von aussen eine andere Seite oeffnet (Mitteilung des Systems). */
+export function dismissModal() {
+  openModalState?.cancel?.();
 }
 
 /**

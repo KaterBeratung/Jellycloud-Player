@@ -5,6 +5,7 @@ import { state } from './state.js';
  * die nur die Seite kennt: bestaetigte Verbindung zu Seerr (Start, Profilwechsel, Rueckkehr in die App; Ereignis "seerr-confirmed" aus connection.js) und
  * der Takt der offenen App (hoechstens alle 15 min). Weitere Anlaesse liegen in der Rueckseite (Reiter Anfragen, eigene Aktion) und in der Uebersicht
  * (Oeffnen). Erkennung, Ablage und Abstand stehen in src/shared/notifications.js; jede Aenderung meldet das Ereignis "notices-changed".
+ * Dazu (Plan P18) das Antippen einer Mitteilung des Systems: das Ziel wartet in der Huelle, bis die Oberflaeche bereit ist und es abholt.
  */
 const Notifications = window.JCNotifications;
 
@@ -29,6 +30,56 @@ export function installNotices() {
   setInterval(() => {
     if (state.loggedIn && document.visibilityState === 'visible') syncNotices();
   }, Notifications.INTERVAL_MS);
+  // Mitteilungen des Systems (Plan P18): eine angetippte meldet sich (Windows, Android); ohne Meldung fragt die Seite bei der Rueckkehr in die App nach
+  window.jc.onNotificationOpen?.(() => takeSystemOpen());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') takeSystemOpen();
+  });
+}
+
+// ---------- Angetippte Mitteilung des Systems ----------
+let opener = null;
+let ready = false;
+let taking = false;
+let again = false;
+
+/** Was eine angetippte Mitteilung oeffnet (app.js: den Titel wie eine Karte der Uebersicht). */
+export function setSystemOpener(fn) {
+  opener = typeof fn === 'function' ? fn : null;
+}
+
+/** Die Oberflaeche steht (nach dem Aufbau der Huelle): eine angetippte Mitteilung, die schon wartet (kalter Start durch Antippen), oeffnet sich jetzt. */
+export function noticesReady() {
+  ready = true;
+  takeSystemOpen();
+}
+
+/**
+ * Holt das Ziel einer angetippten Mitteilung des Systems ab, wenn eines wartet (die Rueckseite hat schon geprueft, dass es zum aktiven Profil gehoert, und den
+ * Eintrag als gelesen gemerkt). Nie zwei Abholungen zugleich; kommt waehrenddessen eine weitere Meldung, wird danach noch einmal nachgesehen.
+ */
+export function takeSystemOpen() {
+  if (!ready || !opener || !window.jc.notificationTakeOpen) return;
+  if (taking) {
+    again = true;
+    return;
+  }
+  taking = true;
+  window.jc
+    .notificationTakeOpen()
+    .then(
+      (target) => {
+        if (target && state.loggedIn) opener(target);
+      },
+      () => {}
+    )
+    .finally(() => {
+      taking = false;
+      if (again) {
+        again = false;
+        takeSystemOpen();
+      }
+    });
 }
 
 /** Liste, Einstellungen und Zahl des aktiven Profils (die Zahl geht dabei an den Punkt); null, wenn es nicht geht. */

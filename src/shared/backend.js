@@ -74,8 +74,10 @@
    * @param {{read(name:string):string|null, write(name:string, text:string):void, remove(name:string):void, names():string[]}} [deps.notifyIo] Ablage der
    *   Mitteilungen je Profil und Seerr-Server (Windows: Dateien im Datenordner; Web und Handy: Schluessel im Speicher); ohne: nur im Speicher
    * @param {(summary: {active:boolean, enabled:boolean, unread:number, notice:number}) => void} [deps.onNotifications] nach jeder Aenderung der Mitteilungen
+   * @param {{show(list:object[]):void, withdraw(ids:string[]):void, withdrawProfile(key:string):void}} [deps.systemNotify] Mitteilungen des Systems (Plan P18):
+   *   zeigt fertige Mitteilungen (src/shared/notifications.js systemNotificationOf) und nimmt sie zurueck; ohne: keine
    */
-  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {} }) {
+  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {}, systemNotify = null }) {
     /** @type {InstanceType<typeof JellyfinClient>|null} */
     let client = null;
     /** @type {InstanceType<typeof SeerrClient>|null} Seerr des aktiven Profils, nur mit gueltiger Sitzung */
@@ -92,7 +94,28 @@
     const callable = new Set(CALLABLE_METHODS);
     const rankings = Rankings.createStore(); // Top 10: Rangfolge je Server, Profil, Seerr und Zeitraum fuer 30 min (src/shared/rankings.js)
     // Mitteilungen je Profil und Seerr-Server (src/shared/notifications.js); die Namen der Ablage sind Pruefsummen, keine Adressen
-    const notices = Notifications.createCenter({ io: notifyIo ?? Notifications.memoryIo(), hash: (t) => config.env.hashId(t), onChange: (s) => onNotifications(s) });
+    const hash = (t) => config.env.hashId(t);
+    /** Ein Aufruf an die Mitteilungen des Systems der Huelle: ein Fehler dort aendert an den Mitteilungen der App nichts. */
+    const toSystem = (fn) => {
+      if (!systemNotify) return;
+      try {
+        Promise.resolve(fn(systemNotify)).catch(() => {});
+      } catch {
+        /* Huelle ohne diese Faehigkeit */
+      }
+    };
+    /** Sprache der Mitteilungen des Systems: die der App (Einstellung), bei "automatisch" die des Systems. */
+    const noticeLanguage = () => {
+      const l = config.data.settings?.language;
+      return l && l !== 'auto' ? l : locale();
+    };
+    const notices = Notifications.createCenter({
+      io: notifyIo ?? Notifications.memoryIo(),
+      hash,
+      onChange: (s) => onNotifications(s),
+      onDeliver: (items, profile) => toSystem((sys) => sys.show(items.map((n) => Notifications.systemNotificationOf(n, { profile, hash, lang: noticeLanguage() })))),
+      onWithdraw: (ids, profile) => toSystem((sys) => (ids ? sys.withdraw(ids.map((id) => Notifications.systemId(id, profile, hash))) : sys.withdrawProfile(Notifications.profileKey(profile, hash))))
+    });
 
     /** Schluessel der Top 10 fuer das aktive Profil; null ohne Jellyfin-Anmeldung oder ohne Seerr mit Sitzung (dann keine Quelle, keine Anfrage). */
     const rankingKey = (window) => (client && seerr ? Rankings.cacheKey({ server: client.baseUrl, user: client.userId ?? '', seerrAddress: seerr.baseUrl, window }) : null);
@@ -674,6 +697,16 @@
         if (Array.isArray(p?.kinds)) next.kinds = p.kinds.filter((k) => Notifications.KINDS.includes(k));
         notices.setPreferences(next);
         return noticesState();
+      },
+      /**
+       * Eine Mitteilung des Systems wurde angetippt (raw: ihr Ziel, wie die Huelle es zurueckgibt). Gehoert sie zum aktiven Profil, gilt der Eintrag als gelesen
+       * und das gepruefte Ziel kommt zurueck (die Oberflaeche oeffnet den Titel); sonst null: die App oeffnet sich nur, sie wechselt das Profil nicht von selbst.
+       */
+      systemNotificationTapped(raw) {
+        const target = Notifications.targetOf(raw);
+        if (!target || !notices.active || notices.profile !== config.data.activeServerId || !Notifications.belongs(target, config.data.activeServerId, hash)) return null;
+        notices.markRead(target.id);
+        return target;
       },
       // Problem zu einem Titel melden (Video, Ton, Untertitel, Sonstiges; Kommentar freiwillig). Die Werte werden hier einzeln gepruft und gekuerzt, nichts wird als Ganzes durchgereicht.
       seerrIssue: (req) =>

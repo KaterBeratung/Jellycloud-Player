@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
@@ -13,6 +13,7 @@ const { Updater } = require('./updater');
 const { ImageCache } = require('./image-cache');
 const { DiscordPresence, createPosterResolver } = require('./discord-presence');
 const { pipePath: discordPipePath } = require('./discord-ipc');
+const { SystemNotifier } = require('./system-notify');
 
 const ROOT = path.join(__dirname, '..', '..');
 const EMBED_REFERER = 'https://jellycloud.player/';
@@ -48,6 +49,24 @@ let updater = null;
 
 /** @type {DiscordPresence|null} Rich Presence: zeigt in Discord, was gerade laeuft (siehe discord-presence.js) */
 let presence = null;
+
+/**
+ * Mitteilungen des Systems (Plan P18, src/main/system-notify.js): Benachrichtigungen von Windows, solange das Programm laeuft. Antippen holt das Fenster nach
+ * vorn; gehoert die Mitteilung zum aktiven Profil, merkt sich der Hauptprozess ihr Ziel, bis die Oberflaeche es abholt (notify:take; sie kann gerade neu laden).
+ */
+let pendingOpen = null;
+const notifier = new SystemNotifier({
+  create: (options) => new Notification(options),
+  isSupported: () => Notification.isSupported(),
+  isForeground: () => !!mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized() && mainWin.isFocused(),
+  onClick: (target) => {
+    showMain();
+    const t = backend?.systemNotificationTapped(target) ?? null;
+    if (!t) return;
+    pendingOpen = t;
+    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('notify:open');
+  }
+});
 
 /** Verpackt einen IPC-Handler: ignoriert das Event, liefert { ok, data } bzw. { ok:false, error, status, code }. */
 function wrap(fn) {
@@ -305,6 +324,15 @@ function registerIpc() {
   ipcMain.handle('notify:remove', wrap((id) => backend.notificationRemove(String(id ?? '').slice(0, 120))));
   ipcMain.handle('notify:removeAll', wrap(() => backend.notificationsRemoveAll()));
   ipcMain.handle('notify:prefs', wrap((p) => backend.notificationPrefs(p && typeof p === 'object' ? p : {})));
+  // Mitteilungen des Systems (Plan P18): Windows fragt nicht nach einer Erlaubnis und sagt nicht, ob es sie zeigt; der Weg fuehrt in seine Einstellungen
+  ipcMain.handle('notify:systemStatus', wrap(() => notifier.status()));
+  ipcMain.handle('notify:systemRequest', wrap(() => notifier.request()));
+  ipcMain.handle('notify:systemSettings', wrap(() => shell.openExternal('ms-settings:notifications').then(() => true)));
+  ipcMain.handle('notify:take', wrap(() => {
+    const t = pendingOpen;
+    pendingOpen = null;
+    return t;
+  }));
 
   ipcMain.handle('settings:set', wrap((patch) => backend.setSettings(patch)));
   // ---------- Discord Rich Presence ----------
@@ -424,7 +452,8 @@ async function startUp() {
     notifyIo: notifyIo(path.join(app.getPath('userData'), 'notifications')),
     onNotifications: (summary) => {
       if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('notify:changed', summary);
-    }
+    },
+    systemNotify: notifier
   });
   backend.buildSeerr();
 
@@ -531,6 +560,8 @@ async function startUp() {
         config,
         updater,
         presence,
+        /** Mitteilungen des Systems: die Szenarien setzen create (und isSupported) auf eine Attrappe und fangen so jede Mitteilung ab (tools/shots/system-notify.js) */
+        notifier,
         wait: (ms) => new Promise((r) => setTimeout(r, ms)),
         /** Startanimation fuer die naechsten Starts (Neu laden) ein- oder ausschalten; die Szenarien beginnen ohne (devNoSplash) */
         splash: (on) => {

@@ -63,6 +63,16 @@ contextBridge.exposeInMainWorld('jc', {
     ipcRenderer.on('notify:changed', h);
     return () => ipcRenderer.removeListener('notify:changed', h);
   },
+  // Mitteilungen des Systems (Plan P18): Stand, Erlaubnis, Weg in die Einstellungen von Windows; eine angetippte meldet sich mit onNotificationOpen, ihr Ziel holt notificationTakeOpen
+  notificationSystemStatus: () => call('notify:systemStatus'),
+  notificationSystemRequest: () => call('notify:systemRequest'),
+  notificationSystemSettings: () => call('notify:systemSettings'),
+  notificationTakeOpen: () => call('notify:take'),
+  onNotificationOpen: (cb) => {
+    const h = () => cb();
+    ipcRenderer.on('notify:open', h);
+    return () => ipcRenderer.removeListener('notify:open', h);
+  },
   discordStatus: () => call('discord:status'),
   discordTest: (clientId) => call('discord:test', clientId),
   cacheInfo: () => call('cache:info'),

@@ -2,7 +2,8 @@
 // CapacitorHttp und JellycloudPlayer) wird vor allen Seitenskripten eingeschleust (Debug-Protokoll, Page.addScriptToEvaluateOnNewDocument). Der Ersatz fuer CapacitorHttp ruft den Mock-Server auf,
 // der Ersatz-Player merkt sich, was die Huelle ihm uebergibt, und antwortet mit vorgegebenen Ergebnissen.
 // Geprueft: Huelle meldet sich (Plattform, Version, Geraetename), Anmeldung ueber die "native" HTTP-Schicht, Wiedergabe-Plan (Direct Play, Token nur im Header, Startstelle, Dauer, Titel,
-// Geraeteprofil mit konservativem Ton), Rueckfall auf Transcode bei Decoder-Fehler ab der erreichten Stelle, Fehlermeldung bei Serverfehler, Ereignisse, Links, Folgen-Titel, Neustart von vorn.
+// Geraeteprofil mit konservativem Ton), Rueckfall auf Transcode bei Decoder-Fehler ab der erreichten Stelle, Fehlermeldung bei Serverfehler, Ereignisse, Links, Folgen-Titel, Neustart von vorn,
+// Mitteilungen des Systems (P18: Erlaubnis, Zeigen, Zuruecknehmen, Antippen bei kaltem Start und bei laufender App; ohne Seerr, das hier keine Sitzung bekommt).
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -34,7 +35,11 @@ module.exports = async (ctx) => {
   // Beim ersten Laden liegt eine Konfiguration wie bei 1.1.6 im localStorage (Uebernahme). __secureFail = 'load' | 'save' laesst das Plugin scheitern.
   const OLD_CONFIG = JSON.stringify({ version: 9, deviceId: 'seed-device-0001', servers: [], settings: {} });
   const FAKE = `(() => {
-    window.__calls = { play: [], openExternal: [], secureSave: 0 };
+    window.__calls = { play: [], openExternal: [], secureSave: 0, notify: [], takeTap: 0 };
+    // Mitteilungen des Systems (NotificationPlugin.java): Erlaubnis, gezeigte und zurueckgenommene, eine angetippte (auch schon beim Start: kalter Start durch Antippen)
+    window.__notifyPerm = 'prompt';
+    window.__notifyTap = sessionStorage.getItem('__notifyTapOnStart');
+    sessionStorage.removeItem('__notifyTapOnStart');
     const secure = JSON.parse(sessionStorage.getItem('__secure') || '{}');
     window.__secureStore = secure;
     if (!sessionStorage.getItem('__seeded')) {
@@ -60,7 +65,8 @@ module.exports = async (ctx) => {
       PluginHeaders: [
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
         { name: 'JellycloudPlayer', methods: [{ name: 'play', rtype: 'promise' }, { name: 'openExternal', rtype: 'promise' }] },
-        { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] }
+        { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] },
+        { name: 'JellycloudNotifications', methods: ['status', 'request', 'openSettings', 'show', 'withdraw', 'withdrawProfile', 'takeTap'].map((name) => ({ name, rtype: 'promise' })) }
       ],
       nativePromise: async (plugin, method, options) => {
         if (plugin === 'CapacitorHttp' && method === 'request') return http(options);
@@ -83,6 +89,18 @@ module.exports = async (ctx) => {
         if (plugin === 'JellycloudPlayer' && method === 'openExternal') {
           window.__calls.openExternal.push(options);
           return {};
+        }
+        if (plugin === 'JellycloudNotifications') {
+          const status = () => ({ supported: true, permission: window.__notifyPerm, settings: true });
+          if (method === 'takeTap') {
+            window.__calls.takeTap++;
+            const target = window.__notifyTap ?? null;
+            window.__notifyTap = null;
+            return { target };
+          }
+          window.__calls.notify.push({ method, options });
+          if (method === 'request' && window.__notifyPerm === 'prompt') window.__notifyPerm = 'granted';
+          return method === 'status' || method === 'request' ? status() : {};
         }
         throw { message: plugin + '.' + method + ' is not implemented' };
       }
@@ -247,10 +265,39 @@ module.exports = async (ctx) => {
 
   // ---------- Neustart: angemeldet aus dem nativen Speicher ----------
   const savesBefore = await ev(`window.__calls.secureSave`);
+  // Die App startet durch das Antippen einer Mitteilung (das Plugin haelt ihr Ziel bereit): eine eines anderen Profils, sie darf nichts oeffnen
+  const foreignTap = { id: 'seerr-2-available', mediaType: 'movie', tmdbId: 90002, title: 'Anfrage 90002', profile: 'abcdef123456', state: 'available' };
+  await ev(`sessionStorage.setItem('__notifyTapOnStart', ${JSON.stringify(JSON.stringify(foreignTap))})`);
   await win.webContents.reload();
   await waitFor(`!!window.jc`, 8000);
   const restarted = await ev(`window.jc.getState().then((s) => ({ in: s.loggedIn, ls: localStorage.getItem('jellycloud.config'), err: window.JCHostError ?? null }))`);
   check('Nach einem Neustart angemeldet (aus dem nativen Speicher), localStorage bleibt leer, Huelle ohne Fehler', restarted.in === true && restarted.ls === null && restarted.err === null, JSON.stringify({ ...restarted, savesBefore }));
+
+  // ---------- Mitteilungen des Systems (NotificationPlugin.java, Plan P18) ----------
+  const coldTaken = await waitFor(`window.__calls.takeTap > 0 && window.__notifyTap === null && !!document.querySelector('#view')`, 10000);
+  await ctx.wait(600);
+  check('Kalter Start durch Antippen: steht die Oberflaeche, holt sie das Ziel einmal ab; eine Mitteilung eines anderen Profils oeffnet nichts', coldTaken && !/#\/seerr\//.test(await ev('location.hash')), JSON.stringify({ coldTaken, takes: await ev('window.__calls.takeTap'), hash: await ev('location.hash') }));
+  const st0 = await ev(`window.jc.notificationSystemStatus()`);
+  const st1 = await ev(`window.jc.notificationSystemRequest()`);
+  const asked = await ev(`window.__calls.notify.filter((c) => c.method === 'request').length`);
+  check('Erlaubnis: der Stand kommt vom Plugin, gefragt wird erst auf Wunsch (einmal)', st0?.supported === true && st0.permission === 'prompt' && st1?.permission === 'granted' && asked === 1, JSON.stringify({ st0, st1, asked }));
+  const msg = { id: 'abcdef123456.seerr-2-available', title: 'Dein angefragter Film ist jetzt verfügbar', body: '„Anfrage 90002“ wurde deiner Mediathek hinzugefügt und kann jetzt abgespielt werden.', preview: 'Neuigkeit zu einer Anfrage', target: foreignTap };
+  await ev(`window.__calls.notify.length = 0; window.JCHost.systemNotify.show([${JSON.stringify(msg)}])`);
+  await ev(`window.JCHost.systemNotify.withdraw(['abcdef123456.seerr-2-available'])`);
+  await ev(`window.JCHost.systemNotify.withdrawProfile('abcdef123456')`);
+  const sent = await ev(`window.__calls.notify`);
+  const shown = sent.find((c) => c.method === 'show')?.options;
+  const it = shown?.items?.[0];
+  check('Zeigen: Kennung, Titel, Text und verborgener Inhalt gehen an das Plugin, das Ziel als Text (kommt beim Antippen unveraendert zurueck)', !!it && it.id === msg.id && it.title === msg.title && it.body === msg.body && it.preview === msg.preview && typeof it.target === 'string' && JSON.stringify(JSON.parse(it.target)) === JSON.stringify(foreignTap) && typeof shown.silent === 'boolean', JSON.stringify(shown));
+  check('Zuruecknehmen einzeln und je Profil gehen an das Plugin', JSON.stringify(sent.filter((c) => c.method !== 'show').map((c) => [c.method, c.options])) === JSON.stringify([['withdraw', { ids: ['abcdef123456.seerr-2-available'] }], ['withdrawProfile', { key: 'abcdef123456' }]]), JSON.stringify(sent.map((c) => c.method)));
+  // Antippen bei laufender App: das Plugin meldet sich mit einem Fensterereignis, die Oberflaeche holt das Ziel ab
+  const takesBefore = await ev(`window.__calls.takeTap`);
+  await ev(`window.__notifyTap = ${JSON.stringify(JSON.stringify(foreignTap))}; window.dispatchEvent(new Event('jellycloudnotificationtap'))`);
+  const warmTaken = await waitFor(`window.__calls.takeTap > ${takesBefore} && window.__notifyTap === null`, 4000);
+  await ctx.wait(400);
+  check('Antippen bei laufender App: das Ereignis des Plugins laesst die Oberflaeche das Ziel abholen; fremdes Profil: nichts oeffnet sich', warmTaken && !/#\/seerr\//.test(await ev('location.hash')), JSON.stringify({ warmTaken, hash: await ev('location.hash') }));
+  await ev(`window.jc.notificationSystemSettings()`);
+  check('Weg in die Einstellungen des Systems geht an das Plugin', (await ev(`window.__calls.notify.filter((c) => c.method === 'openSettings').length`)) === 1);
 
   // ---------- Schreibfehler des nativen Speichers ----------
   await ev(`window.__secureFail = 'save'; window.jc.setSettings({ player: { volume: 77 } })`).catch(() => null);

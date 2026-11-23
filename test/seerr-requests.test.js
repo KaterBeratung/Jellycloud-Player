@@ -304,3 +304,45 @@ test('Mitteilungen: der Reiter Anfragen gibt seine Liste an den Abgleich (keine 
   assert.deepEqual(b.notifications().items, [], 'selbst genehmigt: keine Mitteilung');
   assert.equal(b.notifications().manages, true);
 });
+
+// ---------- Mitteilungen des Systems (P18) mit der Rueckseite gegen den Test-Seerr ----------
+
+test('Mitteilungen des Systems: nur eingeschaltet und nur Neues, Wortlaut der App ohne Adresse; Antippen nur im eigenen Profil, dann gelesen und zurückgenommen; Trennen nimmt alle', async () => {
+  SEERR.permissions = 32;
+  const shown = [];
+  const withdrawn = [];
+  const profiles = [];
+  const systemNotify = { show: (list) => shown.push(...list), withdraw: (list) => withdrawn.push(...list), withdrawProfile: (key) => profiles.push(key) };
+  const config = memoryConfig();
+  const b = createBackend({ config, fetch: globalThis.fetch, appVersion: () => '1.2.17', locale: () => 'de-DE', systemNotify });
+  await b.login({ url: base, username: 'demo', password: 'demo' });
+  await b.seerrConnect({ url: base, username: 'demo', password: 'demo' });
+  await seed('count=2&open=2&by=1');
+  await b.notificationsSync({ force: true });
+  await fetch(`${base}/__debug/request?id=1&status=2`, { method: 'POST' });
+  await b.notificationsSync({ force: true });
+  assert.equal(b.notifications().items.length, 1);
+  assert.deepEqual(shown, [], 'Standard aus: keine Mitteilung des Systems');
+  assert.equal(b.notificationPrefs({ system: true }).preferences.system, true);
+  await fetch(`${base}/__debug/request?id=2&status=5`, { method: 'POST' });
+  await b.notificationsSync({ force: true });
+  assert.equal(shown.length, 1);
+  const m = shown[0];
+  assert.ok(m.id.endsWith('.seerr-2-available'));
+  assert.equal(m.title, 'Dein angefragter Film ist jetzt verfügbar');
+  assert.equal(m.body, '„Anfrage 90002“ wurde deiner Mediathek hinzugefügt und kann jetzt abgespielt werden.');
+  const text = JSON.stringify(m);
+  const server = config.getServer(config.data.activeServerId);
+  assert.ok(!text.includes('127.0.0.1') && !text.includes(server.userId) && !text.includes(server.token) && !text.includes(config.data.activeServerId), 'weder Adresse noch Benutzer, Zugang oder Kennung des Profils');
+  // Antippen: ein anderes Profil oder ein unlesbares Ziel fuehren nirgendwohin und aendern nichts
+  assert.equal(b.systemNotificationTapped({ ...m.target, profile: 'abcdef123456' }), null);
+  assert.equal(b.systemNotificationTapped({ id: 'seerr-2-available' }), null);
+  assert.equal(b.notifications().items.find((x) => x.id === 'seerr-2-available').read, false);
+  const t = b.systemNotificationTapped(JSON.parse(JSON.stringify(m.target)));
+  assert.deepEqual([t.mediaType, t.tmdbId, t.title, t.state], ['movie', 90002, 'Anfrage 90002', 'available']);
+  assert.equal(b.notifications().items.find((x) => x.id === 'seerr-2-available').read, true, 'angetippt heisst gelesen');
+  assert.deepEqual(withdrawn, [m.id], 'und ihre Mitteilung des Systems ist zurueckgenommen');
+  await b.seerrDisconnect();
+  assert.deepEqual(profiles, [m.target.profile], 'Seerr getrennt: alle Mitteilungen des Systems dieses Profils gehen mit');
+  assert.equal(b.systemNotificationTapped(t), null, 'ohne Seerr fuehrt auch eine alte Mitteilung nirgendwohin');
+});

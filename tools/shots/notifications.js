@@ -137,7 +137,8 @@ module.exports = async (ctx) => {
   await ctx.wait(400);
   const labels = () => ctx.run(`[...document.querySelectorAll('.settings-panel .setting-label')].map((l) => l.textContent)`);
   const l1 = await labels();
-  check('Einstellungen: Hauptschalter und die Arten; "Neue Anfragen" nur fuer Konten, die alle Anfragen sehen', JSON.stringify(l1) === JSON.stringify(['Mitteilungen', 'Verfügbar', 'Erste Folgen verfügbar', 'Genehmigt', 'Abgelehnt', 'Fehlgeschlagen']), JSON.stringify(l1));
+  // Seit P18 steht unter dem Hauptschalter "Mitteilungen des Systems" (eigenes Szenario system-notify.js)
+  check('Einstellungen: Hauptschalter, Mitteilungen des Systems und die Arten; "Neue Anfragen" nur fuer Konten, die alle Anfragen sehen', JSON.stringify(l1) === JSON.stringify(['Mitteilungen', 'Mitteilungen des Systems', 'Verfügbar', 'Erste Folgen verfügbar', 'Genehmigt', 'Abgelehnt', 'Fehlgeschlagen']), JSON.stringify(l1));
   check('...der Bereich steht in der Liste der Einstellungen', await ctx.run(`[...document.querySelectorAll('.settings-nav a, .settings-nav button')].some((a) => /Mitteilungen/.test(a.textContent))`));
   await ctx.capture(path.join(out, 'N-04-einstellungen.png'));
   const mainToggle = `[...document.querySelectorAll('.settings-panel .setting')].find((s) => s.querySelector('.setting-label')?.textContent === 'Mitteilungen').querySelector('.setting-control button, .setting-control input, .setting-control [role=switch]')`;

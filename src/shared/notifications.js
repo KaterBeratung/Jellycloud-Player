@@ -200,6 +200,59 @@
   /** Der Stand, den die Mitteilung meldet, in der gemeinsamen Darstellung der Seerr-Staende (fuer das Tag). */
   const STATE_OF = Object.freeze({ available: 'available', partiallyAvailable: 'partiallyAvailable', approved: 'approved', declined: 'declined', failed: 'failed', newRequest: 'requested' });
   const stateOf = (n) => STATE_OF[n && n.kind] || null;
+  const STATES = new Set(Object.values(STATE_OF));
+
+  /**
+   * Was eine Mitteilung (oder das Ziel einer Mitteilung des Systems) ueber ihren Titel weiss, fuer seine Seite, bis diese ihre Angaben geladen hat: mit einem
+   * Stand, der zur Nachricht passt (die Seite beginnt nicht mit "anfragen"; AppNotification.placeholder und SystemNotificationTarget.placeholder).
+   */
+  function knownTitle(x) {
+    const state = x && x.kind ? stateOf(x) : x && STATES.has(x.state) ? x.state : null;
+    return { mediaType: x.mediaType, id: x.tmdbId, title: x.title, year: null, overview: '', posterPath: x.posterPath || null, status: SeerrState.placeholderMediaStatus(state) };
+  }
+
+  // ---------- Mitteilungen des Systems (Plan P18) ----------
+  // Lokal erzeugt, wenn ein Abgleich Neues findet und der Nutzer sie fuer das Profil eingeschaltet hat; einen Dienst, der sie von aussen schickt, gibt es nicht.
+  // Vorlage: Core/SystemNotificationMessage.swift und SystemNotificationTests der Apple-App.
+
+  /** Text, wenn das System den Inhalt verbirgt (Sperrbildschirm mit ausgeblendeten Vorschauen). */
+  const PREVIEW = { de: 'Neuigkeit zu einer Anfrage', en: 'News about a request' };
+
+  /** Kennwert eines Profils in Mitteilungen des Systems: laesst das Profil wiedererkennen, ohne Server oder Benutzer zu nennen. */
+  const profileKey = (profile, hash) => String(hash(`system|${String(profile)}`));
+
+  /**
+   * Kennung der Mitteilung des Systems zu einem Eintrag: Kennwert des Profils und Kennung des Eintrags. Das System ersetzt eine Mitteilung mit derselben Kennung,
+   * statt sie doppelt zu zeigen; mit dem Profil davor ersetzt nie ein Profil die eines anderen (die Nummern der Anfragen zaehlt jeder Seerr-Server fuer sich).
+   */
+  const systemId = (noteId, profile, hash) => `${profileKey(profile, hash)}.${noteId}`;
+
+  /**
+   * Inhalt einer Mitteilung des Systems zu einem Eintrag: derselbe Wortlaut wie in der Uebersicht, aber nie der Name eines anderen Benutzers; preview fuer
+   * verborgene Inhalte. target kommt beim Antippen zurueck: Art und Nummer des Titels, sein Name, die Kennung des Eintrags, der Stand und der Kennwert des
+   * Profils. Keine Adresse des Servers, keine Kennung des Benutzers, keine Sitzung.
+   */
+  function systemNotificationOf(n, { profile, hash, lang } = {}) {
+    const key = profileKey(profile, hash);
+    const target = { id: n.id, mediaType: n.mediaType, tmdbId: n.tmdbId, title: n.title, profile: key, state: stateOf(n) };
+    if (n.posterPath) target.posterPath = n.posterPath;
+    return { id: `${key}.${n.id}`, title: headline(n, lang), body: systemMessage(n, lang), preview: PREVIEW[langOf(lang)], target };
+  }
+
+  /** Das Ziel aus dem, was eine angetippte Mitteilung traegt; null, wenn etwas fehlt oder nicht passt (dann fuehrt das Antippen nur in die App). */
+  function targetOf(raw) {
+    if (!isObject(raw)) return null;
+    const { id, mediaType, tmdbId, title, profile } = raw;
+    if (typeof id !== 'string' || !/^seerr-\d{1,12}-[A-Za-z]{1,40}$/.test(id)) return null;
+    if ((mediaType !== 'movie' && mediaType !== 'tv') || !Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+    if (typeof title !== 'string' || typeof profile !== 'string' || !/^[0-9a-f]{6,64}$/.test(profile)) return null;
+    const t = { id, mediaType, tmdbId, title: title.slice(0, 300), profile, state: STATES.has(raw.state) ? raw.state : null };
+    if (typeof raw.posterPath === 'string' && raw.posterPath) t.posterPath = raw.posterPath.slice(0, 200);
+    return t;
+  }
+
+  /** Gehoert die Mitteilung zum gerade aktiven Profil? Nur dann fuehrt das Antippen zum Titel: die App wechselt das Profil nicht von selbst. */
+  const belongs = (target, activeProfile, hash) => !!target && !!activeProfile && profileKey(activeProfile, hash) === target.profile;
 
   // ---------- Einstellungen ----------
 
@@ -378,8 +431,11 @@
    * - Laesst sich der Titel einer Aenderung nicht holen, bleibt ihr alter Stand gemerkt und die Zeit des Abgleichs rueckt nicht vor: der naechste bringt sie.
    * - Ein Wechsel des Profils oder das Aus- und Einschalten verwirft einen laufenden Abgleich (er traegt nichts mehr ein).
    * - Aus: kein Abgleich, kein Punkt; die Liste bleibt.
+   * Mitteilungen des Systems (Plan P18): onDeliver(items, profile) bekommt nur, was ein Abgleich neu eintraegt, und nur, wenn der Nutzer sie fuer das Profil
+   * eingeschaltet hat; onWithdraw(ids, profile) nimmt sie zurueck, wenn ein Eintrag gelesen oder entfernt ist (wieder ungelesen holt keine zurueck), mit
+   * ids = null alle des Profils (Profil entfernt, abgemeldet, Seerr getrennt).
    */
-  function createCenter({ io = memoryIo(), hash, now = () => Date.now(), onChange = () => {} } = {}) {
+  function createCenter({ io = memoryIo(), hash, now = () => Date.now(), onChange = () => {}, onDeliver = () => {}, onWithdraw = () => {} } = {}) {
     if (typeof hash !== 'function') throw new Error('hash fehlt');
     let key = null; // { profile, seerr, name }
     let store = null;
@@ -412,6 +468,11 @@
       return { active: !!store, enabled: store ? store.preferences.enabled : false, unread: store ? store.unread : 0, notice: store ? store.notice : 0 };
     }
     const publish = () => safe(() => onChange(summary()));
+    const copy = (x) => ({ ...x, seasons: [...x.seasons] });
+    /** Mitteilungen des Systems zu diesen Eintraegen zuruecknehmen (auch wenn keine gezeigt wurde: das System kennt sie dann nicht, nichts geschieht). */
+    const withdraw = (ids) => {
+      if (key) safe(() => onWithdraw([...ids], key.profile));
+    };
 
     /** Mitteilungen des Profils an diesem Seerr (next: { profile, seerr } oder null ohne Seerr). Derselbe Stand bleibt, wie er ist. */
     function activate(next) {
@@ -429,6 +490,7 @@
       const prefix = prefixOf(profile);
       const only = seerr ? nameOf(profile, seerr) : null;
       for (const n of safe(() => io.names(), [])) if (only ? n === only : n.startsWith(prefix)) safe(() => io.remove(n));
+      safe(() => onWithdraw(null, String(profile))); // ihre Mitteilungen des Systems gehen mit (ein Profil hat hoechstens ein Seerr)
       if (key && key.profile === String(profile) && (!only || key.name === only)) {
         reset();
         store = createStore(null);
@@ -506,6 +568,8 @@
       const fresh = store.add(found.filter((n) => allows(store.preferences, n.kind)));
       persist();
       publish();
+      // An das System nur, was eben neu eingetragen wurde, und nur, wenn der Nutzer es fuer dieses Profil will (die Einstellung, wie sie jetzt ist)
+      if (fresh.length && store.preferences.enabled && store.preferences.system) safe(() => onDeliver(fresh.map(copy), key.profile));
       return fresh;
     }
 
@@ -538,7 +602,11 @@
       },
       /** Liste und Einstellungen fuer die Oberflaeche (Kopien). */
       list() {
-        return { ...summary(), items: store ? store.items.map((x) => ({ ...x, seasons: [...x.seasons] })) : [], preferences: store ? { ...store.preferences, kinds: [...store.preferences.kinds] } : defaultPreferences() };
+        return { ...summary(), items: store ? store.items.map(copy) : [], preferences: store ? { ...store.preferences, kinds: [...store.preferences.kinds] } : defaultPreferences() };
+      },
+      /** Das aktive Profil (fuer die Mitteilungen des Systems: gehoert eine angetippte dazu?), sonst null. */
+      get profile() {
+        return key ? key.profile : null;
       },
       get preferences() {
         return store ? { ...store.preferences, kinds: [...store.preferences.kinds] } : defaultPreferences();
@@ -552,16 +620,26 @@
         changed();
       },
       markRead(id, read = true) {
-        if (store && store.markRead(String(id), read)) changed();
+        if (!store || !store.markRead(String(id), read)) return;
+        if (read) withdraw([String(id)]);
+        changed();
       },
       markAllRead() {
-        if (store && store.markAllRead().length) changed();
+        const ids = store ? store.markAllRead() : [];
+        if (!ids.length) return;
+        withdraw(ids);
+        changed();
       },
       remove(id) {
-        if (store && store.remove(String(id))) changed();
+        if (!store || !store.remove(String(id))) return;
+        withdraw([String(id)]);
+        changed();
       },
       removeAll() {
-        if (store && store.removeAll().length) changed();
+        const ids = store ? store.removeAll() : [];
+        if (!ids.length) return;
+        withdraw(ids);
+        changed();
       }
     };
   }
@@ -580,6 +658,13 @@
     message,
     systemMessage,
     stateOf,
+    knownTitle,
+    PREVIEW,
+    profileKey,
+    systemId,
+    systemNotificationOf,
+    targetOf,
+    belongs,
     defaultPreferences,
     readPreferences,
     allows,
