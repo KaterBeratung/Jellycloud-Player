@@ -717,6 +717,15 @@ export function settingsView({ section, query: q }) {
         t('set.grp.system'),
         setting(t('set.pauseOnMinimize'), t('set.pauseOnMinimizeDesc'), toggle(pl().pauseOnMinimize, (v) => setPlayer({ pauseOnMinimize: v }), t('set.pauseOnMinimize'))),
         setting(t('set.preventSleep'), t('set.preventSleepDesc'), toggle(pl().preventSleep, (v) => setPlayer({ preventSleep: v }), t('set.preventSleep')))
+      ),
+      // Andere Geraete (Plan P19, wie Einstellungen > Player > Andere Geraete der Apple-App): Standard an; aus heisst keine Abfrage der Sitzungen, den Stopp
+      // anderer Geraete nimmt die App waehrend der Wiedergabe trotzdem an
+      h(
+        'div',
+        { class: 'settings-block' },
+        h('h3', { class: 'group-title' }, t('set.grp.otherDevices')),
+        h('div', { class: 'settings-group' }, setting(t('set.handoff'), null, toggle(pl().showHandoff !== false, (v) => setPlayer({ showHandoff: v }), t('set.handoff')))),
+        foot(t('set.handoffFoot'))
       )
     );
   }

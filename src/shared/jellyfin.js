@@ -162,7 +162,8 @@ class JellyfinClient {
     this.token = opts.token ?? null;
     this.userId = opts.userId ?? null;
     this.deviceId = opts.deviceId;
-    this.clientName = opts.clientName ?? 'Jellycloud Player';
+    // Name des Programms wie bei allen Jellycloud-Apps (Regel 1 der Wiedergabeuebernahme, Plan P19 K10): andere Geraete erkennen es daran
+    this.clientName = opts.clientName ?? 'Jellycloud';
     this.clientVersion = opts.clientVersion ?? '0.1.0';
     this.deviceName = (opts.deviceName ?? (os ? os.hostname() : 'Web')).replace(/[^\x20-\x7e]/g, '?').replace(/"/g, "'");
     this.fetch = opts.fetch ?? globalThis.fetch;
@@ -294,10 +295,40 @@ class JellyfinClient {
     return this.request('GET', '/System/Info/Public');
   }
 
-  postCapabilities() {
+  /**
+   * Faehigkeiten dieser Sitzung. mediaControl: sie nimmt Befehle an (nur waehrend der Wiedergabe, zusammen mit dem offenen Steuerkanal; erst dann fuehrt der
+   * Server sie als steuerbar, Plan P19). Keine weiteren Befehle angemeldet.
+   */
+  postCapabilities({ mediaControl = false } = {}) {
     return this.request('POST', '/Sessions/Capabilities/Full', {
-      body: { PlayableMediaTypes: ['Audio', 'Video'], SupportedCommands: [], SupportsMediaControl: false, SupportsPersistentIdentifier: true }
+      body: { PlayableMediaTypes: ['Audio', 'Video'], SupportedCommands: [], SupportsMediaControl: mediaControl === true, SupportsPersistentIdentifier: true },
+      timeout: 8000
     }).catch(() => null);
+  }
+
+  // ---------- Auf diesem Geraet fortsetzen (Plan P19) ----------
+  /**
+   * Die Sitzungen, die dieses Konto steuern darf und die sich in den letzten 90 s gemeldet haben (fuer ein normales Konto die eigenen, fuer einen Administrator
+   * alle; welche davon angeboten werden, entscheidet src/shared/handoff.js). Roh, wie der Server sie liefert; ohne angemeldetes Konto keine Anfrage.
+   */
+  async remoteSessions() {
+    if (!this.userId) return [];
+    const r = await this.request('GET', '/Sessions', { query: { ControllableByUserId: this.userId, ActiveWithinSeconds: 90 }, timeout: 8000 });
+    return Array.isArray(r) ? r : [];
+  }
+
+  /** Haelt die Wiedergabe einer anderen Sitzung an. Wessen Sitzung das sein darf, prueft die App vorher selbst an frisch gelesenen Sitzungen. */
+  stopRemotePlayback(sessionId) {
+    return this.request('POST', `/Sessions/${encodeURIComponent(String(sessionId))}/Playing/Stop`, { timeout: 8000 });
+  }
+
+  /** Eintrag fuer die Uebernahme: gemerkte Stelle und ob es etwas zum Abspielen gibt (MediaSources), mit eigener Zeitgrenze. */
+  async handoffItem(id, timeout = 8000) {
+    const r = await this.request('GET', '/Items', { query: { userId: this.userId, ids: id, fields: ['MediaSources'], enableUserData: true, enableImages: false }, timeout });
+    const item = r?.Items?.[0];
+    if (!item) throw new JellyfinError('Eintrag nicht gefunden', { status: 404 });
+    const ticks = item.UserData?.PlaybackPositionTicks;
+    return { positionTicks: Number.isFinite(ticks) ? ticks : null, playable: Array.isArray(item.MediaSources) && item.MediaSources.length > 0 };
   }
 
   // ---------- Bibliothek ----------

@@ -949,6 +949,23 @@ class PlayerController extends EventEmitter {
     await Promise.race([Promise.allSettled([...this._reports]), sleep(ms)]);
   }
 
+  /**
+   * Befehl ueber den Steuerkanal (Plan P19, src/main/remote-channel.js): Stop schliesst wie der eigene Knopf (zuerst die genaue Stelle an den Server, dann das
+   * Ende einer Umsetzung); Pause, Unpause und PlayPause wirken nur auf eine laufende Wiedergabe. Andere Befehle gibt es hier nicht.
+   */
+  remote(command) {
+    if (!this.mpv || this.stopping) return;
+    if (command === 'Stop') {
+      this.stop();
+      return;
+    }
+    if (!this.cur?.started) return;
+    const paused = !!this.state.paused;
+    const want = command === 'Pause' ? true : command === 'Unpause' ? false : command === 'PlayPause' ? !paused : null;
+    if (want === null || want === paused) return;
+    this.mpv.setProperty('pause', want).catch(() => {});
+  }
+
   // ---------- Befehle des Overlays ----------
 
   _onCommand(cmd) {

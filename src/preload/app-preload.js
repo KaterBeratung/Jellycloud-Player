@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld('jc', {
   notificationSystemRequest: () => call('notify:systemRequest'),
   notificationSystemSettings: () => call('notify:systemSettings'),
   notificationTakeOpen: () => call('notify:take'),
+  // Auf diesem Geraet fortsetzen (Plan P19)
+  handoffSessions: () => call('handoff:sessions'),
+  handoffItem: (req) => call('handoff:item', req),
+  handoffStop: (id) => call('handoff:stop', id),
   onNotificationOpen: (cb) => {
     const h = () => cb();
     ipcRenderer.on('notify:open', h);

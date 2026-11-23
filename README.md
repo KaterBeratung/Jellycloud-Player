@@ -30,6 +30,7 @@ PGS-/ASS-Untertitel.
 - **Lange Untertitel-Listen:** Ab 9 Spuren ordnet die Auswahl auf der Detailseite und das Spur-Panel im Player die Untertitel nach Sprache: gleich zu sehen sind die bevorzugten Sprachen (eingestellte Untertitelsprache, Oberfläche, Tonspur, Englisch) und die gewählte Spur, der Rest steckt hinter *Weitere Sprachen*.
 - **Anfragen:** Titel, die es noch nicht gibt, lassen sich über Seerr anfragen (siehe *Anfragen mit Seerr*). Mit Seerr zeigt die Startseite die Reihen *Top 10 Filme*, *Top 10 Serien* und *Filme im Trend*; ohne Seerr gibt es sie nicht (seit 1.2.14, siehe *Anfragen mit Seerr*).
 - **Mitteilungen:** Mit Seerr meldet die App, wenn sich bei deinen Anfragen etwas tut (genehmigt, abgelehnt, fehlgeschlagen, erste Folgen, verfügbar; als Verwalter auch neue Anfragen anderer): ein roter Punkt am Profilsymbol, im Profilmenü „Mitteilungen“ mit „n neue“; auf Wunsch auch als Benachrichtigung von Windows bzw. Android, solange die App läuft (siehe *Mitteilungen*).
+- **Auf diesem Gerät fortsetzen:** Läuft auf einem anderen Gerät deines Kontos gerade ein Film oder eine Folge (Jellycloud auf iPhone, Apple TV, Android …), bietet die Startseite eine Kapsel an: ein Klick hält die Wiedergabe dort an und setzt sie hier an derselben Stelle fort. Umgekehrt lässt sich eine Wiedergabe hier von einem anderen Gerät übernehmen (siehe *Auf diesem Gerät fortsetzen*).
 - **Probleme melden:** Auf der Detailseite zeigt ein **Warnschild** in der Knopfleiste (nach Herz und Gesehen, vor „Mehr“) ein Fenster, in dem sich zu Video, Audio, Untertiteln oder Sonstigem ein Problem an Seerr melden lässt, der Kommentar ist freiwillig (siehe *Probleme an Seerr melden*).
 - **Discord Rich Presence:** Zeigt in Discord, was du gerade schaust, mit Poster, Folge und Fortschritt und einem Namen, den du selbst wählst (siehe *Discord Rich Presence*). Aus, bis du es einschaltest; die Discord-Anwendung ist eingebaut, es ist keine Einrichtung nötig.
 - **Startseite anpassen:** *Einstellungen > Startseite*: Banner an oder aus, Zahl der Folien, Zeitraum der Top 10, Reihen ein- und ausschalten und umsortieren (siehe *Startseite anpassen*).
@@ -476,6 +477,37 @@ die App erkennt eine Änderung, indem sie die Anfragen liest und mit dem zuletzt
   (Port 8984, Benachrichtigungen abgefangen) mit 4 + 5 Gegenproben an der Oberfläche, `android-host.js` für die Android-Hülle. Nur gegen den Mock-Seerr
   geprüft, nicht gegen einen echten Seerr-Server.
 
+## Auf diesem Gerät fortsetzen
+
+**Seit 1.2.18 (Plan P19, nach `Core/Handoff.swift`, `Playback/RemoteControlChannel.swift`, `Features/Home/HandoffOffer.swift` und der Referenz
+`Notizen/wiedergabe-uebernahme-architektur.md` der Apple-App, Regeln 1 bis 12).** Alles läuft über die öffentlichen Schnittstellen des eigenen
+Jellyfin-Servers (HTTP und WebSocket), kein weiterer Dienst. Jedes Gerät ist beides: Quelle, solange es spielt, und Ziel, solange seine Startseite vorne ist.
+
+- **Quelle (steuerbar während der Wiedergabe):** mit dem Player meldet die App Steuerung an (`SupportsMediaControl: true`) und öffnet den Steuerkanal
+  `ws(s)://<Server>/socket?deviceId=<Kennung>`, angemeldet über den Kopf `Authorization` (nie ein Token in der Adresse); beim Ende beides zurück.
+  Lebenszeichen in der halben Frist des Servers (`ForceKeepAlive`), Wiederaufbau nach 5, 10, 20, 40, dann alle 60 s. Angenommen werden nur `Stop` (wie
+  der eigene Knopf: zuerst `Playing/Stopped` mit der genauen Stelle, dann das Ende der eigenen Umsetzung), `Pause`, `Unpause`, `PlayPause`; alles andere
+  und Unlesbares wird übergangen. Programmname `Client="Jellycloud"` wie bei allen Jellycloud-Apps.
+  - *Windows* (`src/main/remote-channel.js`): der eingebaute WebSocket von Node in Electron 45 (Kopfzeilen geprüft, Entscheidung E14), keine neue
+    Abhängigkeit. Grenzen: kein Proxy des Systems und keine Ausnahme für selbst signierte Zertifikate (dann wird die Sitzung nirgends angeboten).
+  - *Android* (`mobile/android/.../RemoteChannel.java`, im Player `PlayerActivity`): OkHttp 4.12 (mit Zustimmung des Nutzers, E14).
+- **Ziel (Startseite, `src/renderer/js/handoff.js`, Regeln in `src/shared/handoff.js`):** alle 5 s
+  `GET /Sessions?ControllableByUserId=<Konto>&ActiveWithinSeconds=90`, nur solange die Startseite vorne ist (nicht im Hintergrund, nicht während hier
+  gespielt wird, nicht bei ausgeschalteter Einstellung). Angeboten wird eine Sitzung nur mit allen fünf Bedingungen: nicht dieses Gerät, **eigenes
+  Konto** (fremde Sitzungen, die der Server einem Administrator nennt, verlassen die Rückseite nie), spielt ein Video, steuerbar, Meldung höchstens 90 s
+  alt; die jüngste zuerst. Die Kapsel liegt als Glas über dem Inhalt (unten mittig, höchstens 460 px; auf dem Handy über der Reiterleiste), mit Gerät,
+  Titel und Abspielen; mehrere Geräte: Auswahl „Von welchem Gerät fortsetzen?“.
+- **Ablauf der Übernahme:** Eintrag prüfen → Sitzungen frisch lesen → entscheiden → Stopp (`POST /Sessions/<Id>/Playing/Stop`, nur eine eben gelesene
+  eigene Sitzung) → höchstens 1,5 s auf die genaue Stelle warten → Start hier über den normalen Weg der Wiedergabe. Spielt das andere Gerät inzwischen
+  etwas anderes oder nimmt den Stopp gerade nicht an, startet hier nichts („Fortsetzen nicht möglich“ mit Grund); bei jedem Fehler vor dem Stopp läuft
+  es dort weiter. Nach jedem Warten wird geprüft, ob die Übernahme noch gilt (Profil, Vordergrund, kein eigener Player).
+- **Einstellung:** Einstellungen › Wiedergabe › *Andere Geräte* › „„Auf diesem Gerät fortsetzen“ anzeigen“ (Standard an). Aus: keine Abfrage; den
+  Stopp anderer Geräte nimmt die App während der Wiedergabe trotzdem an.
+- Tests: `test/handoff.test.js` (die 24 Fälle aus `HandoffRulesTests` und der Ablauf der Übernahme), `test/remote-channel.test.js` (Windows-Kanal gegen
+  den WebSocket des Testservers), `test/handoff-backend.test.js`; 28 Gegenproben. Szenario `handoff.js` (Port 8983, beide Rollen; 6 Gegenproben an der
+  Oberfläche). Der Testserver kennt `/socket`, die eigene Sitzung der App und gestellte Sitzungen anderer Geräte (`/__debug/session`, `/__debug/socket`).
+  **Nicht geprüft:** zwei echte Geräte und ein echter Jellyfin-Server (Apple ↔ Windows ↔ Android), Reverse Proxy mit WebSocket, Android am Gerät.
+
 ## Probleme an Seerr melden
 
 Ist Seerr verbunden, steht auf der Detailseite gleich in der Knopfleiste ein **Warnschild** (Symbol `warning`, runder Knopf wie Gesehen und Favorit, beim Zeigen wie die anderen Knöpfe, Beschriftung „Problem melden“; seit 1.2.15 wie die Apple-App nur dort, nicht mehr zusätzlich im Menü *Mehr*), das ein Fenster öffnet (`views/issue-dialog.js`). Das Fenster fragt nach der **Art** (Video, Audio, Untertitel, Sonstiges, entspricht `issueType` 1 bis 4 bei Seerr) und nimmt einen **freiwilligen Kommentar** (bis 2000 Zeichen) entgegen;
@@ -881,6 +913,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `page-status.js` | **Zustände und Grundmaße** (21 Prüfungen, Port 8996): Leer- und Fehlerhinweis in der Mitte des Inhaltsbereichs, Knopf 18 darunter ohne den Hinweis zu verschieben, Fläche fängt keine Klicks ab, *Erneut versuchen* während des Versuchs gesperrt, Fehler beim Nachladen am Listenende ohne ungefragten neuen Versuch, Detailseite ohne Titel, Suche; Drücken (Knopf 0,94 und blasser, Karte 0,95 und dunkler), Feld so hoch wie der Knopf, Fehlerkontur; Aufnahmen `PS-*.png` |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, Banner nur aus der Mediathek, neue Bibliothek hinten, alles ausgeblendet, Überstehen eines Neustarts |
 | `notifications.js` | **Mitteilungen** (P17, Port 8985): ohne Seerr kein Eintrag und kein Punkt; erster Abgleich still bei bestätigter Verbindung; je Änderung eine Mitteilung, roter Punkt mit Zahl in der Bezeichnung, „n neue“ im Profilmenü, Übersicht (Wortlaut, Plakat, Tag, Zeit), Kontextmenü, *Alle gelesen*, Antippen öffnet den Titel, *Alle entfernen* (kommt nicht wieder), Einstellungen (Arten, aus: kein Abgleich und kein Punkt, wieder an: still), Verwalter: *Neue Anfrage*, Seerr trennen nimmt alles mit |
+| `handoff.js` | **Auf diesem Gerät fortsetzen** (P19, Port 8983, Testserver mit WebSocket): Quelle (Steuerung angemeldet, Kanal mit Token nur im Kopf, Lebenszeichen, Pause/Unpause/PlayPause von außen, Unlesbares übergangen, Stopp von einem anderen Gerät mit genauer Stelle, danach abgemeldet) und Ziel (Kapsel mit Gerät und Titel, fremdes Konto nie, Abfrage alle 5 s nur auf der Startseite und nicht während der Wiedergabe, Antippen: frisch lesen, Stopp, Start an der gemeldeten Stelle; Auswahl bei zwei Geräten; anderer Titel oder nicht steuerbar: Meldung, nichts startet; Einstellung aus); Aufnahmen `HO-*.png` |
 | `system-notify.js` | **Mitteilungen des Systems** (P18, Port 8984; die Benachrichtigungen von Windows fängt eine Attrappe ab, `ctx.notifier`): Schalter unter dem Hauptschalter, Standard aus; aus: nichts an Windows; eingeschaltet *Windows-Einstellungen öffnen*, nur Neues und genau einmal, Wortlaut, Kennung ohne Adresse; Antippen holt das Fenster nach vorn, öffnet den Titel (auch über einer offenen Quick-Connect-Maske), gelesen und zurückgenommen; eine eines anderen Profils öffnet nichts; gelesen, *Alle entfernen* und Seerr trennen nehmen zurück; Mitteilungen aus: kein Schalter; Aufnahmen `SN-*.png` |
 | `item-menu.js` | **Detailseite und Kontextmenü** (P16, Port 8986, echte Mausklicks): Menü am Mauszeiger, unter dem Plakat bei langem Drücken und Tastatur, Einträge je Stand, Schließen (Escape, Klick daneben, Mausrad, Seitenwechsel; Scrollen von selbst nicht); Aus „Weiterschauen“ entfernen, Favorit und Gesehen danach auf Startseite (ohne Neuaufbau, Stellen bleiben), Mediathek (Karte an ihrem Platz), Detailseite (Folgen, *Abspielen*) und in der Seite im Speicher; „Fortsetzen ab“, „S1 E4 Fortsetzen ab“, Staffel beim Öffnen ohne Extras, Knopfreihe in zwei Zeilen, Gesehen-Tag, Informationen; Top 10 am Plakat; Seite eines Seerr-Titels |
 | `top-ten.js` | **Top 10** (P15, Port 8987): ohne Seerr keine Seerr-Reihen, kein Hinweis, keine Anfrage, gesperrt im Editor; Banner nur Neues aus der Mediathek; Top 10 Filme und Serien (nur Mediathek, Reihenfolge der Trends, weniger als zehn ohne Ersatz), Platz nach *Als Nächstes*, Beschriftung, Maße und Ebenen, Rand im Glow-Verlauf, 80 % ohne Zeiger, Platzhalter nur beim ersten Laden, Zeitraum und *Aktuell* in den Einstellungen, ohne Glow farblos, Arbeitsspeicher |

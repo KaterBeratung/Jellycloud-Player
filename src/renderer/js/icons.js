@@ -70,6 +70,10 @@ const paths = {
   user: `<g ${S}><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.6 3.9-5.4 7.5-5.4s6.6 1.8 7.5 5.4"/></g>`,
   palette: `<g ${S}><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 1.9-.9 1.5-2-.4-1.2.3-2.2 1.6-2.2H17a3.5 3.5 0 0 0 3.5-3.5C20.5 7 16.8 3.5 12 3.5z"/><circle cx="7.8" cy="11" r="1" fill="currentColor"/><circle cx="10.5" cy="7.6" r="1" fill="currentColor"/><circle cx="15" cy="8" r="1" fill="currentColor"/></g>`,
   monitor: `<g ${S}><rect x="3" y="4" width="18" height="12.5" rx="2.4"/><path d="M8.5 20.5h7M12 16.5v4"/></g>`,
+  // Arten von Geraeten fuer "Auf diesem Geraet fortsetzen" (Plan P19)
+  phone: `<g ${S}><rect x="6.5" y="2.5" width="11" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></g>`,
+  tablet: `<g ${S}><rect x="4" y="2.5" width="16" height="19" rx="2.4"/><path d="M10.5 18.5h3"/></g>`,
+  laptop: `<g ${S}><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 19h19"/></g>`,
   refresh: `<g ${S}><path d="M20 11a8 8 0 0 0-14.3-4.6L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.6L20 16"/><path d="M20 20v-4h-4"/></g>`,
   download: `<g ${S}><path d="M12 4v11"/><path d="m7.5 11 4.5 4.5 4.5-4.5"/><path d="M5 19.5h14"/></g>`,
   external: `<g ${S}><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></g>`,

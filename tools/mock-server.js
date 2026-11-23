@@ -212,7 +212,7 @@ function freshAdminData() {
       { Id: id32('task-update'), Name: 'Plugin-Updates', Description: 'Sucht nach Plugin-Updates.', Category: 'Application', State: 'Running', CurrentProgressPercentage: 42.5, IsHidden: false, LastExecutionResult: null, Triggers: [] }
     ],
     sessions: [
-      { Id: 'sess-1', UserId: USER.Id, UserName: 'demo', Client: 'Jellycloud Player', DeviceName: 'WIN-KI', LastActivityDate: new Date().toISOString(), NowPlayingItem: null, PlayState: {} },
+      { Id: 'sess-1', UserId: USER.Id, UserName: 'demo', Client: 'Jellycloud', DeviceName: 'Arbeitszimmer-PC', LastActivityDate: new Date().toISOString(), NowPlayingItem: null, PlayState: {} },
       { Id: 'sess-2', UserId: id32('user-lena'), UserName: 'lena', Client: 'Jellyfin Web', DeviceName: 'Wohnzimmer-TV', LastActivityDate: new Date(Date.now() - 20e3).toISOString(), NowPlayingItem: { Id: id32('movie:Neon Harbor'), Name: 'Neon Harbor', Type: 'Movie', RunTimeTicks: 6000 * TICKS }, PlayState: { PositionTicks: 1500 * TICKS, IsPaused: false } },
       { Id: 'sess-3', UserId: id32('user-max'), UserName: 'max', Client: 'Jellyfin Android', DeviceName: 'Pixel 8', LastActivityDate: new Date(Date.now() - 300e3).toISOString(), NowPlayingItem: null, PlayState: {} }
     ],
@@ -1013,6 +1013,7 @@ function remoteSessions() {
  *   POST /__debug/expire                      Sitzung abgelaufen (401) bis zur naechsten Anmeldung
  *   POST /__debug/quickconnect?hold=1|0&gone=1|0&disabled=1|0
  *   POST /__debug/session?device=&item=&at=<s>&user=other&control=0&idle=<s>&client=   bzw. ?clear=1
+ *   POST /__debug/socket?send=<Text>&command=<Befehl>&keepalive=<s>&drop=1&refuse=1|0   Steuerkanal der App (Plan P19)
  *   Seerr: /__debug/mode?set=ok|down|expired, /__debug/permissions?set=<Bits>, /__debug/identity?jellyfin=<Kennung>,
  *          /__debug/request?id=&status=, /__debug/requests?count=&open=, /__debug/season?id=&season=, /__debug/media?tmdb=&status=[&type=tv]
  */
@@ -1103,6 +1104,7 @@ function debugControl(p, q) {
     for (const k of ['hold', 'gone', 'disabled']) if (q.has(k)) state.qc[k] = q.get(k) === '1';
     return [200, { ok: true, hold: state.qc.hold, gone: state.qc.gone, disabled: state.qc.disabled, authorized: state.qc.authorized }];
   }
+  if (p === '/__debug/socket') return socketControl(q);
   if (p === '/__debug/session') {
     if (q.get('clear')) {
       state.remote.length = 0;
@@ -1114,6 +1116,123 @@ function debugControl(p, q) {
     return [200, { ok: true, sessions: state.remote.length, item }];
   }
   return [404, { error: `Mock: ${p} ist keine Steuerung` }];
+}
+
+// ---------- Steuerkanal (WebSocket /socket, Plan P19) ----------
+// Wie Jellyfin: Anmeldung ueber den Kopf Authorization (ein Token in der Adresse wird nur protokolliert, nie verlangt), ForceKeepAlive gleich nach dem
+// Verbinden, Lebenszeichen des Clients werden gezaehlt. Befehle an die eigene Sitzung der App (POST /Sessions/self<n>/Playing/<Befehl>) kommen als
+// Playstate-Nachricht an; ihre Sitzung ist steuerbar, solange der Kanal offen ist und sie Steuerung gemeldet hat. Test-Steuerung: /__debug/socket.
+const sockets = new Set(); // { id, socket, deviceId, device, client, keepAlives }
+let socketSeq = 0;
+Object.assign(state, { socketKeepAlive: 60, socketRefuse: false, capabilities: null, selfPlay: null });
+
+function wsFrame(text, opcode = 1) {
+  const payload = Buffer.from(String(text));
+  const len = payload.length;
+  const head = len < 126 ? Buffer.from([0x80 | opcode, len]) : Buffer.from([0x80 | opcode, 126, len >> 8, len & 255]);
+  return Buffer.concat([head, payload]);
+}
+function wsSend(entry, text) {
+  if (!entry.socket.destroyed) entry.socket.write(wsFrame(text));
+}
+
+/** Die eigene Sitzung der App, solange ihr Steuerkanal offen ist (wie Jellyfin: steuerbar nur mit Kanal und gemeldeter Steuerung). */
+function selfSessions() {
+  return [...sockets].map((e) => {
+    const it = state.selfPlay ? items.get(state.selfPlay.itemId) : null;
+    const control = !!state.capabilities?.SupportsMediaControl;
+    return {
+      Id: e.id,
+      UserId: USER.Id,
+      UserName: 'demo',
+      Client: e.client,
+      DeviceName: e.device,
+      DeviceId: e.deviceId,
+      LastActivityDate: new Date().toISOString(),
+      SupportsRemoteControl: control,
+      SupportsMediaControl: control,
+      NowPlayingItem: it ? Object.fromEntries(['Id', 'Name', 'Type', 'SeriesName', 'IndexNumber', 'ParentIndexNumber', 'RunTimeTicks'].filter((k) => k in it).map((k) => [k, it[k]])) : null,
+      PlayState: { PositionTicks: state.selfPlay?.ticks ?? 0, IsPaused: !!state.selfPlay?.paused }
+    };
+  });
+}
+
+function onUpgrade(req, socket) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const auth = req.headers.authorization ?? '';
+  state.log.push({ at: 'socket:upgrade', path: url.pathname, deviceId: url.searchParams.get('deviceId'), tokenInUrl: /api_key|token/i.test(url.search), authHeader: /Token="/.test(auth) });
+  if (url.pathname !== '/socket' || !authed(req) || state.socketRefuse || !req.headers['sec-websocket-key']) {
+    socket.end('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n');
+    return;
+  }
+  const accept = crypto.createHash('sha1').update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  const entry = { id: `self${++socketSeq}`, socket, deviceId: url.searchParams.get('deviceId') ?? '', device: /Device="([^"]*)"/.exec(auth)?.[1] ?? '', client: /Client="([^"]*)"/.exec(auth)?.[1] ?? '', keepAlives: 0 };
+  sockets.add(entry);
+  wsSend(entry, JSON.stringify({ MessageType: 'ForceKeepAlive', Data: state.socketKeepAlive }));
+  const gone = () => {
+    if (sockets.delete(entry)) state.log.push({ at: 'socket:close', deviceId: entry.deviceId });
+  };
+  let buf = Buffer.alloc(0);
+  socket.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 2) return;
+      const op = buf[0] & 0x0f;
+      let len = buf[1] & 0x7f;
+      let off = 2;
+      if (len === 126) {
+        if (buf.length < 4) return;
+        len = buf.readUInt16BE(2);
+        off = 4;
+      } else if (len === 127) {
+        if (buf.length < 10) return;
+        len = Number(buf.readBigUInt64BE(2));
+        off = 10;
+      }
+      const masked = (buf[1] & 0x80) !== 0;
+      const maskAt = off;
+      if (masked) off += 4;
+      if (buf.length < off + len) return;
+      let payload = Buffer.from(buf.subarray(off, off + len));
+      if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= buf[maskAt + (i % 4)];
+      buf = buf.subarray(off + len);
+      if (op === 8) {
+        if (!socket.destroyed) socket.end(Buffer.from([0x88, 0]));
+        gone();
+        return;
+      }
+      if (op === 9) {
+        socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload]));
+        continue;
+      }
+      if (op !== 1) continue;
+      try {
+        const o = JSON.parse(payload.toString());
+        if (o.MessageType === 'KeepAlive') {
+          entry.keepAlives++;
+          state.log.push({ at: 'socket:KeepAlive', deviceId: entry.deviceId });
+        }
+      } catch {
+        /* unlesbar: uebergehen wie Jellyfin */
+      }
+    }
+  });
+  socket.on('close', gone);
+  socket.on('error', gone);
+}
+
+/** Test-Steuerung des Kanals: ?send=<Text> (an alle), ?command=<Befehl> (Playstate an alle), ?keepalive=<s>, ?drop=1 (hart trennen), ?refuse=1|0. */
+function socketControl(q) {
+  if (q.has('refuse')) state.socketRefuse = q.get('refuse') === '1';
+  if (q.has('keepalive')) {
+    state.socketKeepAlive = Number(q.get('keepalive')) || 60;
+    for (const e of sockets) wsSend(e, JSON.stringify({ MessageType: 'ForceKeepAlive', Data: state.socketKeepAlive }));
+  }
+  if (q.has('send')) for (const e of sockets) wsSend(e, q.get('send'));
+  if (q.has('command')) for (const e of sockets) wsSend(e, JSON.stringify({ MessageType: 'Playstate', Data: { Command: q.get('command') } }));
+  if (q.get('drop') === '1') for (const e of [...sockets]) e.socket.destroy();
+  return [200, { ok: true, sockets: [...sockets].map((e) => ({ id: e.id, deviceId: e.deviceId, device: e.device, client: e.client, keepAlives: e.keepAlives })), capabilities: state.capabilities }];
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1213,8 +1332,22 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': size, 'cache-control': 'no-store' });
     return res.end(Buffer.alloc(size));
   }
-  // "Auf diesem Geraet fortsetzen": Sitzungen anderer Geraete desselben Kontos (gestellt mit /__debug/session). Ohne Verwaltungsrechte nur diese,
-  // mit Verwaltung wie bisher die Sitzungsliste der Verwaltung; der Stopp merkt sich die Stelle am Eintrag und beendet die Sitzung.
+  // "Auf diesem Geraet fortsetzen" (Plan P19) wie Jellyfin: GET /Sessions?ControllableByUserId=... nennt die gestellten Sitzungen anderer Geraete, die eigene
+  // Sitzung der App (solange ihr Steuerkanal offen ist) und, fuer einen Administrator, alle Sitzungen der Verwaltung (auch fremde Konten).
+  if (p === '/Sessions' && method === 'GET' && q.has('ControllableByUserId')) {
+    state.log.push({ at: 'GET /Sessions', controllable: q.get('ControllableByUserId'), active: q.get('ActiveWithinSeconds') });
+    return send(res, 200, [...remoteSessions(), ...selfSessions(), ...(state.admin ? (state.adminData ??= freshAdminData()).sessions : [])]);
+  }
+  // Befehl an die eigene Sitzung der App: kommt ueber ihren Steuerkanal als Playstate-Nachricht an (wie Jellyfin)
+  if ((m = /^\/Sessions\/(self\d+)\/Playing\/(Stop|Pause|Unpause|PlayPause|Seek)$/.exec(p)) && method === 'POST') {
+    const entry = [...sockets].find((s) => s.id === m[1]);
+    state.log.push({ at: 'SelfCommand', SessionId: m[1], Command: m[2], delivered: !!entry });
+    if (!entry) return send(res, 404, { Message: 'Session not found' });
+    wsSend(entry, JSON.stringify({ MessageId: crypto.randomUUID().replace(/-/g, ''), Data: { Command: m[2], ControllingUserId: USER.Id }, MessageType: 'Playstate' }));
+    return send(res, 204, '');
+  }
+  // Ohne Verwaltungsrechte nur die gestellten Sitzungen, mit Verwaltung wie bisher die Sitzungsliste der Verwaltung; der Stopp merkt sich die Stelle am
+  // Eintrag und beendet die Sitzung.
   if (p === '/Sessions' && method === 'GET' && !state.admin && state.remote.length) return send(res, 200, remoteSessions());
   if ((m = /^\/Sessions\/([\w-]+)\/Playing\/Stop$/.exec(p)) && method === 'POST' && state.remote.some((r) => r.id === m[1])) {
     const r = state.remote.find((x) => x.id === m[1]);
@@ -1495,6 +1628,11 @@ const server = http.createServer(async (req, res) => {
     const b = method === 'POST' ? await readBody(req) : {};
     state.log.push({ at: p, ...b });
     if (b.ItemId && p.endsWith('/Stopped') && b.PositionTicks) state.progress.set(b.ItemId, b.PositionTicks);
+    // Was die App selbst meldet: Faehigkeiten (steuerbar?) und ihre Wiedergabe (fuer ihre eigene Sitzung in GET /Sessions)
+    if (p === '/Sessions/Capabilities/Full') state.capabilities = b;
+    if (p === '/Sessions/Playing' && b.ItemId) state.selfPlay = { itemId: b.ItemId, ticks: b.PositionTicks ?? 0, paused: false };
+    if (p === '/Sessions/Playing/Progress' && state.selfPlay && b.ItemId === state.selfPlay.itemId) Object.assign(state.selfPlay, { ticks: b.PositionTicks ?? state.selfPlay.ticks, paused: !!b.IsPaused });
+    if (p === '/Sessions/Playing/Stopped') state.selfPlay = null;
     if (p.endsWith('/Stopped') && state.delays.stopped) await new Promise((r) => setTimeout(r, state.delays.stopped));
     return send(res, 204, '');
   }
@@ -1506,6 +1644,8 @@ const server = http.createServer(async (req, res) => {
   if (p === '/Videos/ActiveEncodings') return send(res, 204, '');
   return send(res, 404, { Message: `Mock: ${method} ${p} nicht implementiert` });
 });
+
+server.on('upgrade', onUpgrade);
 
 if (require.main === module) {
   server.listen(PORT, '127.0.0.1', () => console.log(`Mock-Jellyfin laeuft auf http://127.0.0.1:${PORT}  (Benutzer: demo / Passwort: demo)`));

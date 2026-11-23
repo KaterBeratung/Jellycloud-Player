@@ -11,6 +11,7 @@ import { createTrailer } from '../trailer.js';
 import { requestCard } from './request-card.js';
 import { topTenRow } from './top-ten.js';
 import { seerrState } from '../connection.js';
+import { handoffOffer } from '../handoff.js';
 
 const Media = window.JCMedia;
 const Format = window.JCFormat; // Schreibweisen der Angabenzeilen (src/shared/format.js)
@@ -502,16 +503,21 @@ export function homeView() {
     });
   }
   start();
+  // "Auf diesem Geraet fortsetzen" (Plan P19): fragt die Sitzungen ab, solange die Startseite vorne ist
+  const handoff = handoffOffer(el);
+  handoff.activate();
 
   return {
     el,
     deactivate() {
       away = true;
       hero?.pause();
+      handoff.deactivate();
     },
     activate() {
       away = false;
       hero?.resume();
+      handoff.activate();
       if (stale) {
         stale = false;
         reload();
@@ -526,6 +532,7 @@ export function homeView() {
     destroy() {
       destroyed = true;
       hero?.destroy();
+      handoff.destroy();
     }
   };
 }

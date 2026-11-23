@@ -4,9 +4,9 @@
    Die Rueckgaben sind die Werte der IPC-Handler (ohne { ok, data }-Huelle); Fehler sind JellyfinError/SeerrError mit status und code.
    Laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCBackend). */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'), require('./notifications'), require('./seerr-state'));
-  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings, root.JCNotifications, root.JCSeerrState);
-})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings, Notifications, SeerrState) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'), require('./notifications'), require('./seerr-state'), require('./handoff'));
+  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings, root.JCNotifications, root.JCSeerrState, root.JCHandoff);
+})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings, Notifications, SeerrState, Handoff) {
   'use strict';
 
   const { JellyfinClient, JellyfinError, probeServer, CALLABLE_METHODS } = Jelly;
@@ -171,6 +171,14 @@
       return notices.sync({ seerr: s, user: seerrUser, force, own });
     }
     const noticesState = () => ({ ...notices.list(), manages: !!seerrUser && SeerrState.canViewAllRequests(seerrUser.permissions) });
+
+    // ---------- Auf diesem Geraet fortsetzen (Plan P19) ----------
+    // Die Sitzungen der letzten Abfrage, die dem eigenen Konto gehoeren und nicht dieses Geraet sind: nur sie darf die Oberflaeche anhalten lassen
+    let handoffOwn = { client: null, ids: new Set() };
+    const requireClient = () => {
+      if (!client) throw new JellyfinError('Nicht angemeldet', { status: 401 });
+      return client;
+    };
 
     function requireSeerr() {
       if (seerr) return seerr;
@@ -698,6 +706,34 @@
         notices.setPreferences(next);
         return noticesState();
       },
+      // ---------- Auf diesem Geraet fortsetzen (Plan P19) ----------
+      /**
+       * Sitzungen des eigenen Kontos (src/shared/handoff.js normalizeSession) und die eigenen Kennungen fuer die Regeln. Fremde Sitzungen, die der Server einem
+       * Administrator nennt, verlassen die Rueckseite nie.
+       */
+      async handoffSessions() {
+        const c = requireClient();
+        const raw = await c.remoteSessions();
+        const own = { ownDeviceId: c.deviceId, ownUserId: c.userId };
+        const sessions = Handoff.ownAccount(Handoff.sessionsOf(raw), c.userId);
+        if (client === c) handoffOwn = { client: c, ids: new Set(sessions.filter((s) => s.deviceId !== c.deviceId).map((s) => s.id)) };
+        return { own, sessions };
+      },
+      /** Eintrag fuer die Uebernahme (gemerkte Stelle, abspielbar); timeout in ms, 1 bis 8000. */
+      async handoffItem({ id, timeout } = {}) {
+        if (typeof id !== 'string' || !/^[0-9a-fA-F-]{32,36}$/.test(id)) throw new JellyfinError('Ungültiger Eintrag', { status: 400 });
+        const ms = Math.min(Handoff.TIMEOUT_MS, Math.max(1, Number(timeout) || Handoff.TIMEOUT_MS));
+        return requireClient().handoffItem(id, ms);
+      },
+      /** Haelt die Wiedergabe einer Sitzung an, aber nur einer des eigenen Kontos auf einem anderen Geraet aus der letzten Abfrage. */
+      async handoffStop(sessionId) {
+        const c = requireClient();
+        const id = String(sessionId ?? '');
+        if (handoffOwn.client !== c || !handoffOwn.ids.has(id)) throw new JellyfinError('Diese Sitzung lässt sich nicht anhalten', { status: 403, code: 'HANDOFF_FOREIGN' });
+        await c.stopRemotePlayback(id);
+        return true;
+      },
+
       /**
        * Eine Mitteilung des Systems wurde angetippt (raw: ihr Ziel, wie die Huelle es zurueckgibt). Gehoert sie zum aktiven Profil, gilt der Eintrag als gelesen
        * und das gepruefte Ziel kommt zurueck (die Oberflaeche oeffnet den Titel); sonst null: die App oeffnet sich nur, sie wechselt das Profil nicht von selbst.

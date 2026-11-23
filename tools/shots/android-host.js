@@ -243,6 +243,23 @@ module.exports = async (ctx) => {
   const cardText = (await ev(`(document.querySelector('.about-card')?.innerText ?? '').replace(/\\s+/g, ' ')`)) || `[Info-Karte fehlt; Adresse ${await ev('location.hash')}, Ansicht: ${(await ev(`(document.querySelector('#view')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 120)`))}]`;
   check('Einstellungen > Info zeigt Diagnose: Plattform, Huelle ok, Engine-Version; keine Windows/mpv-Texte', diag && /Hülle ok/.test(diagText) && /Chrome \d+/.test(diagText) && !/mpv|FFmpeg/.test(cardText), `${diagText} | ${cardText.slice(0, 160)}`);
 
+  // ---------- Auf diesem Geraet fortsetzen (P19): auf dem Handy ueber der Reiterleiste ----------
+  await fetch('http://127.0.0.1:8097/__debug/session?device=Wohnzimmer%20Apple%20TV&at=120', { method: 'POST' });
+  await ev(`location.hash = '#/home'`);
+  const capsuleOk = await waitFor(`(() => { const e = document.querySelector('.handoff.in'); return !!e && !e.hidden; })()`, 10000);
+  await ctx.wait(500);
+  // Lage ohne die Einblende-Bewegung (im unsichtbaren Fenster laufen Uebergaenge nicht weiter): Kasten der Anordnung, zentriert ueber translate(-50%)
+  const geo = capsuleOk ? await ev(`(() => { const e = document.querySelector('.handoff'); const t = document.querySelector('.tabbar'); const left = e.offsetLeft - e.offsetWidth / 2; return { gap: Math.round(t.offsetTop - (e.offsetTop + e.offsetHeight)), left: Math.round(left), right: Math.round(innerWidth - left - e.offsetWidth), h: e.offsetHeight, detail: document.querySelector('.handoff-detail')?.textContent }; })()`) : null;
+  check('Auf diesem Geraet fortsetzen auf dem Handy: Kapsel ueber der Reiterleiste (Abstand 10), mit dem Seitenrand links und rechts', capsuleOk && geo.gap >= 8 && geo.gap <= 12 && geo.left === 16 && geo.right === 16 && geo.h >= 56 && /Wohnzimmer Apple TV/.test(geo.detail ?? ''), JSON.stringify(geo));
+  // Aufnahme: das Fenster zeigen (ohne Fokus), damit die Kapsel fertig eingeblendet ist. Es bleibt danach sichtbar: ein wieder verborgenes Fenster gilt als
+  // "hidden", und die Oberflaeche ruht dann (requestAnimationFrame, Abfragen)
+  win.showInactive();
+  await ctx.wait(900);
+  const shotDir = process.env.SHOT_DIR || path.join(root, 'shots');
+  fs.mkdirSync(shotDir, { recursive: true });
+  fs.writeFileSync(path.join(shotDir, 'AH-handoff.png'), (await win.webContents.capturePage()).toPNG());
+  await fetch('http://127.0.0.1:8097/__debug/session?clear=1', { method: 'POST' });
+
   // ---------- Zurueck-Taste (MainActivity fragt window.JCWeb.back) ----------
   await ev(`location.hash = '#/home'`);
   await waitFor(`!!document.querySelector('.home .rows .row')`, 8000);

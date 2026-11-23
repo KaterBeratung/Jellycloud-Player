@@ -95,6 +95,9 @@ const DEFAULT_SETTINGS = {
     pauseScreen: true, // Pausenbildschirm: nach einigen Sekunden Pause zeigt der Player Logo, Beschreibung und "Endet um ..."
     pauseScreenSec: 6, // so lange muss die Pause ohne Bedienung dauern
     preventSleep: true, // Bildschirm waehrend der Wiedergabe nicht abschalten
+    // Andere Geraete: "Auf diesem Geraet fortsetzen" auf der Startseite anbieten (Plan P19). Aus: keine Abfrage der Sitzungen; den Stopp anderer Geraete nimmt
+    // die App waehrend der Wiedergabe trotzdem an (sonst koennte kein anderes Geraet uebernehmen)
+    showHandoff: true,
     // Netzwerk
     maxBitrateMbps: 0, // 0 = Original (Direct Play), sonst Server begrenzt per Transcode
     allowTranscode: true, // false: nur Direct Play / Direct Stream

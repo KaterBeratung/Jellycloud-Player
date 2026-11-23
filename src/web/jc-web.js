@@ -279,6 +279,10 @@
         return raw ? backend.systemNotificationTapped(raw) : null;
       }),
     onNotificationOpen: subscribe(listeners.open),
+    // Auf diesem Geraet fortsetzen (Plan P19)
+    handoffSessions: () => call(() => backend.handoffSessions()),
+    handoffItem: (req) => call(() => backend.handoffItem({ id: String(req?.id ?? ''), timeout: Number(req?.timeout) || undefined })),
+    handoffStop: (id) => call(() => backend.handoffStop(String(id ?? '').slice(0, 120))),
     discordStatus: () => call(async () => ({ state: 'off', error: '', user: '' })),
     discordTest: unsupported('Discord'),
     cacheInfo: () => call(async () => ({ images: 0, bytes: 0 })),

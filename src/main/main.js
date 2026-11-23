@@ -14,6 +14,7 @@ const { ImageCache } = require('./image-cache');
 const { DiscordPresence, createPosterResolver } = require('./discord-presence');
 const { pipePath: discordPipePath } = require('./discord-ipc');
 const { SystemNotifier } = require('./system-notify');
+const { RemoteChannel } = require('./remote-channel');
 
 const ROOT = path.join(__dirname, '..', '..');
 const EMBED_REFERER = 'https://jellycloud.player/';
@@ -55,6 +56,14 @@ let presence = null;
  * vorn; gehoert die Mitteilung zum aktiven Profil, merkt sich der Hauptprozess ihr Ziel, bis die Oberflaeche es abholt (notify:take; sie kann gerade neu laden).
  */
 let pendingOpen = null;
+
+/**
+ * Steuerkanal (Plan P19, src/main/remote-channel.js): offen, solange der Player laeuft; so kann ein anderes Geraet desselben Kontos die Wiedergabe hier
+ * anhalten und dort weiterspielen ("Auf diesem Geraet fortsetzen"). Angenommen werden nur Stop, Pause, Unpause und PlayPause.
+ */
+const channel = new RemoteChannel();
+channel.on('command', (command) => player?.remote(command));
+
 const notifier = new SystemNotifier({
   create: (options) => new Notification(options),
   isSupported: () => Notification.isSupported(),
@@ -328,6 +337,10 @@ function registerIpc() {
   ipcMain.handle('notify:systemStatus', wrap(() => notifier.status()));
   ipcMain.handle('notify:systemRequest', wrap(() => notifier.request()));
   ipcMain.handle('notify:systemSettings', wrap(() => shell.openExternal('ms-settings:notifications').then(() => true)));
+  // ---------- Auf diesem Geraet fortsetzen (Plan P19): Sitzungen des eigenen Kontos, Eintrag, Stopp einer eben gelesenen eigenen Sitzung ----------
+  ipcMain.handle('handoff:sessions', wrap(() => backend.handoffSessions()));
+  ipcMain.handle('handoff:item', wrap((req) => backend.handoffItem({ id: String(req?.id ?? ''), timeout: Number(req?.timeout) || undefined })));
+  ipcMain.handle('handoff:stop', wrap((id) => backend.handoffStop(String(id ?? '').slice(0, 120))));
   ipcMain.handle('notify:take', wrap(() => {
     const t = pendingOpen;
     pendingOpen = null;
@@ -517,7 +530,12 @@ async function startUp() {
     fake,
     audioProbe: fake ? null : audioProbe
   });
-  player.on('active', (on) => mainWin?.webContents.send('player:active', on));
+  player.on('active', (on) => {
+    mainWin?.webContents.send('player:active', on);
+    // Steuerbar nur waehrend der Wiedergabe: Kanal und Anmeldung der Steuerung kommen und gehen mit dem Player
+    if (on) channel.open(backend.client);
+    else channel.close();
+  });
   // Discord Rich Presence: jede Aenderung der Wiedergabe (Start, Pause, Sprung, Ende) und der Einstellungen stoesst die Aktualisierung an
   presence = new DiscordPresence({
     getSettings: () => config.settings.discord,
@@ -562,6 +580,8 @@ async function startUp() {
         presence,
         /** Mitteilungen des Systems: die Szenarien setzen create (und isSupported) auf eine Attrappe und fangen so jede Mitteilung ab (tools/shots/system-notify.js) */
         notifier,
+        /** Steuerkanal waehrend der Wiedergabe (tools/shots/handoff.js) */
+        channel,
         wait: (ms) => new Promise((r) => setTimeout(r, ms)),
         /** Startanimation fuer die naechsten Starts (Neu laden) ein- oder ausschalten; die Szenarien beginnen ohne (devNoSplash) */
         splash: (on) => {
