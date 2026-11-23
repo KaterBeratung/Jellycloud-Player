@@ -46,13 +46,8 @@ export function fmtBitrate(bps) {
   return bps >= 1e6 ? `${(bps / 1e6).toFixed(bps >= 1e7 ? 0 : 1)} Mbit/s` : `${Math.round(bps / 1e3)} kbit/s`;
 }
 
-export function fmtSize(bytes) {
-  if (!bytes) return '';
-  const gb = bytes / 1024 ** 3;
-  if (gb >= 1) return `${gb.toFixed(gb >= 10 ? 1 : 2)} GB`;
-  const mb = bytes / 1024 ** 2;
-  return mb >= 1 ? `${Math.round(mb)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
+/** Groesse einer Datei ("4,27 GB"; dieselbe Schreibweise wie im Informationsblock der Detailseite, src/shared/detail-facts.js). */
+export const fmtSize = (bytes) => window.JCDetailFacts.size(bytes, getLocale()) ?? '';
 
 export function langName(code) {
   if (!code || code === 'und') return '';

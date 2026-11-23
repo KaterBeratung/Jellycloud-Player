@@ -2,7 +2,7 @@ import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { state, updateSettings } from '../state.js';
 import { api, mapImage } from '../api.js';
-import { lazyImage, pageStatus, showPageStatus, row } from '../ui.js';
+import { infoBlock, lazyImage, pageStatus, showPageStatus, row } from '../ui.js';
 import { seerrTitleTag } from '../tags.js';
 import { invalidate } from '../router.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
@@ -116,12 +116,10 @@ export function seerrTitleView({ type, id }) {
     paintActions();
   }
 
+  /** "Abspielen" wie auf der Detailseite der Mediathek (Format.playLabel, PlayAction der Apple-App): eine angefangene Serie "S1 E3 Fortsetzen ab 12:40". */
   function playButton() {
-    const ep = playTarget?.episode;
-    const series = libraryItem?.Type === 'Series';
-    const resume = series ? playTarget.resume : (libraryItem?.UserData?.PlaybackPositionTicks ?? 0) > 0;
-    const label = series && ep ? t(resume ? 'detail.continueEp' : 'detail.playEp', { ep: Format.episodeNumbers(ep) }) : t(resume ? 'action.resume' : 'action.play');
-    return h('button', { class: 'btn primary xl', type: 'button', onclick: () => playItem({ itemId: (series ? ep : libraryItem).Id, resume: true }) }, icon('play', 22), h('span', null, label));
+    const target = libraryItem?.Type === 'Series' ? playTarget?.episode ?? null : libraryItem;
+    return h('button', { class: 'btn primary xl', type: 'button', 'data-action': 'play', disabled: !target, onclick: () => target && playItem({ itemId: target.Id, resume: true }) }, icon('play', 22), h('span', null, Format.playLabel(target, libraryItem, getLocale())));
   }
 
   function requestButton(primary) {
@@ -185,9 +183,7 @@ export function seerrTitleView({ type, id }) {
     if (cast) parts.push(cast);
     parts.push(relatedHost);
     const groups = Facts.informationGroups(details, { imdb: extras.imdb, lang: getLocale(), region: regionOf() });
-    if (groups.length) {
-      parts.push(h('section', { class: 'info-block' }, h('h2', null, t('seerr.page.information')), h('div', { class: 'info-groups' }, groups.map((g) => h('div', { class: 'info-group' }, h('h3', null, g.title), h('dl', null, g.rows.flatMap((r) => [h('dt', null, r.label), h('dd', null, r.value)])))))));
-    }
+    if (groups.length) parts.push(infoBlock(t('detail.information'), groups));
     sections.replaceChildren(...parts);
   }
 

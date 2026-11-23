@@ -23,6 +23,10 @@ const paths = {
   'check-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12.4 2.8 2.8L16.2 9.6"/></g>`,
   // ausgefuellter Kreis mit Haken (aktives Profil, bestaetigtes Geraet)
   'check-circle-fill': `<path ${F} fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm4.75 6.6a1 1 0 0 0-1.41-.04l-4.6 4.4-2.06-2.02a1 1 0 1 0-1.4 1.43l2.75 2.7a1 1 0 0 0 1.39.01l5.29-5.07a1 1 0 0 0 .04-1.41z"/>`,
+  // leerer Kreis (Kontextmenue: als ungesehen markieren, wie "circle" der Apple-App)
+  circle: `<circle ${S} cx="12" cy="12" r="9"/>`,
+  // Herz, durchgestrichen (Favorit entfernen, wie heart.slash)
+  'heart-off': `<g ${S}><path d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/><path d="M4 4.5l16 15"/></g>`,
   // Person im Kreis (gemerktes Profil)
   'person-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.7 18.2c1.1-2 3-3.1 5.3-3.1s4.2 1.1 5.3 3.1"/></g>`,
   // Telefon mit Funkwellen links und rechts (Quick Connect, wie das Symbol der Apple-App)

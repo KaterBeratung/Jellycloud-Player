@@ -2,10 +2,10 @@ import { h, icon } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { api, backdropOf, landscapeOf, logoOf, itemHref } from '../api.js';
 import { state, updateSettings, SUPPORTED_COLLECTIONS } from '../state.js';
-import { lazyImage, pageStatus, row, showPageStatus, skeletonRow, titleOf, toast } from '../ui.js';
+import { lazyImage, pageStatus, row, showPageStatus, skeletonRow, titleOf } from '../ui.js';
 import { cardTags } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
-import { playItem, resolveSeriesTarget } from '../actions.js';
+import { playItem, playSeries } from '../actions.js';
 import { refreshGlow } from '../glow.js';
 import { createTrailer } from '../trailer.js';
 import { requestCard } from './request-card.js';
@@ -263,12 +263,11 @@ export function homeView() {
   let away = false; // die Startseite liegt gerade im Speicher des Routers (nicht im Bild)
   let hero = null;
   const onPlay = (item) => playItem({ itemId: item.Id, resume: true });
-  const onPlaySeries = async (item) => {
-    if (item.Type !== 'Series') return onPlay(item);
-    const { episode, resume } = await resolveSeriesTarget(item.Id);
-    if (episode) playItem({ itemId: episode.Id, resume });
-    else toast(t('toast.noEpisodes'), { type: 'error' });
-  };
+  const onPlaySeries = (item) => playSeries(item);
+  let loadSeq = 0; // juengstes Laden: ein ueberholtes (zwei Aenderungen kurz hintereinander) setzt nichts mehr ein
+  let stale = false; // der Stand eines Eintrags hat sich geaendert, waehrend die Startseite im Speicher lag
+  let loadedOnce = false; // die Reihen standen schon einmal (erst dann gibt es ein Banner, das beim Neuladen stehen bleiben kann)
+  const reload = () => load({ soft: loadedOnce }).catch(() => {}); // scheitert es, bleibt die Startseite, wie sie war
 
   /**
    * Reihe "Filme im Trend" (Seerr) an der Stelle von `slot`: nur mit Seerr und nur mit Titeln (Entscheidung E8 wie die Apple-App: kein Hinweis zum Einrichten,
@@ -282,7 +281,7 @@ export function homeView() {
         if (!list.length) return slot.remove();
         const sec = row(t('home.trending'), list, { sub: t('home.trendingSub'), render: (r, i) => requestCard(r, i) });
         sec.classList.add('trend-row');
-        slot.replaceWith(sec);
+        takePlace(slot, sec);
         syncEmpty();
       })
       .catch(() => {
@@ -307,7 +306,7 @@ export function homeView() {
     const force = forceTopTen;
     forceTopTen = false;
     const put = (kind, next) => {
-      slots[kind].replaceWith(next);
+      takePlace(slots[kind], next);
       slots[kind] = next;
     };
     window.jc
@@ -331,6 +330,23 @@ export function homeView() {
       });
   }
 
+  /**
+   * Stelle jeder Reihe, solange sie neu aufgebaut wird (Neu laden nach einer Aenderung): eine Reihe, die wiederkommt, steht an derselben Stelle wie vorher,
+   * auch wenn sie erst spaeter kommt (Top 10, Trends).
+   */
+  let keptScroll = new Map();
+  const restoreScroll = (node) => {
+    const left = keptScroll.get(node.dataset?.row);
+    const scroller = node.querySelector?.(':scope > .row-body > .scroller');
+    if (left && scroller) scroller.scrollTo({ left, behavior: 'instant' });
+  };
+  /** Ein Platz (Seerr-Reihe) wird zur Reihe oder verschwindet: die Reihe uebernimmt seine Kennung und ihre alte Stelle. */
+  function takePlace(slot, next) {
+    if (slot.dataset.row) next.dataset.row = slot.dataset.row;
+    slot.replaceWith(next);
+    restoreScroll(next);
+  }
+
   /** "Noch nichts da" gilt nur, solange weder Banner noch eine Reihe dasteht: kommt eine Reihe von Seerr dazu, geht der Hinweis (wie die Apple-App). */
   let emptyShown = false;
   function syncEmpty() {
@@ -341,7 +357,12 @@ export function homeView() {
     }
   }
 
-  async function load() {
+  /**
+   * Startseite laden. soft: neu laden, nachdem sich der Stand eines Eintrags geaendert hat (Kontextmenue, Detailseite): das Banner bleibt stehen, die Reihen
+   * wechseln in einem Zug ohne Platzhalter und ohne Einblenden, jede an ihrer Stelle.
+   */
+  async function load({ soft = false } = {}) {
+    const mine = ++loadSeq;
     const cfg = HomeRows.homeConfig(state.settings.home); // Anpassung der Startseite (Einstellungen > Startseite)
     const libs = state.views.filter((v) => SUPPORTED_COLLECTIONS.has(v.CollectionType));
     // Die Neuzugaenge je Bibliothek laufen gleichzeitig mit den anderen Abfragen (frueher erst danach: eine Wartezeit mehr bis zur fertigen Startseite)
@@ -352,16 +373,22 @@ export function homeView() {
       api.getItems({ filters: 'IsFavorite', recursive: true, includeItemTypes: 'Movie,Series', limit: 20, sortBy: 'DateCreated', sortOrder: 'Descending' }).then((r) => r.Items ?? []).catch(() => [])
     ]);
     const latestPerLib = await latestAll;
-    if (destroyed) return;
+    if (destroyed || mine !== loadSeq) return;
 
+    keptScroll = soft ? new Map([...rows.querySelectorAll(':scope > [data-row]')].map((r) => [r.dataset.row, r.querySelector(':scope > .row-body > .scroller')?.scrollLeft ?? 0])) : new Map();
     rows.replaceChildren();
-    heroHost.replaceChildren();
-    el.classList.toggle('no-hero', !cfg.hero);
+    rows.classList.toggle('settled', soft); // nur beim ersten Aufbau steigen die Karten ein
+    showPageStatus(el, null);
+    emptyShown = false;
+    if (!soft) {
+      heroHost.replaceChildren();
+      el.classList.toggle('no-hero', !cfg.hero);
+    }
 
     // Banner (wie die Apple-App, Entscheidung E8): nur Neues aus der Mediathek, Filme und Serien abwechselnd, jeweils die neuesten zuerst, nur mit
     // Hintergrundbild, so viele Folien wie eingestellt. Keine Titel aus Seerr und kein Weiterschauen darin.
     const entries = [];
-    if (cfg.hero) {
+    if (cfg.hero && !soft) {
       const withBackdrop = (list) => list.filter((i) => backdropOf(i));
       const movies = withBackdrop(latestPerLib.filter((l) => l.view.CollectionType !== 'tvshows').flatMap((l) => l.items));
       const shows = withBackdrop(latestPerLib.filter((l) => l.view.CollectionType === 'tvshows').flatMap((l) => l.items));
@@ -377,7 +404,9 @@ export function homeView() {
         if (shows[i]) add(shows[i], 'series');
       }
     }
-    if (!cfg.hero) {
+    if (soft) {
+      /* Neu laden nach einer Aenderung: das Banner bleibt, wie es ist */
+    } else if (!cfg.hero) {
       /* Banner ausgeschaltet: kein Platzhalter, die Reihen beginnen unter der Kopfleiste (.home.no-hero) */
     } else if (entries.length) {
       const tr = state.settings.trailer ?? {};
@@ -391,7 +420,7 @@ export function homeView() {
     } else {
       heroHost.append(h('div', { class: 'hero-empty' }));
     }
-    refreshGlow(); // Ambient Glow: das Banner steht jetzt (Reichweite von unten, oberer Schein erst ohne Banner)
+    if (!soft) refreshGlow(); // Ambient Glow: das Banner steht jetzt (Reichweite von unten, oberer Schein erst ohne Banner)
 
     // Reihen in der Standardreihenfolge aus HomeRows.defaultOrder (Weiterschauen, Als Naechstes, Top 10, Neuzugaenge je Bibliothek, Favoriten, Filme im Trend);
     // der Nutzer kann sie umordnen und ausblenden (Einstellungen > Startseite, je Profil). Die Reihen von Seerr (Top 10, Filme im Trend) gibt es nur mit
@@ -419,7 +448,13 @@ export function homeView() {
     }
     const present = HomeRows.defaultOrder(latestPerLib.map((l) => l.view.Id)).filter((id) => builders.has(id));
     const shown = HomeRows.arrangeRows(present, cfg.order, cfg.hidden);
-    for (const id of shown) rows.append(builders.get(id)());
+    for (const id of shown) {
+      const node = builders.get(id)();
+      node.dataset.row = id;
+      rows.append(node);
+      restoreScroll(node);
+    }
+    loadedOnce = true;
     if (!contentRows) {
       // Nichts aus der Mediathek (und damit auch kein Banner): "Noch nichts da" fuer die ganze Seite; kommt eine Reihe von Seerr, geht der Hinweis
       showPageStatus(el, pageStatus({ symbol: 'film', title: t('home.emptyTitle'), text: t('home.emptyText') }));
@@ -462,6 +497,16 @@ export function homeView() {
     activate() {
       away = false;
       hero?.resume();
+      if (stale) {
+        stale = false;
+        reload();
+      }
+    },
+    /** Der Stand eines Eintrags hat sich geaendert (actions.js itemStateChanged): Weiterschauen, Als Naechstes, Favoriten und die Haken neu vom Server. */
+    itemChanged() {
+      if (destroyed) return;
+      if (away) stale = true;
+      else reload();
     },
     destroy() {
       destroyed = true;

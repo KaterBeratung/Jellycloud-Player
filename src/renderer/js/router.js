@@ -43,6 +43,11 @@ export function refresh() {
   return render();
 }
 
+/** Die lebenden Ansichten: die sichtbare und die im Speicher (fuer Aenderungen am Stand eines Eintrags, actions.js itemStateChanged). */
+export function liveViews() {
+  return [...(current ? [current.view] : []), ...[...cache.values()].map((c) => c.view)];
+}
+
 export function currentRoute() {
   return current?.info ?? null;
 }

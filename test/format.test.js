@@ -70,6 +70,29 @@ test('Uhrzeit: Minuten und Sekunden, ab einer Stunde mit Stunden', () => {
   assert.equal(F.clock(59.9), '0:59');
 });
 
+test('"Abspielen" (PlayAction.label der Apple-App): Serie mit der Folge davor, angefangen "Fortsetzen ab", Kollektion mit dem Titel', () => {
+  const at = (sec) => ({ PlaybackPositionTicks: sec * 1e7 });
+  const movie = { Type: 'Movie', Name: 'Film' };
+  const series = { Type: 'Series', Name: 'Serie' };
+  const ep = { Type: 'Episode', Name: 'Folge', ParentIndexNumber: 1, IndexNumber: 3 };
+  assert.equal(F.playLabel(null, movie), 'Abspielen', 'ohne Ziel');
+  assert.equal(F.playLabel(movie, movie), 'Abspielen');
+  assert.equal(F.playLabel({ ...movie, UserData: at(760) }, movie), 'Fortsetzen ab 12:40');
+  assert.equal(F.playLabel({ ...movie, UserData: at(3725) }, movie), 'Fortsetzen ab 1:02:05');
+  assert.equal(F.playLabel({ ...ep, UserData: at(760) }, series), 'S1 E3 Fortsetzen ab 12:40');
+  assert.equal(F.playLabel(ep, series), 'S1 E3 Abspielen', 'die naechste Folge, noch nicht angefangen');
+  assert.equal(F.playLabel({ Type: 'Episode' }, series), 'S1 E1 Abspielen', 'ohne Nummern: 1');
+  assert.equal(F.playLabel({ ...ep, UserData: at(760) }, ep), 'Fortsetzen ab 12:40', 'auf der Seite der Folge selbst ohne Nummern');
+  assert.equal(F.playLabel({ ...movie, UserData: at(0) }, movie), 'Abspielen', 'Stelle 0 gilt nicht als angefangen');
+  assert.equal(F.playLabel({ ...movie, Name: 'Teil 2', UserData: at(10) }, { Type: 'BoxSet' }), 'Fortsetzen: Teil 2');
+  assert.equal(F.playLabel({ ...movie, Name: 'Teil 1' }, { Type: 'BoxSet' }), 'Abspielen: Teil 1');
+  assert.equal(F.playLabel({ ...ep, UserData: at(760) }, series, 'en'), 'S1 E3 Resume from 12:40');
+  assert.equal(F.playLabel(null, movie, 'en'), 'Play');
+  assert.equal(F.resumeSeconds({ UserData: at(90) }), 90);
+  assert.equal(F.resumeSeconds({ UserData: {} }), null);
+  assert.equal(F.resumeSeconds(null), null);
+});
+
 test('Art eines Eintrags in einem Wort; Unbekanntes heisst Film', () => {
   assert.deepEqual(['Movie', 'Series', 'Episode', 'Season', 'BoxSet', 'Video'].map((k) => F.kindName(k)), ['Film', 'Serie', 'Folge', 'Staffel', 'Kollektion', 'Film']);
   assert.equal(F.kindName('Series', 'en'), 'Show');

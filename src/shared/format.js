@@ -10,8 +10,8 @@
 
   const WORDS = {
     // season/seasons: vor Nummern ("Staffel 3", "Season 3"); one/many: nach einer Anzahl ("1 Staffel", "3 seasons")
-    de: { h: 'Std.', min: 'Min.', season: 'Staffel', seasons: 'Staffeln', one: 'Staffel', many: 'Staffeln', kinds: { Movie: 'Film', Series: 'Serie', Episode: 'Folge', Season: 'Staffel', BoxSet: 'Kollektion' } },
-    en: { h: 'h', min: 'min', season: 'Season', seasons: 'Seasons', one: 'season', many: 'seasons', kinds: { Movie: 'Movie', Series: 'Show', Episode: 'Episode', Season: 'Season', BoxSet: 'Collection' } }
+    de: { h: 'Std.', min: 'Min.', season: 'Staffel', seasons: 'Staffeln', one: 'Staffel', many: 'Staffeln', kinds: { Movie: 'Film', Series: 'Serie', Episode: 'Folge', Season: 'Staffel', BoxSet: 'Kollektion' }, play: 'Abspielen', resumeAt: 'Fortsetzen ab', playOf: 'Abspielen: ', resumeOf: 'Fortsetzen: ' },
+    en: { h: 'h', min: 'min', season: 'Season', seasons: 'Seasons', one: 'season', many: 'seasons', kinds: { Movie: 'Movie', Series: 'Show', Episode: 'Episode', Season: 'Season', BoxSet: 'Collection' }, play: 'Play', resumeAt: 'Resume from', playOf: 'Play: ', resumeOf: 'Resume: ' }
   };
   const words = (lang) => WORDS[String(lang || '').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de'];
   const int = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
@@ -102,5 +102,26 @@
     return k[type] || k.Movie;
   }
 
-  return { clock, runtime, seasonCount, seasonList, score, rating, episodeNumbers, episodeLabel, kindName };
+  /** Die gemerkte Stelle eines Eintrags in Sekunden (UserData.PlaybackPositionTicks von Jellyfin), null, wenn er nicht angefangen ist. */
+  function resumeSeconds(item) {
+    const ticks = Number(item && item.UserData && item.UserData.PlaybackPositionTicks);
+    return Number.isFinite(ticks) && ticks > 0 ? ticks / 1e7 : null;
+  }
+
+  /**
+   * Beschriftung von "Abspielen" (Vorlage: PlayAction.label der Apple-App): target ist, was startet, shown die Seite, auf der der Knopf steht (die
+   * Detailseite der Mediathek und die Seite eines Seerr-Titels, der in der Mediathek liegt). Eine Kollektion nennt den Titel, den sie startet
+   * ("Fortsetzen: Titel"); eine Serie stellt die Folge voran ("S2 E5 "); angefangen "Fortsetzen ab 10:20", sonst "Abspielen". Ohne Ziel "Abspielen".
+   */
+  function playLabel(target, shown, lang) {
+    const w = words(lang);
+    if (!target || typeof target !== 'object') return w.play;
+    const resume = resumeSeconds(target);
+    const type = shown && shown.Type;
+    if (type === 'BoxSet') return (resume !== null ? w.resumeOf : w.playOf) + (typeof target.Name === 'string' ? target.Name : '');
+    const prefix = type === 'Series' ? `S${int(target.ParentIndexNumber) ?? 1} E${int(target.IndexNumber) ?? 1} ` : '';
+    return prefix + (resume !== null ? `${w.resumeAt} ${clock(resume)}` : w.play);
+  }
+
+  return { clock, runtime, seasonCount, seasonList, score, rating, episodeNumbers, episodeLabel, kindName, resumeSeconds, playLabel };
 });

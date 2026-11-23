@@ -98,12 +98,12 @@ module.exports = async (ctx) => {
   await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await ctx.wait(300);
 
-  // Technik-Info: eine Zeile je Sprache
-  await ctx.run(`document.querySelector('details.tech')?.setAttribute('open', '')`);
-  await ctx.wait(400);
-  const tech = await ctx.run(`(() => { const card = [...document.querySelectorAll('.tech-card')].find((c) => c.querySelector('h4')?.textContent.trim() === 'Untertitel'); return card ? [...card.querySelectorAll('dt')].map((d) => d.textContent.trim()) : null; })()`);
-  check('Technik-Info: eine Zeile je Sprache statt je Spur', Array.isArray(tech) && tech.length === 1 + otherLangs + 1 && tech.length < total, JSON.stringify(tech));
-  check('Technik-Info: mehrere Spuren einer Sprache stehen mit Anzahl da ("Deutsch (3)")', tech.includes('Deutsch (3)') && tech.includes('Englisch (2)'), JSON.stringify(tech));
+  // Informationen (immer offen, wie die Apple-App): die Untertitel als Sprachen, jede einmal; ohne Sprache "Untertitel n"
+  const tech = await ctx.run(`(() => { const dt = [...document.querySelectorAll('.detail .info-block .info-group dt')].find((d) => d.textContent.trim() === 'Untertitel'); return dt ? dt.nextElementSibling.textContent.split(', ') : null; })()`);
+  check('Informationen: die Untertitel als Sprachen statt je Spur', Array.isArray(tech) && tech.length === 1 + otherLangs + 1 && tech.length < total, JSON.stringify(tech));
+  check('Informationen: mehrere Spuren einer Sprache stehen nur einmal da (Deutsch hat drei, Englisch zwei, Japanisch zwei)', tech.filter((x) => x === 'Deutsch').length === 1 && tech.filter((x) => x === 'Englisch').length === 1 && tech.filter((x) => x === 'Japanisch').length === 1, JSON.stringify(tech));
+  check('Informationen: eine Spur ohne Sprache und ohne Titel heisst "Untertitel n" (gezaehlt unter den Untertiteln)', tech.at(-1) === `Untertitel ${total}`, JSON.stringify(tech.at(-1)));
+  check('Keine aufklappbaren "Technischen Details" mehr', !(await ctx.run(`!!document.querySelector('details.tech, .tech-card')`)));
 
   // ---------- 2. Detailseite: wenige Spuren bleiben eine einfache Liste ----------
   await ctx.run(`location.hash = '#/item/${few.Id}'`);

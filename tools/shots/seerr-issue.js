@@ -1,4 +1,4 @@
-// Problem an Seerr melden (Detailseite > Mehr > Problem melden): Art (Video, Audio, Untertitel, Sonstiges), Kommentar freiwillig, Staffel und Folge bei Serien,
+// Problem an Seerr melden (Detailseite > Warnschild bei den Knoepfen): Art (Video, Audio, Untertitel, Sonstiges), Kommentar freiwillig, Staffel und Folge bei Serien,
 // Fehler im Fenster (JC_DEV=1). Nutzt den Mock-Server mit Mock-Seerr (eigener Port 8897).
 //   $env:JC_DEV='1'; $env:JC_FAKE_MPV='1'; electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/seerr-issue.js
 const path = require('node:path');
@@ -39,13 +39,22 @@ module.exports = async (ctx) => {
     await ctx.run(`window.jc.seerrConnect({ url: 'http://127.0.0.1:${PORT}', username: 'demo', password: 'demo' }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
     await ctx.wait(1800);
   };
+  // Erst die neue Seite: Leiste und "Mehr" stehen sonst noch von der vorigen da (ein sofortiger Klick traefe deren Warnschild)
   const openItem = async (item) => {
     await ctx.run(`location.hash = '#/item/${item.Id}'`);
-    return waitFor(`!!document.querySelector('.detail .detail-actions, .detail-actions') && [...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Mehr')`, 8000);
+    const ok = await waitFor(`[...document.querySelectorAll('.detail .detail-title, .detail .detail-logo')].some((e) => (e.alt || e.textContent).trim() === ${JSON.stringify(item.Name)}) && [...document.querySelectorAll('.detail-actions button')].some((b) => b.getAttribute('aria-label') === 'Mehr')`, 8000);
+    await ctx.wait(300);
+    return ok;
   };
   const openMenu = async () => {
     await ctx.run(`[...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Mehr').click()`);
     await ctx.wait(500);
+  };
+  // Seit 1.2.15 (P16, wie die Apple-App) nur noch ueber das Warnschild bei den Knoepfen, nicht mehr zusaetzlich im Menue "Mehr"
+  // Erst wenn das vorige Fenster ganz weg ist: beim Ausblenden steht es noch im Dokument (ohne Zeigerereignisse), Klicks per querySelector traefen sonst seine Knoepfe
+  const openIssue = async () => {
+    await waitFor(`!document.querySelector('.mdl-scrim')`, 3000);
+    await ctx.run(`document.querySelector('.detail-actions [data-action="issue"]').click()`);
   };
   const menuLabels = () => ctx.run(`[...document.querySelectorAll('.menu .menu-item .lbl')].map((e) => e.textContent.trim())`);
   const closeMenuKey = () => ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
@@ -73,9 +82,9 @@ module.exports = async (ctx) => {
 
   // ---------- Film ----------
   await openItem(movie);
-  const direct = await ctx.run(`(() => { const b = document.querySelector('.detail-actions [data-action="issue"]'); if (!b) return null; const bar = [...b.parentElement.children]; return { label: b.getAttribute('aria-label'), title: b.title, svg: !!b.querySelector('svg'), icon: b.querySelector('svg path')?.getAttribute('d')?.slice(0, 14), index: bar.indexOf(b), more: bar.findIndex((x) => x.getAttribute('aria-label') === 'Mehr'), fav: bar.findIndex((x) => /Favorit/i.test(x.title)), w: Math.round(b.getBoundingClientRect().width), h: Math.round(b.getBoundingClientRect().height), favW: Math.round(b.previousElementSibling.getBoundingClientRect().width), favH: Math.round(b.previousElementSibling.getBoundingClientRect().height) }; })()`);
+  const direct = await ctx.run(`(() => { const b = document.querySelector('.detail-actions [data-action="issue"]'); if (!b) return null; const bar = [...b.parentElement.children]; return { label: b.getAttribute('aria-label'), title: b.title, svg: !!b.querySelector('svg'), icon: b.querySelector('svg path')?.getAttribute('d')?.slice(0, 14), index: bar.indexOf(b), more: bar.findIndex((x) => x.getAttribute('aria-label') === 'Mehr'), played: bar.findIndex((x) => x.dataset.action === 'played'), w: Math.round(b.getBoundingClientRect().width), h: Math.round(b.getBoundingClientRect().height), favW: Math.round(b.previousElementSibling.getBoundingClientRect().width), favH: Math.round(b.previousElementSibling.getBoundingClientRect().height) }; })()`);
   check('Mit Seerr: ein Warnschild "Problem melden" steht gleich in der Leiste der Detailseite, mit Beschriftung fuer Hilfsprogramme', !!direct && direct.label === 'Problem melden' && direct.title === 'Problem melden' && direct.svg, JSON.stringify(direct));
-  check('...zwischen Favorit und "Mehr", gleich gross wie die anderen runden Knoepfe', !!direct && direct.index === direct.fav + 1 && direct.index === direct.more - 1 && direct.w === direct.favW && direct.h === direct.favH, JSON.stringify(direct));
+  check('...nach Favorit und Gesehen, vor "Mehr" (Reihenfolge der Apple-App), gleich gross wie die anderen runden Knoepfe', !!direct && direct.index === direct.played + 1 && direct.index === direct.more - 1 && direct.w === direct.favW && direct.h === direct.favH, JSON.stringify(direct));
   await ctx.capture(path.join(out, 'SI-warnschild.png'));
   await ctx.run(`document.querySelector('.detail-actions [data-action="issue"]').click()`);
   check('Ein Klick auf das Warnschild oeffnet das Fenster (ohne Umweg ueber das Menue)', (await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000)) && /Problem melden: Paper Moons/.test(await ctx.run(`document.querySelector('.mdl-title').textContent`)));
@@ -83,8 +92,9 @@ module.exports = async (ctx) => {
   await waitFor(`!document.querySelector('.mdl-scrim:not(.closing)')`, 3000);
   await openMenu();
   const labels = await menuLabels();
-  check('Mit Seerr: der Eintrag "Problem melden …" steht im Menue "Mehr" (bei einem Film mit TMDB-Nummer)', labels.some((l) => /^Problem melden/.test(l)), labels.join(' | '));
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  check('Mit Seerr: kein zweiter Weg im Menue "Mehr" (nur das Warnschild, wie die Apple-App)', labels.length > 0 && !labels.some((l) => /Problem melden/.test(l)), labels.join(' | '));
+  await closeMenuKey();
+  await openIssue();
   check('Das Fenster oeffnet sich mit dem Titel des Films', (await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000)) && (await ctx.run(`/Problem melden: Paper Moons/.test(document.querySelector('.mdl-title').textContent)`)), await ctx.run(`document.querySelector('.mdl-title')?.textContent`));
   check('...vier Arten: Video, Audio, Untertitel, Sonstiges', JSON.stringify(await ctx.run(`[...document.querySelectorAll('.issue-type')].map((b) => b.textContent.trim())`)) === JSON.stringify(['Video', 'Audio', 'Untertitel', 'Sonstiges']));
   check('...ein freiwilliger Kommentar (Beschriftung "Kommentar (freiwillig)")', await ctx.run(`/freiwillig/.test(document.querySelector('.mdl-field span')?.textContent ?? '') && !!document.querySelector('textarea.issue-comment')`));
@@ -102,8 +112,7 @@ module.exports = async (ctx) => {
   check('...das Fenster schliesst sich, eine Bestaetigung erscheint', (await waitFor(`!document.querySelector('.mdl-scrim:not(.closing)')`, 3000)) && /gemeldet/.test(await toasts()), await toasts());
 
   // ---------- Ohne Kommentar ----------
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('audio');
   await ctx.run(`${sendBtn()}.click()`);
@@ -114,8 +123,7 @@ module.exports = async (ctx) => {
   await waitFor(`!document.querySelector('.mdl-scrim:not(.closing)')`, 3000);
 
   // ---------- Abbrechen ----------
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('video');
   await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
@@ -123,9 +131,8 @@ module.exports = async (ctx) => {
 
   // ---------- Serie und Folge ----------
   await openItem(show);
-  await openMenu();
-  check('Serie: der Eintrag ist da', (await menuLabels()).some((l) => /^Problem melden/.test(l)), (await menuLabels()).join(' | '));
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  check('Serie: das Warnschild ist da', await ctx.run(`!!document.querySelector('.detail-actions [data-action="issue"]')`));
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('video');
   await ctx.run(`${sendBtn()}.click()`);
@@ -135,8 +142,7 @@ module.exports = async (ctx) => {
   await waitFor(`!document.querySelector('.mdl-scrim:not(.closing)')`, 3000);
 
   await openItem(episode);
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   check('Folge: die Ueberschrift nennt Serie, Staffel und Folge', await ctx.run(`/Starfall Station.*Staffel 1, Folge 2/.test(document.querySelector('.mdl-title').textContent)`), await ctx.run(`document.querySelector('.mdl-title').textContent`));
   await pickType('other');
@@ -150,8 +156,7 @@ module.exports = async (ctx) => {
   // ---------- Fehler bleiben im Fenster ----------
   SEERR.issueForbidden = true;
   await openItem(movie);
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('video');
   await ctx.run(`(() => { const t = document.querySelector('textarea.issue-comment'); t.value = 'Mein Text darf nicht verloren gehen'; t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
@@ -170,8 +175,7 @@ module.exports = async (ctx) => {
   SEERR.issueDelay = 700;
   const before = SEERR.issues.length;
   await openItem(movie);
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('audio');
   await ctx.run(`${sendBtn()}.click()`);
@@ -185,8 +189,7 @@ module.exports = async (ctx) => {
 
   // Titel, den Seerr nicht kennt
   await openItem(unknown);
-  await openMenu();
-  await ctx.run(`[...document.querySelectorAll('.menu .menu-item')].find((b) => /Problem melden/.test(b.textContent)).click()`);
+  await openIssue();
   await waitFor(`!!document.querySelector('.mdl-scrim .issue-types')`, 4000);
   await pickType('video');
   await ctx.run(`${sendBtn()}.click()`);

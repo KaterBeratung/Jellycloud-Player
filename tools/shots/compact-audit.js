@@ -107,7 +107,7 @@ module.exports = async (ctx) => {
     ['library-sort-menu', libs[1], `(() => { const b = [...document.querySelectorAll('.lib-controls .btn')].find((x) => /Sortier/.test(x.textContent)); b?.click(); })()`],
     ['library-genre-menu', libs[1], `(() => { const b = [...document.querySelectorAll('.lib-controls .btn')].find((x) => /Genre/.test(x.textContent)); b?.click(); })()`],
     ['movie', `#/item/${movie.Id}`, null],
-    ['movie-technik', `#/item/${movie.Id}`, `document.querySelector('.tech')?.setAttribute('open', '')`],
+    ['movie-informationen', `#/item/${movie.Id}`, `document.querySelector('.detail .info-block')?.scrollIntoView({ block: 'start' })`], // Informationsblock (P16, statt der aufklappbaren Technik)
     ['movie-mehr-menu', `#/item/${movie.Id}`, `document.querySelector('.detail-actions .btn[title]:last-of-type')?.click()`],
     ['series', `#/item/${show.Id}`, null],
     ['search', '#/search?q=a', null],

@@ -2,9 +2,9 @@ import { h, icon } from '../dom.js';
 import { t } from '../i18n.js';
 import { api, isFolder } from '../api.js';
 import { state } from '../state.js';
-import { card, openMenu, pageStatus, segmented, toast } from '../ui.js';
+import { card, openMenu, pageStatus, segmented } from '../ui.js';
 import { store } from '../utils.js';
-import { playItem, resolveSeriesTarget } from '../actions.js';
+import { playSeries } from '../actions.js';
 
 const PAGE = 60;
 
@@ -65,15 +65,7 @@ export function libraryView({ id: openedId = null, tab = null } = {}) {
   // gleich danach, lud ungefragt erneut und raeumte den Hinweis wieder weg (oder versuchte es beim Scrollen immer wieder).
   let loadError = null;
 
-  const onPlay = async (item) => {
-    if (item.Type === 'Series') {
-      const { episode, resume } = await resolveSeriesTarget(item.Id);
-      if (episode) playItem({ itemId: episode.Id, resume });
-      else toast(t('toast.noEpisodes'), { type: 'error' });
-    } else {
-      playItem({ itemId: item.Id, resume: true });
-    }
-  };
+  const onPlay = (item) => playSeries(item); // Serie: die naechste Folge (actions.js), sonst der Titel an seiner Stelle
 
   function skeletons(n = 18) {
     const chunk = h('div', { class: 'grid-chunk' });

@@ -13,7 +13,8 @@ PGS-/ASS-Untertitel.
 - **Audio:** WASAPI-Passthrough für AC3/E-AC3/DTS/DTS-HD/TrueHD, optional exklusiv (für Bitstream von TrueHD/DTS-HD).
   Die App erkennt das Ausgabegerät (Kanalzahl, Bauart) und wählt danach Stereo oder Surround, siehe *Ton-Ausgabe und Kanalerkennung*.
 - **Infuse-ähnliche Oberfläche:** Hero-Banner und Reihen vor allem mit **Neuzugängen** (Banner: nur Neues, Filme und Serien abwechselnd; darunter ganz oben *Weiterschauen* und *Als Nächstes*, dann *Neu in Filme*, *Neu in Serien*, Favoriten), Poster-Raster mit **Tags wie in der Apple-App** (4K, HDR-Format, Premium-Ton, siehe *Tags*),
-  Detailseite mit Version, Audio und Untertiteln vor dem Start, Staffeln und Folgen, Besetzung, technische Details.
+  Detailseite mit Version, Audio und Untertiteln vor dem Start, Staffeln und Folgen, Besetzung, Informationen; jede Karte hat ein **Kontextmenü**
+  (Rechtsklick, langes Drücken; siehe *Detailseite und Kontextmenü*).
 - **Player:** eigene Steuerung im Liquid-Glass-Stil (Seekbar mit Trickplay-Vorschau, Kapitel, Intro/Abspann überspringen,
   nächste Folge, **Folgen und Staffeln der Serie** zum Wechseln, Countdown an Überspringen und Nächste Folge, Tempo, Bildformat, Audio-/Untertitel-Panel mit Verzögerung und Größe, Technik-Info). Untertitel
   weichen der Steuerleiste aus. Alle Panels passen ohne Scrollen (zweispaltig bzw. verdichtet).
@@ -27,8 +28,8 @@ PGS-/ASS-Untertitel.
 - **Trailer:** Auf der Detailseite und im Banner der Startseite läuft der Trailer im Hintergrund, sofort und leise (siehe *Trailer*).
 - **Verwaltung für Administratoren:** Server (Info, Bibliotheken durchsuchen, Neustart, Herunterfahren), Aufgaben, Aktivität, Benutzer, Metadaten bearbeiten, identifizieren, Einträge löschen (siehe *Verwaltung*).
 - **Lange Untertitel-Listen:** Ab 9 Spuren ordnet die Auswahl auf der Detailseite und das Spur-Panel im Player die Untertitel nach Sprache: gleich zu sehen sind die bevorzugten Sprachen (eingestellte Untertitelsprache, Oberfläche, Tonspur, Englisch) und die gewählte Spur, der Rest steckt hinter *Weitere Sprachen*.
-- **Anfragen:** Titel, die es noch nicht gibt, lassen sich über Seerr anfragen (siehe *Anfragen mit Seerr*). Die Startseite zeigt unten die Reihe *Filme im Trend* (aus Seerr), ohne Seerr-Verbindung einen Hinweis zur Einrichtung, und im Banner oben gut bewertete Trend-Filme (standardmäßig zwei).
-- **Probleme melden:** Auf der Detailseite zeigt ein **Warnschild** in der Knopfleiste (zwischen Herz und „Mehr“, auch unter *Mehr > Problem melden …*) ein Fenster, in dem sich zu Video, Audio, Untertiteln oder Sonstigem ein Problem an Seerr melden lässt, der Kommentar ist freiwillig (siehe *Probleme an Seerr melden*).
+- **Anfragen:** Titel, die es noch nicht gibt, lassen sich über Seerr anfragen (siehe *Anfragen mit Seerr*). Mit Seerr zeigt die Startseite die Reihen *Top 10 Filme*, *Top 10 Serien* und *Filme im Trend*; ohne Seerr gibt es sie nicht (seit 1.2.14, siehe *Anfragen mit Seerr*).
+- **Probleme melden:** Auf der Detailseite zeigt ein **Warnschild** in der Knopfleiste (nach Herz und Gesehen, vor „Mehr“) ein Fenster, in dem sich zu Video, Audio, Untertiteln oder Sonstigem ein Problem an Seerr melden lässt, der Kommentar ist freiwillig (siehe *Probleme an Seerr melden*).
 - **Discord Rich Presence:** Zeigt in Discord, was du gerade schaust, mit Poster, Folge und Fortschritt und einem Namen, den du selbst wählst (siehe *Discord Rich Presence*). Aus, bis du es einschaltest; die Discord-Anwendung ist eingebaut, es ist keine Einrichtung nötig.
 - **Startseite anpassen:** *Einstellungen > Startseite*: Banner an oder aus, Zahl der Folien, Zeitraum der Top 10, Reihen ein- und ausschalten und umsortieren (siehe *Startseite anpassen*).
 - **Neu laden:** F5, Knopf in der Kopfzeile, Metadaten vom Server aktualisieren lassen (siehe *Neu laden und Metadaten*).
@@ -215,6 +216,37 @@ Die Bedienung wartet nie auf den Server. *Zurück* (Knopf, Esc, Backspace, Maus-
 Position geht im Hintergrund an den Server (Zeitgrenze 8 s). Die Listen „Weiterschauen“ und „Als Nächstes“ laden erst neu, wenn die Position angekommen ist (höchstens 1,5 s Wartezeit,
 bei langsamem Server ein zweites Mal danach). Ein Start, der beim Schließen noch lädt, wird still abgebrochen. Beim Beenden der App wartet sie kurz auf die letzte Meldung.
 
+## Detailseite und Kontextmenü
+
+**Seit 1.2.15 (Plan P16, wie `DetailView`, `PlayAction`, `SeasonChoice` und `ItemActions` der Apple-App).**
+
+- **Abspielen:** die Beschriftung sagt, was startet: „Abspielen“, angefangen „Fortsetzen ab 12:40“, bei Serien mit der Folge davor („S1 E4 Fortsetzen ab
+  21:09“, „S1 E5 Abspielen“). Dieselbe Regel gilt auf der Seite eines Seerr-Titels, der in der Mediathek liegt (`Format.playLabel` in `src/shared/format.js`).
+  Eine Serie startet ihre nächste Folge, sonst die erste Folge der gezeigten Staffel.
+- **Staffel beim Öffnen:** die der nächsten Folge (nach Id, sonst nach Nummer), sonst die erste richtige Staffel, nicht die Extras (Staffel 0 steht beim
+  Server vorn). Dieselbe Regel nimmt „Abspielen“ einer Serie auf Karten, im Banner und im Kontextmenü (`src/shared/season-choice.js`). Nächste Folge und
+  Staffeln lädt die Seite gleichzeitig (vorher nacheinander, die Staffeln zweimal).
+- **Knöpfe:** oben Abspielen mit Favorit, Gesehen, dem Warnschild (nur mit Seerr) und *Mehr*; darunter *Von vorn* (nur bei angefangenen Filmen und Folgen)
+  und *Trailer* zu gleichen Teilen, so breit wie die Zeile darüber. Favorit und Gesehen nennen, was sie tun („Als ungesehen markieren“).
+- **Tags:** vorn **Gesehen** in der Akzentfarbe, dann die Formate und die Wiedergabe (siehe *Tags*). Die Angabenzeile schreibt nur `format.js` (bei Folgen
+  „S1 · E3“ vor dem Jahr, bei Serien die Zahl der Staffeln ohne Extras); unter der Handlung stehen die Genres.
+- **Informationen** am Ende der Seite, immer offen, statt der aufklappbaren *Technischen Details*: *Allgemein* (Genre, Erschienen, Laufzeit, Freigabe,
+  Studio), *Sprachen* (je Tonspur Sprache, Format, Kanäle; Untertitel als Sprachen, jede einmal) und *Datei* der gewählten Version (Version, Video,
+  Container und Größe, *Wiedergabe* wie das Tag). Bewusst ohne Datenrate, Farbtiefe und Bildrate (`src/shared/detail-facts.js`).
+- **Kontextmenü auf jeder Karte** (Startseite, Mediathek, Suche, Personen, Ähnliche, Folgen der Detailseite; Top 10 am Plakat, nicht an der Ziffer):
+  Rechtsklick öffnet es am Mauszeiger, langes Drücken (Android) und die Kontextmenü-Taste bzw. Umschalt+F10 unter dem Plakat. Einträge: *Fortsetzen* bzw.
+  *Abspielen*, bei angefangenen Titeln *Von vorn* und *Aus „Weiterschauen“ entfernen* (als ungesehen markiert, Jellyfin kennt kein eigenes Entfernen),
+  *Als gesehen/ungesehen markieren*, *Zu Favoriten*/*Favorit entfernen*. Ordner und Personen haben keines. Ein Klick daneben, Escape, das Mausrad und ein
+  Seitenwechsel schließen es.
+- **Danach stimmt der Stand überall, ohne Neuaufbau** (`itemStateChanged` in `actions.js`): die Startseite holt ihre Reihen neu und tauscht sie in einem
+  Zug (Banner, Scrollstelle und die Stelle jeder Reihe bleiben, keine Platzhalter, kein Einsteigen); andere Seiten bauen die Karten des Eintrags an ihrem
+  Platz neu; die Detailseite lädt Haken, Tags, *Abspielen* und die Folgen der gezeigten Staffel neu (der Trailer läuft weiter). Seiten im Speicher des
+  Routers ziehen nach, die Startseite beim Zurückkehren. Das gilt auch für Gesehen und Favorit auf der Detailseite selbst. Scheitert die Änderung, bleibt alles.
+- Tests: `test/season-choice.test.js` (Fälle aus `SeasonChoiceTests`, „Abspielen“ einer Serie gegen einen Server), `test/format.test.js` (dazu
+  `PlayAction.label`), `test/detail-facts.test.js` (Informationsblock); 17 Gegenproben. Szenario `item-menu.js` (Port 8986, echte Mausklicks), angepasst
+  `subtitles.js`, `trailer.js`, `seerr-issue.js`, `compact-audit.js`. Nur gegen den Mock-Server geprüft; langes Drücken auf einem echten Android-Gerät
+  ist nicht geprüft (im Test ein nachgebildetes Ereignis).
+
 ## Trailer
 
 Hat ein Eintrag einen YouTube-Link bei den Trailern (Metadaten des Servers), startet auf der Detailseite nach einer Verzögerung der Trailer über dem Hintergrundbild
@@ -395,7 +427,7 @@ mitschickt (sonst würde eine falsche Anmeldung durch ein altes Cookie akzeptier
 
 ## Probleme an Seerr melden
 
-Ist Seerr verbunden, steht auf der Detailseite gleich in der Knopfleiste ein **Warnschild** (Symbol `warning`, runder Knopf wie Gesehen und Favorit, beim Zeigen wie die anderen Knöpfe, Beschriftung „Problem melden“) und zusätzlich im Menü *Mehr* der Eintrag **Problem melden …** (`views/issue-dialog.js`). Das Fenster fragt nach der **Art** (Video, Audio, Untertitel, Sonstiges, entspricht `issueType` 1 bis 4 bei Seerr) und nimmt einen **freiwilligen Kommentar** (bis 2000 Zeichen) entgegen;
+Ist Seerr verbunden, steht auf der Detailseite gleich in der Knopfleiste ein **Warnschild** (Symbol `warning`, runder Knopf wie Gesehen und Favorit, beim Zeigen wie die anderen Knöpfe, Beschriftung „Problem melden“; seit 1.2.15 wie die Apple-App nur dort, nicht mehr zusätzlich im Menü *Mehr*), das ein Fenster öffnet (`views/issue-dialog.js`). Das Fenster fragt nach der **Art** (Video, Audio, Untertitel, Sonstiges, entspricht `issueType` 1 bis 4 bei Seerr) und nimmt einen **freiwilligen Kommentar** (bis 2000 Zeichen) entgegen;
 *Melden* ist erst nach der Wahl einer Art möglich. Ohne Kommentar geht ein Ersatztext mit der Art hin („Problem mit Audio (ohne Beschreibung, gemeldet über den Jellycloud Player)“), weil Seerr keine leere Meldung annimmt.
 
 - **Wohin:** Filme und Serien über ihre TMDB-Nummer (`ProviderIds.Tmdb`), Staffeln und Folgen über die Serie dahinter. Bei einer Folge gehen Staffel und Folge mit (`problemSeason`, `problemEpisode`), bei Serie und Film 0 (alle). Die Überschrift nennt, worum es geht („Starfall Station · Staffel 1, Folge 2“).
@@ -585,7 +617,7 @@ Abschnitt „Tags“ in `app.css`). Es gibt **keinen Schalter** dafür (früher 
 - **Welche:** Premium-Bild (4K, genau ein HDR-Format: Dolby Vision vor HDR10+ vor HDR10 vor HLG, „HDR“ nur ohne bestimmtes), Premium-Ton (höchstens einer:
   Dolby Atmos, DTS:X, Dolby TrueHD, DTS-HD MA, FLAC/ALAC, LPCM; nur mit Nachweis, nie nach dem Namen der Spur), wie der Server liefert (Direct Play, Direct
   Stream, Transcoding) und gewöhnliche Angaben (HD, 1440p, 720p, SD, Bildcodec, Tonformat, Kanäle). Nichts doppelt: neben einem Premium-Ton steht sein Codec nicht.
-- **Wo:** Karten unten links, höchstens zwei, Kurzformen („Atmos“, „TrueHD“); Banner bis zu drei; Detailseite in der Reihenfolge Premium-Auflösung, HDR,
+- **Wo:** Karten unten links, höchstens zwei, Kurzformen („Atmos“, „TrueHD“); Banner bis zu drei; Detailseite (davor *Gesehen* in der Akzentfarbe, seit 1.2.15) in der Reihenfolge Premium-Auflösung, HDR,
   Premium-Ton der **gewählten** Tonspur, Wiedergabe, weitere Technik, einzeilig (reicht der Platz nicht, fallen die hinteren weg). Jahr, Laufzeit und Bewertung bleiben Text.
 - **Aussehen:** feste Farbpaare je Art (4K Gold, Dolby Vision Violett zu Indigo, Atmos Eisblau zu Indigo, Direct Play Grün …), unabhängig von Design und
   Akzentfarbe. Fläche aus den zwei Farben auf feste Helligkeit gebracht, Tiefe oben hell, unten dunkel, Kontur 1 px, Schrift mindestens 7:1 zur Fläche
@@ -780,7 +812,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `tags-look.js` | Tags wie in der Apple-App: Karten (höchstens zwei, unten links, Kurzformen), Banner (bis drei), Detailseite (Reihenfolge, gewählte Tonspur, Wiedergabe-Tag ruhiger, einzeilig), feste Farben in allen Designs und mit anderer Akzentfarbe, Schein als geteiltes Bild ohne Weichzeichner, nichts abgeschnitten; Aufnahmen `TG-*.png` |
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
 | `admin.js` | Verwaltung gegen den Mock (66 Prüfungen): ohne Rechte nichts sichtbar, Server (Info, Durchsuchen, Neustart/Herunterfahren mit doppelter Rückfrage), Aufgaben, Aktivität, Benutzer (anlegen, sperren, Passwort, löschen), Einträge bearbeiten/identifizieren/löschen, 403 bei entzogenen Rechten |
-| `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Technik-Info, Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
+| `subtitles.js` | lange Untertitel-Listen: Auswahl auf der Detailseite (kurz, aufgeklappt, gewählte Sprache bleibt sichtbar), Informationen (Untertitel als Sprachen, jede einmal), Spur-Panel im Player (mpv-Simulator mit 24 Zusatzspuren) |
 | `seerr.js` | Seerr: Verbinden (nur Jellyfin-Konto, beim Profil gespeichert, erneut mit vorbelegter Adresse), Suche, **Seite eines Titels** (Laden, Angabenzeile mit FSK, Besetzung, weitere Titel, Informationen, Anfragen von dort, Fehlerfälle, Zurück), Anfragen, abgelaufene Sitzung, Trennen mit Rückfrage (Abmeldung bei Seerr), Konsole ohne Skriptfehler (Mock-Seerr) |
 | `search-page.js` | Suche (P14): Hinweis ohne Treffer nur zum beantworteten Text, 350 ms Ruhe (ein Wort = eine Suche), veraltete Antwort verworfen, Fehler der Mediathek mit *Erneut versuchen*, Abgleich mit Seerr über TMDB-Nummer und Art (gleiche Nummer als Serie bleibt, teilweise vorhandene Serie bleibt), Ausfälle von Seerr und der Mediathek ohne Fehlerseite, nach einer Anfrage nur Seerr neu, zweiter Klick auf *Suche* und Strg+K behalten den Text (eigener Port 8988) |
 | `person-page.js` | Personen (P13): Besetzung der Mediathek und eines Seerr-Titels als Verweise, Seite aus beiden Wegen (Lebensdaten, Kapsel, Biografie, Foto oder Initialen), Mediathek zuerst und Filmografie ohne ihre Titel (TMDB-Nummer), Rollen zusammengefasst, Anfrage aus der Filmografie, Gastrolle, gestorben, unbekannte Person, Nachladen nur als Administrator (eigener Port 8989) |
@@ -797,6 +829,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `quick-connect.js` | **Konto, Profile, Quick Connect** (48 Prüfungen, Port 8995): Anmeldung (Marke, Kapselfelder, Fehler am richtigen Feld, Code in Kacheln, *Zurück*), *Konto* (Verbindung, Profile, Abmelden mit Rückfrage), Maske für andere Geräte (verdeckt die App, als wer und wo, Eingabe bereinigt, falscher und schon bestätigter Code, Erfolg, ausgeschaltet, Escape, Code nicht in der Konfiguration), Profil umbenennen, neue Adresse desselben Servers, fremder Server abgelehnt, Profil entfernen, Rückkehr in die App prüft, Start ohne Server; Aufnahmen `QC-*.png` |
 | `page-status.js` | **Zustände und Grundmaße** (21 Prüfungen, Port 8996): Leer- und Fehlerhinweis in der Mitte des Inhaltsbereichs, Knopf 18 darunter ohne den Hinweis zu verschieben, Fläche fängt keine Klicks ab, *Erneut versuchen* während des Versuchs gesperrt, Fehler beim Nachladen am Listenende ohne ungefragten neuen Versuch, Detailseite ohne Titel, Suche; Drücken (Knopf 0,94 und blasser, Karte 0,95 und dunkler), Feld so hoch wie der Knopf, Fehlerkontur; Aufnahmen `PS-*.png` |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, Banner nur aus der Mediathek, neue Bibliothek hinten, alles ausgeblendet, Überstehen eines Neustarts |
+| `item-menu.js` | **Detailseite und Kontextmenü** (P16, Port 8986, echte Mausklicks): Menü am Mauszeiger, unter dem Plakat bei langem Drücken und Tastatur, Einträge je Stand, Schließen (Escape, Klick daneben, Mausrad, Seitenwechsel; Scrollen von selbst nicht); Aus „Weiterschauen“ entfernen, Favorit und Gesehen danach auf Startseite (ohne Neuaufbau, Stellen bleiben), Mediathek (Karte an ihrem Platz), Detailseite (Folgen, *Abspielen*) und in der Seite im Speicher; „Fortsetzen ab“, „S1 E4 Fortsetzen ab“, Staffel beim Öffnen ohne Extras, Knopfreihe in zwei Zeilen, Gesehen-Tag, Informationen; Top 10 am Plakat; Seite eines Seerr-Titels |
 | `top-ten.js` | **Top 10** (P15, Port 8987): ohne Seerr keine Seerr-Reihen, kein Hinweis, keine Anfrage, gesperrt im Editor; Banner nur Neues aus der Mediathek; Top 10 Filme und Serien (nur Mediathek, Reihenfolge der Trends, weniger als zehn ohne Ersatz), Platz nach *Als Nächstes*, Beschriftung, Maße und Ebenen, Rand im Glow-Verlauf, 80 % ohne Zeiger, Platzhalter nur beim ersten Laden, Zeitraum und *Aktuell* in den Einstellungen, ohne Glow farblos, Arbeitsspeicher |
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |
 | `startup-anim.js` | **Startanimation**: Ablauf (Umriss, Dreieck, Schriftzug, Zoom, Oberfläche blendet ein), Zeit rund 2,7 s, Überspringen per Klick und Taste, ruhige Fassung bei *Bewegung reduzieren*, kein Schalter und keine Vorschau in den Einstellungen, kein zweites Mal beim Neuaufbau, Warten bis das Fenster sichtbar ist, Hinweise erst danach, Bildabstände (Mock, Port 8497) |

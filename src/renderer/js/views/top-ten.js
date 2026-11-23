@@ -5,6 +5,7 @@ import { lazyImage, row, titleOf } from '../ui.js';
 import { cardTags } from '../tags.js';
 import { state } from '../state.js';
 import { markSharedElement } from '../router.js';
+import { attachItemMenu } from '../actions.js';
 
 const Rankings = window.JCRankings; // Masse und Texte der Top 10 (src/shared/rankings.js)
 const Glow = window.JCGlow; // Farben von Rand und Schein (src/shared/glow.js: numeralAura)
@@ -153,6 +154,14 @@ function card(item, rank, { m, aura, index, onPlay }) {
       );
     }
     el.addEventListener('click', () => markSharedElement(thumb));
+    // Kontextmenue am Plakat, nicht an der ganzen Karte mit Ziffer (wie die Apple-App: das Plakat hebt sich); die Tastatur erreicht es an der Karte
+    attachItemMenu(thumb, () => item);
+    el.addEventListener('keydown', (e) => {
+      if (e.target === el && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+        e.preventDefault();
+        thumb.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      }
+    });
   }
   let numeralEl = numeral(rank, m, aura);
   figure.append(numeralEl, thumb);
