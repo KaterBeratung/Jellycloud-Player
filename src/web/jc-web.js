@@ -43,6 +43,49 @@
   };
   const io = { read: () => storage.get(KEY), write: (text) => storage.set(KEY, text) };
 
+  /**
+   * Ablage der Mitteilungen je Profil und Seerr-Server (src/shared/notifications.js): eigene Schluessel "jellycloud.notify.<name>", getrennt von der
+   * Konfiguration; die Namen sind Pruefsummen, keine Zugangsdaten darin. Die Huelle darf eine eigene Ablage mitgeben (host.notifyStorage mit get, set,
+   * remove, keys); sonst localStorage (auch in der Android-App: der sichere Speicher dort fuehrt nur die Konfiguration).
+   */
+  const NOTIFY = 'jellycloud.notify.';
+  const notifyStorage = host.notifyStorage ?? {
+    get: (k) => {
+      try {
+        return window.localStorage.getItem(k);
+      } catch {
+        return null;
+      }
+    },
+    set: (k, v) => {
+      try {
+        window.localStorage.setItem(k, v);
+      } catch {
+        /* voll oder gesperrt: die Mitteilungen gelten dann nur bis zum Schliessen */
+      }
+    },
+    remove: (k) => {
+      try {
+        window.localStorage.removeItem(k);
+      } catch {
+        /* gesperrt */
+      }
+    },
+    keys: () => {
+      try {
+        return Array.from({ length: window.localStorage.length }, (_, i) => window.localStorage.key(i)).filter(Boolean);
+      } catch {
+        return [];
+      }
+    }
+  };
+  const notifyIo = {
+    read: (name) => notifyStorage.get(NOTIFY + name),
+    write: (name, text) => notifyStorage.set(NOTIFY + name, text),
+    remove: (name) => notifyStorage.remove(NOTIFY + name),
+    names: () => notifyStorage.keys().filter((k) => k.startsWith(NOTIFY)).map((k) => k.slice(NOTIFY.length))
+  };
+
   const utf8ToB64 = (s) => btoa(unescape(encodeURIComponent(s)));
   const b64ToUtf8 = (s) => decodeURIComponent(escape(atob(s)));
   const codec = host.codec ?? {
@@ -89,7 +132,9 @@
         appVersion: () => String(host.version ?? 'web'),
         locale: () => navigator.language || 'de',
         deviceName: host.deviceName,
-        extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false })
+        extraState: () => ({ platform, mpv: null, autostartSupported: false, update: null, discordBuiltIn: false, justUpdated: false }),
+        notifyIo,
+        onNotifications: (summary) => listeners.notices.forEach((cb) => cb(summary))
       });
       backend.buildSeerr();
       if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
@@ -107,7 +152,7 @@
   }
   const unsupported = (what) => () => call(async () => Promise.reject(new Error(`${what} gibt es in dieser Fassung nicht`)));
 
-  const listeners = { player: new Set(), closed: new Set() };
+  const listeners = { player: new Set(), closed: new Set(), notices: new Set() };
   const subscribe = (set) => (cb) => {
     set.add(cb);
     return () => set.delete(cb);
@@ -197,6 +242,14 @@
     seerrMedia: (req) => call(() => backend.seerrMedia({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId) })),
     seerrRequestAction: (req) => call(() => backend.seerrRequestAction({ id: Number(req?.id), action: String(req?.action ?? '') })),
     seerrIssue: (req) => call(() => backend.seerrIssue(req)),
+    notifications: () => call(() => backend.notifications()),
+    notificationsSync: (o) => call(() => backend.notificationsSync({ force: o?.force === true })),
+    notificationRead: (req) => call(() => backend.notificationRead({ id: String(req?.id ?? '').slice(0, 120), read: req?.read !== false })),
+    notificationsReadAll: () => call(() => backend.notificationsReadAll()),
+    notificationRemove: (id) => call(() => backend.notificationRemove(String(id ?? '').slice(0, 120))),
+    notificationsRemoveAll: () => call(() => backend.notificationsRemoveAll()),
+    notificationPrefs: (p) => call(() => backend.notificationPrefs(p && typeof p === 'object' ? p : {})),
+    onNotifications: subscribe(listeners.notices),
     discordStatus: () => call(async () => ({ state: 'off', error: '', user: '' })),
     discordTest: unsupported('Discord'),
     cacheInfo: () => call(async () => ({ images: 0, bytes: 0 })),

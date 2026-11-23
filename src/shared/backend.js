@@ -4,9 +4,9 @@
    Die Rueckgaben sind die Werte der IPC-Handler (ohne { ok, data }-Huelle); Fehler sind JellyfinError/SeerrError mit status und code.
    Laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCBackend). */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'));
-  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings);
-})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'), require('./notifications'), require('./seerr-state'));
+  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings, root.JCNotifications, root.JCSeerrState);
+})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings, Notifications, SeerrState) {
   'use strict';
 
   const { JellyfinClient, JellyfinError, probeServer, CALLABLE_METHODS } = Jelly;
@@ -71,8 +71,11 @@
    * @param {() => object} [deps.extraState] weitere Felder fuer den Zustand der Oberflaeche (mpv, Updates, Plattform ...)
    * @param {(patch: object, settings: object) => void} [deps.onSettings] nach jeder Aenderung der Einstellungen (Autostart, Discord ...)
    * @param {number} [deps.checkTimeoutMs] Frist der Verbindungspruefung je Dienst (nur in Tests kuerzer)
+   * @param {{read(name:string):string|null, write(name:string, text:string):void, remove(name:string):void, names():string[]}} [deps.notifyIo] Ablage der
+   *   Mitteilungen je Profil und Seerr-Server (Windows: Dateien im Datenordner; Web und Handy: Schluessel im Speicher); ohne: nur im Speicher
+   * @param {(summary: {active:boolean, enabled:boolean, unread:number, notice:number}) => void} [deps.onNotifications] nach jeder Aenderung der Mitteilungen
    */
-  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS }) {
+  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {} }) {
     /** @type {InstanceType<typeof JellyfinClient>|null} */
     let client = null;
     /** @type {InstanceType<typeof SeerrClient>|null} Seerr des aktiven Profils, nur mit gueltiger Sitzung */
@@ -88,6 +91,8 @@
     let check = null; // laufende Verbindungspruefung { client, run }: ein zweiter Anlass waehrenddessen bekommt dieselbe (keine Doppelanfragen)
     const callable = new Set(CALLABLE_METHODS);
     const rankings = Rankings.createStore(); // Top 10: Rangfolge je Server, Profil, Seerr und Zeitraum fuer 30 min (src/shared/rankings.js)
+    // Mitteilungen je Profil und Seerr-Server (src/shared/notifications.js); die Namen der Ablage sind Pruefsummen, keine Adressen
+    const notices = Notifications.createCenter({ io: notifyIo ?? Notifications.memoryIo(), hash: (t) => config.env.hashId(t), onChange: (s) => onNotifications(s) });
 
     /** Schluessel der Top 10 fuer das aktive Profil; null ohne Jellyfin-Anmeldung oder ohne Seerr mit Sitzung (dann keine Quelle, keine Anfrage). */
     const rankingKey = (window) => (client && seerr ? Rankings.cacheKey({ server: client.baseUrl, user: client.userId ?? '', seerrAddress: seerr.baseUrl, window }) : null);
@@ -123,8 +128,26 @@
       rankings.reset(); // die Top 10 des vorigen Profils oder Seerr gelten nicht mehr
       seerrAccount = s ? { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId } : null;
       seerr = s?.secret ? seerrClient(s.url, s.secret) : null;
+      // Mitteilungen gelten je Profil und Seerr-Server; dasselbe bleibt beim erneuten Anmelden bestehen, ein anderes Seerr beginnt still
+      const owner = config.data.activeServerId;
+      notices.activate(owner && seerrAccount ? { profile: owner, seerr: seerrAccount.url } : null);
       return !!seerr;
     }
+
+    /**
+     * Gleicht die Mitteilungen des aktiven Profils ab (Anlaesse: bestaetigte Verbindung, Reiter Anfragen, Uebersicht, Takt der offenen App, eigene Aktion).
+     * Ohne Seerr-Sitzung nichts; ohne bekannten Benutzer erst die Pruefung. Scheitert nie.
+     */
+    async function syncNotices({ force = false, own = null } = {}) {
+      const s = seerr;
+      if (!s || !notices.active || !notices.preferences.enabled) return [];
+      if (!seerrUser) {
+        const r = await checkSeerr().catch(() => null);
+        if (r?.state !== 'connected' || s !== seerr) return [];
+      }
+      return notices.sync({ seerr: s, user: seerrUser, force, own });
+    }
+    const noticesState = () => ({ ...notices.list(), manages: !!seerrUser && SeerrState.canViewAllRequests(seerrUser.permissions) });
 
     function requireSeerr() {
       if (seerr) return seerr;
@@ -286,6 +309,7 @@
       const id = config.data.activeServerId;
       const z = id ? config.getSeerr(id) : null;
       await Promise.all([client?.logout(), z ? seerrLogout(z.url, z.secret) : null]);
+      if (id) notices.forget(id); // abgemeldet: die Mitteilungen des Profils gehen mit
       if (id) config.removeServer(id);
       client = null;
       check = null;
@@ -388,6 +412,7 @@
             // Waehrend der Pruefung entfernt oder schon umgezogen: nichts mehr zu tun
             if (!config.getServer(id)) throw Object.assign(new JellyfinError('Unbekanntes Profil', { status: 404 }), { code: 'NO_PROFILE' });
             next = config.moveProfile(id, { url: probed.url, name: probed.name, serverId: probed.id });
+            notices.move(id, next); // die Mitteilungen ziehen mit (vor dem Aufbau: dort gilt schon die neue Kennung)
             if (config.data.activeServerId === next) activateServer(next); // die Verbindung des aktiven Profils geht jetzt an die neue Adresse
           }
         }
@@ -405,6 +430,7 @@
         if (!server) return publicState();
         const z = config.getSeerr(id);
         await Promise.all([server.token ? newClient({ baseUrl: server.url, token: server.token, userId: server.userId }).logout() : null, z ? seerrLogout(z.url, z.secret) : null]);
+        notices.forget(id);
         config.removeServer(id);
         return publicState();
       },
@@ -526,6 +552,8 @@
       seerrDisconnect: () =>
         seerrCall(() => {
           const z = config.getSeerr();
+          // Mitteilungen und ihre Einstellungen gelten fuer dieses Seerr: sie gehen mit (wie die Apple-App, forgetSeerrSession)
+          if (z && config.data.activeServerId) notices.forget(config.data.activeServerId, z.url);
           config.clearSeerr();
           foreignDropped.delete(config.data.activeServerId);
           buildSeerr();
@@ -582,13 +610,16 @@
         const mine = scope !== 'manage';
         let checked = null;
         if (mine && !seerrUser && seerr) checked = await checkSeerr();
-        return seerrRead((s) => {
+        const page = await seerrRead((s) => {
           if (mine && !seerrUser) {
             if (checked?.state === 'unauthorized') throw seerrAuthError();
             throw new SeerrError(checked?.detail || 'Seerr hat keinen Benutzer gemeldet');
           }
           return s.requestPage({ userId: mine ? seerrUser.id : null, skip, take });
         });
+        // Die eigenen Anfragen, eben geladen: der Abgleich der Mitteilungen nimmt sie mit (mit Mindestabstand, im Hintergrund)
+        if (mine && !skip) syncNotices({ own: page.requests }).catch(() => {});
+        return page;
       },
       /** Titel, Jahr, Bild und Stand eines Titels fuer ein Plakat der Anfragen. */
       seerrMedia: (req) => seerrRead((s) => s.media(req?.mediaType, Number(req?.tmdbId))),
@@ -599,6 +630,7 @@
        */
       async seerrRequestAction({ id, action } = {}) {
         const s = requireSeerr();
+        notices.willChange(Number(id)); // was der Nutzer selbst ausloest, meldet die App ihm nicht
         try {
           await s.requestAction(Number(id), String(action ?? ''));
         } catch (e) {
@@ -606,7 +638,42 @@
           if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError('Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
           throw e;
         }
+        syncNotices({ force: true }).catch(() => {}); // nach einer eigenen Aktion sofort: ihr neuer Stand wird gemerkt
         return true;
+      },
+
+      // ---------- Mitteilungen (Plan P17) ----------
+      /** Liste, Einstellungen und Zahl des aktiven Profils; manages: das Konto sieht alle Anfragen (nur dann gibt es "Neue Anfrage"). */
+      notifications: noticesState,
+      /** Abgleich auf Wunsch der Oberflaeche: force beim Oeffnen der Uebersicht, sonst mit Mindestabstand (Verbindung bestaetigt, Takt der offenen App). */
+      async notificationsSync({ force = false } = {}) {
+        await syncNotices({ force: force === true });
+        return noticesState();
+      },
+      notificationRead({ id, read = true } = {}) {
+        notices.markRead(String(id ?? ''), read !== false);
+        return noticesState();
+      },
+      notificationsReadAll() {
+        notices.markAllRead();
+        return noticesState();
+      },
+      notificationRemove(id) {
+        notices.remove(String(id ?? ''));
+        return noticesState();
+      },
+      notificationsRemoveAll() {
+        notices.removeAll();
+        return noticesState();
+      },
+      /** Einstellungen der Mitteilungen (an/aus, je Art); nur bekannte Felder mit dem richtigen Typ. */
+      notificationPrefs(p) {
+        const next = {};
+        if (typeof p?.enabled === 'boolean') next.enabled = p.enabled;
+        if (typeof p?.system === 'boolean') next.system = p.system;
+        if (Array.isArray(p?.kinds)) next.kinds = p.kinds.filter((k) => Notifications.KINDS.includes(k));
+        notices.setPreferences(next);
+        return noticesState();
       },
       // Problem zu einem Titel melden (Video, Ton, Untertitel, Sonstiges; Kommentar freiwillig). Die Werte werden hier einzeln gepruft und gekuerzt, nichts wird als Ganzes durchgereicht.
       seerrIssue: (req) =>

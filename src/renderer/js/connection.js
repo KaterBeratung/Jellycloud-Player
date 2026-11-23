@@ -57,7 +57,11 @@ export async function runConnectionCheck({ quiet = false } = {}) {
   const id = state.activeServerId;
   state.connection = { profileId: id, jellyfin: { state: 'checking' }, seerr: { state: state.seerr ? 'checking' : 'none' } };
   emit();
-  runSeerrCheck({ quiet: true });
+  // Bestaetigte Verbindung zu Seerr (Start, Profilwechsel, Rueckkehr in die App): ein Anlass fuer den Abgleich der Mitteilungen (notices.js). Die Pruefung
+  // der Einstellungen alle 20 s ist keiner.
+  runSeerrCheck({ quiet: true }).then((s) => {
+    if (s?.state === 'connected' && id === state.activeServerId) document.dispatchEvent(new CustomEvent('seerr-confirmed'));
+  });
   let r;
   try {
     r = await window.jc.checkConnection({ seerr: false });

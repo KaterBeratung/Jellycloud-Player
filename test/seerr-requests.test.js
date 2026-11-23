@@ -194,6 +194,7 @@ const ids = (p) => p.requests.map((r) => r.id);
 
 test('Meine Anfragen mit der Nummer aus /auth/me (requestedBy), Verwalten ohne; Seiten zu je 50 mit Gesamtzahl', async () => {
   const b = await signedIn(16 | 32);
+  b.notificationPrefs({ enabled: false }); // hier zaehlen nur die Abrufe des Reiters (sonst gleicht die App mit der eigenen Liste auch die Mitteilungen ab)
   await seed('count=60&open=10&by=1');
   await seed('count=3&open=3&by=3');
   const mine = await b.seerrRequests({ scope: 'mine', take: 50 });
@@ -262,4 +263,44 @@ test('Titel eines Plakats: Name, Jahr, Bild und Stand, in der Sprache der App', 
   assert.equal(state.log.find((l) => l.at === 'seerr:GET /movie/603')?.language, 'de');
   const made = await b.seerrMedia({ mediaType: 'movie', tmdbId: 90005 });
   assert.equal(made.title, 'Anfrage 90005', 'Testserver: Titel der gestellten Anfragen');
+});
+
+// ---------- Mitteilungen (P17) mit der Rueckseite gegen den Test-Seerr ----------
+
+test('Mitteilungen: erster Abgleich still, danach eine Aenderung genau ein Eintrag mit Titel; der Punkt folgt; Trennen nimmt sie mit', async () => {
+  SEERR.permissions = 32;
+  const seen = [];
+  const b = createBackend({ config: memoryConfig(), fetch: globalThis.fetch, appVersion: () => '1.2.16', locale: () => 'de-DE', onNotifications: (s) => seen.push(s) });
+  await b.login({ url: base, username: 'demo', password: 'demo' });
+  await b.seerrConnect({ url: base, username: 'demo', password: 'demo' });
+  await seed('count=2&open=2&by=1');
+  assert.deepEqual((await b.notificationsSync({ force: true })).items, [], 'erster Abgleich: nur merken');
+  await fetch(`${base}/__debug/request?id=1&status=2`, { method: 'POST' }); // ein Verwalter genehmigt
+  const after = await b.notificationsSync({ force: true });
+  assert.deepEqual(after.items.map((x) => x.id), ['seerr-1-approved']);
+  assert.equal(after.items[0].title, 'Anfrage 90001');
+  assert.ok(after.notice === 1 && seen.at(-1).notice === 1, 'die Zahl fuer den Punkt geht an die Oberflaeche');
+  assert.equal(after.manages, false, 'ohne das Recht, alle zu sehen: keine "Neue Anfrage"');
+  b.notificationRead({ id: 'seerr-1-approved' });
+  assert.equal(seen.at(-1).notice, 0);
+  await b.seerrDisconnect();
+  assert.ok(!b.notifications().active, 'ohne Seerr keine Mitteilungen');
+  await b.seerrConnect({ url: base, username: 'demo', password: 'demo' });
+  assert.deepEqual(b.notifications().items, [], 'getrennt: Mitteilungen und Einstellungen sind mitgegangen');
+});
+
+test('Mitteilungen: der Reiter Anfragen gibt seine Liste an den Abgleich (keine weitere Abfrage); eine eigene Aktion meldet die App nicht', async () => {
+  const b = await signedIn(16 | 32); // Verwalter
+  await seed('count=2&open=2&by=1');
+  await b.notificationsSync({ force: true }); // Ausgangsstand
+  const lists = () => state.log.filter((l) => l.at === 'seerr:GET /request').length;
+  const before = lists();
+  await b.seerrRequests({ scope: 'mine', take: 50 });
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(lists(), before + 1, 'nur der Abruf des Reiters: der Abgleich wartet zwei Minuten und nimmt dann dessen Liste');
+  await b.seerrRequestAction({ id: 1, action: 'approve' }); // selbst genehmigt (Bearbeiter: der Nutzer)
+  await new Promise((r) => setTimeout(r, 300));
+  await b.notificationsSync({ force: true });
+  assert.deepEqual(b.notifications().items, [], 'selbst genehmigt: keine Mitteilung');
+  assert.equal(b.notifications().manages, true);
 });

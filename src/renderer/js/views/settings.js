@@ -8,6 +8,7 @@ import { debounce, langName, fmtSize } from '../utils.js';
 import { trailerTier } from '../trailer.js';
 import { invalidate } from '../router.js';
 import { runSeerrCheck, seerrState } from '../connection.js';
+import { applyNotices } from '../notices.js';
 
 // Bereiche der Einstellungen (Icon fuer die Seitenleiste)
 const SECTIONS = [
@@ -20,6 +21,7 @@ const SECTIONS = [
   ['network', 'link'],
   ['general', 'settings'],
   ['seerr', 'plus'],
+  ['notifications', 'bell'],
   ['discord', 'tv'],
   ['account', 'user'],
   ['about', 'info']
@@ -78,7 +80,7 @@ const onOff = (labelOn, labelOff) => [
 
 // Gruppen der Bereichsliste auf dem Handy (kompakte Ansicht): [Titel, Bereiche]. Bereiche, die hier fehlen, landen in der letzten Gruppe.
 const MOBILE_GROUPS = [
-  ['set.list.account', ['account', 'seerr']],
+  ['set.list.account', ['account', 'seerr', 'notifications']],
   ['set.list.look', ['appearance', 'home']],
   ['set.list.playback', ['subtitles', 'behavior', 'network']],
   ['set.list.app', ['general', 'about']]
@@ -1145,6 +1147,72 @@ export function settingsView({ section, query: q }) {
     cleanups.push(() => clearInterval(poll));
     return box;
   }
+  // ---------- Mitteilungen (Plan P17, wie NotificationSettingsSection der Apple-App) ----------
+  /**
+   * Je Profil und Seerr-Server: Hauptschalter (aus: kein Abgleich, kein Punkt; die Liste bleibt), darunter die Arten einzeln; "Neue Anfragen" nur fuer
+   * Konten, die alle Anfragen sehen. Ohne Seerr nur der Hinweis. (Mitteilungen des Systems kommen mit Paket P18.)
+   */
+  function notificationsPanel() {
+    const box = h('div', { class: 'settings-stack' });
+    let data = null;
+    let busy = false;
+    const KIND_ROWS = [
+      ['available', true],
+      ['partiallyAvailable', false],
+      ['approved', false],
+      ['declined', false],
+      ['failed', false],
+      ['newRequest', true]
+    ];
+    const save = (patch) => {
+      if (busy) return;
+      busy = true;
+      window.jc
+        .notificationPrefs(patch)
+        .then((d) => {
+          data = d;
+          applyNotices(d);
+        })
+        .catch((e) => toast(e.message, { type: 'error' }))
+        .finally(() => {
+          busy = false;
+          paint();
+        });
+    };
+    function paint() {
+      if (!data) return;
+      if (!data.active || !state.seerr) {
+        box.replaceChildren(h('div', { class: 'settings-block' }, foot(t('notify.set.noSeerr')), h('div', { class: 'settings-group' }, linkRow({ ico: 'plus', label: t('set.sec.seerr'), href: '#/settings/seerr' }))));
+        return;
+      }
+      const p = data.preferences;
+      const main = h(
+        'div',
+        { class: 'settings-block' },
+        h('div', { class: 'settings-group' }, setting(t('notify.title'), t('notify.set.enabledDesc'), toggle(p.enabled, (v) => save({ enabled: v }), t('notify.title')))),
+        foot(`${p.enabled ? '' : `${t('notify.set.offNote')} `}${t('notify.set.scope')}`)
+      );
+      const blocks = [main];
+      if (p.enabled) {
+        const rows = KIND_ROWS.filter(([k]) => k !== 'newRequest' || data.manages).map(([k, withDesc]) =>
+          setting(t(`notify.kind.${k}`), withDesc ? t(`notify.kind.${k}Desc`) : null, toggle(p.kinds.includes(k), (v) => save({ kinds: v ? [...p.kinds, k] : p.kinds.filter((x) => x !== k) }), t(`notify.kind.${k}`)))
+        );
+        blocks.push(group(t('notify.set.kindsHead'), ...rows));
+      }
+      box.replaceChildren(...blocks);
+    }
+    const load = () =>
+      window.jc.notifications().then((d) => {
+        data = d;
+        paint();
+      }, () => {});
+    load();
+    const onChange = () => !busy && load();
+    document.addEventListener('notices-changed', onChange);
+    cleanups.push(() => document.removeEventListener('notices-changed', onChange));
+    return box;
+  }
+
   // ---------- Discord Rich Presence ----------
   function discordPanel() {
     const dc = () => state.settings.discord ?? {};
@@ -1382,7 +1450,7 @@ export function settingsView({ section, query: q }) {
     );
   }
 
-  const panels = { appearance: appearancePanel, home: homePanel, video: videoPanel, audio: audioPanel, subtitles: subtitlesPanel, behavior: behaviorPanel, network: networkPanel, general: generalPanel, seerr: seerrPanel, discord: discordPanel, account: accountPanel, about: aboutPanel };
+  const panels = { appearance: appearancePanel, home: homePanel, video: videoPanel, audio: audioPanel, subtitles: subtitlesPanel, behavior: behaviorPanel, network: networkPanel, general: generalPanel, seerr: seerrPanel, notifications: notificationsPanel, discord: discordPanel, account: accountPanel, about: aboutPanel };
   const sections = SECTIONS.filter(([id]) => state.platform === 'desktop' || !DESKTOP_ONLY.has(id));
   const known = (id) => !!panels[id] && sections.some(([sid]) => sid === id);
   const active = known(section) ? section : 'appearance';

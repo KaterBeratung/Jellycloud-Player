@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, session, screen, webFrameMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { ConfigStore, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
+const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE, skipCountdownSec } = require('./config');
 const { PlayerController } = require('./player');
 const { AudioOutputProbe } = require('./audio-output');
 const { autostartSupported, setAutostart, syncAutostart, shouldStartMinimized } = require('./autostart');
@@ -297,6 +297,14 @@ function registerIpc() {
   ipcMain.handle('seerr:media', wrap((req) => backend.seerrMedia({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId) })));
   ipcMain.handle('seerr:requestAction', wrap((req) => backend.seerrRequestAction({ id: Number(req?.id), action: String(req?.action ?? '') })));
   ipcMain.handle('seerr:issue', wrap((req) => backend.seerrIssue(req)));
+  // ---------- Mitteilungen (Plan P17): Liste, Abgleich, Lesen und Entfernen, Einstellungen des aktiven Profils ----------
+  ipcMain.handle('notify:get', wrap(() => backend.notifications()));
+  ipcMain.handle('notify:sync', wrap((o) => backend.notificationsSync({ force: o?.force === true })));
+  ipcMain.handle('notify:read', wrap((req) => backend.notificationRead({ id: String(req?.id ?? '').slice(0, 120), read: req?.read !== false })));
+  ipcMain.handle('notify:readAll', wrap(() => backend.notificationsReadAll()));
+  ipcMain.handle('notify:remove', wrap((id) => backend.notificationRemove(String(id ?? '').slice(0, 120))));
+  ipcMain.handle('notify:removeAll', wrap(() => backend.notificationsRemoveAll()));
+  ipcMain.handle('notify:prefs', wrap((p) => backend.notificationPrefs(p && typeof p === 'object' ? p : {})));
 
   ipcMain.handle('settings:set', wrap((patch) => backend.setSettings(patch)));
   // ---------- Discord Rich Presence ----------
@@ -411,6 +419,11 @@ async function startUp() {
         if (patch?.general && 'autostart' in patch.general) setAutostart(app, settings.general.autostart);
         if (patch?.discord || patch?.language) presence?.refresh();
       }
+    },
+    // Mitteilungen je Profil und Seerr-Server: Dateien unter userData\notifications; jede Aenderung geht als Zahl an die Oberflaeche (roter Punkt)
+    notifyIo: notifyIo(path.join(app.getPath('userData'), 'notifications')),
+    onNotifications: (summary) => {
+      if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('notify:changed', summary);
     }
   });
   backend.buildSeerr();

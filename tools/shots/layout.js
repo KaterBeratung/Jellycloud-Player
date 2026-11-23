@@ -104,6 +104,8 @@ module.exports = async (ctx) => {
     ['settings-behavior', '#/settings/behavior'],
     ['settings-network', '#/settings/network'],
     ['settings-general', '#/settings/general'],
+    ['settings-notifications', '#/settings/notifications'], // Mitteilungen (P17)
+    ['notifications', '#/notifications'],
     ['settings-discord', '#/settings/discord'],
     ['settings-account', '#/settings/account'],
     ['settings-about', '#/settings/about'],

@@ -23,6 +23,11 @@ const paths = {
   'check-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12.4 2.8 2.8L16.2 9.6"/></g>`,
   // ausgefuellter Kreis mit Haken (aktives Profil, bestaetigtes Geraet)
   'check-circle-fill': `<path ${F} fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm4.75 6.6a1 1 0 0 0-1.41-.04l-4.6 4.4-2.06-2.02a1 1 0 1 0-1.4 1.43l2.75 2.7a1 1 0 0 0 1.39.01l5.29-5.07a1 1 0 0 0 .04-1.41z"/>`,
+  // Glocke (Mitteilungen, wie "bell" der Apple-App)
+  bell: `<g ${S}><path d="M6.2 16.5V11a5.8 5.8 0 0 1 11.6 0v5.5l1.7 1.7H4.5z"/><path d="M10 20.4a2.2 2.2 0 0 0 4 0"/></g>`,
+  // Briefumschlag geschlossen (als ungelesen markieren) und offen (als gelesen markieren, "Alle gelesen")
+  envelope: `<g ${S}><rect x="3.5" y="5.5" width="17" height="13" rx="2.2"/><path d="m4.3 7 7.7 6 7.7-6"/></g>`,
+  'envelope-open': `<g ${S}><path d="M3.5 10.2 12 4.3l8.5 5.9v8.1a2.2 2.2 0 0 1-2.2 2.2H5.7a2.2 2.2 0 0 1-2.2-2.2z"/><path d="m4.2 10.6 7.8 5.5 7.8-5.5"/></g>`,
   // leerer Kreis (Kontextmenue: als ungesehen markieren, wie "circle" der Apple-App)
   circle: `<circle ${S} cx="12" cy="12" r="9"/>`,
   // Herz, durchgestrichen (Favorit entfernen, wie heart.slash)

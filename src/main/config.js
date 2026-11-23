@@ -31,6 +31,48 @@ function fileIo(dir) {
   };
 }
 
+/**
+ * Ablage der Mitteilungen (src/shared/notifications.js): je Profil und Seerr-Server eine Datei <name>.json im Ordner notifications des Datenordners. Die Namen
+ * sind Pruefsummen (keine Adressen, keine Kennungen); andere Namen werden nie gelesen oder geschrieben. Keine Zugangsdaten darin.
+ */
+function notifyIo(dir) {
+  const ok = (name) => typeof name === 'string' && /^[0-9a-f]{1,32}-[0-9a-f]{1,32}$/.test(name);
+  const fileOf = (name) => path.join(dir, `${name}.json`);
+  return {
+    read(name) {
+      if (!ok(name)) return null;
+      try {
+        return fs.readFileSync(fileOf(name), 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    write(name, text) {
+      if (!ok(name)) return;
+      fs.mkdirSync(dir, { recursive: true });
+      const file = fileOf(name);
+      const tmp = `${file}.tmp`;
+      try {
+        fs.writeFileSync(tmp, text, 'utf8');
+        fs.renameSync(tmp, file);
+      } catch {
+        fs.writeFileSync(file, text, 'utf8'); // wie config.json: Virenscanner halten die Datei manchmal kurz offen
+        fs.rmSync(tmp, { force: true });
+      }
+    },
+    remove(name) {
+      if (ok(name)) fs.rmSync(fileOf(name), { force: true });
+    },
+    names() {
+      try {
+        return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).filter(ok);
+      } catch {
+        return [];
+      }
+    }
+  };
+}
+
 /** Zugangsdaten: "dpapi:<base64>" mit Windows-Schluesselspeicher, sonst "plain:<base64>" (nur Kodierung, keine Verschluesselung). */
 function nodeCodec(safe) {
   return {
@@ -62,4 +104,4 @@ class ConfigStore extends ConfigCore {
   }
 }
 
-module.exports = { ConfigStore, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec };
+module.exports = { ConfigStore, notifyIo, DEFAULT_SETTINGS, DEFAULT_UPDATE_SOURCE, THEMES, MAX_PROFILES, deepMerge, skipCountdownSec };

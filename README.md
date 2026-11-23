@@ -29,6 +29,7 @@ PGS-/ASS-Untertitel.
 - **Verwaltung für Administratoren:** Server (Info, Bibliotheken durchsuchen, Neustart, Herunterfahren), Aufgaben, Aktivität, Benutzer, Metadaten bearbeiten, identifizieren, Einträge löschen (siehe *Verwaltung*).
 - **Lange Untertitel-Listen:** Ab 9 Spuren ordnet die Auswahl auf der Detailseite und das Spur-Panel im Player die Untertitel nach Sprache: gleich zu sehen sind die bevorzugten Sprachen (eingestellte Untertitelsprache, Oberfläche, Tonspur, Englisch) und die gewählte Spur, der Rest steckt hinter *Weitere Sprachen*.
 - **Anfragen:** Titel, die es noch nicht gibt, lassen sich über Seerr anfragen (siehe *Anfragen mit Seerr*). Mit Seerr zeigt die Startseite die Reihen *Top 10 Filme*, *Top 10 Serien* und *Filme im Trend*; ohne Seerr gibt es sie nicht (seit 1.2.14, siehe *Anfragen mit Seerr*).
+- **Mitteilungen:** Mit Seerr meldet die App, wenn sich bei deinen Anfragen etwas tut (genehmigt, abgelehnt, fehlgeschlagen, erste Folgen, verfügbar; als Verwalter auch neue Anfragen anderer): ein roter Punkt am Profilsymbol, im Profilmenü „Mitteilungen“ mit „n neue“ (siehe *Mitteilungen*).
 - **Probleme melden:** Auf der Detailseite zeigt ein **Warnschild** in der Knopfleiste (nach Herz und Gesehen, vor „Mehr“) ein Fenster, in dem sich zu Video, Audio, Untertiteln oder Sonstigem ein Problem an Seerr melden lässt, der Kommentar ist freiwillig (siehe *Probleme an Seerr melden*).
 - **Discord Rich Presence:** Zeigt in Discord, was du gerade schaust, mit Poster, Folge und Fortschritt und einem Namen, den du selbst wählst (siehe *Discord Rich Presence*). Aus, bis du es einschaltest; die Discord-Anwendung ist eingebaut, es ist keine Einrichtung nötig.
 - **Startseite anpassen:** *Einstellungen > Startseite*: Banner an oder aus, Zahl der Folien, Zeitraum der Top 10, Reihen ein- und ausschalten und umsortieren (siehe *Startseite anpassen*).
@@ -424,6 +425,39 @@ seitenweise), in der Reihenfolge der Trends, höchstens zehn, ohne Ersatzinhalte
 
 Technisch: `src/main/seerr.js`, API `/api/v1` (`auth/jellyfin`, `search`, `request`, `issue`, `discover/trending`, `movie/{id}`, `tv/{id}`); die Detailantwort wird auf feste Typen und Längen reduziert (`normalizeDetails`), Bildpfade gelten nur in der Form, die das App-Protokoll annimmt. Alle Anfragen laufen mit `credentials: omit`, damit Chromiums Cookie-Speicher das Seerr-Cookie nicht heimlich
 mitschickt (sonst würde eine falsche Anmeldung durch ein altes Cookie akzeptiert und ein Profil sähe das Seerr eines anderen). Getestet gegen einen Mock-Seerr, **nicht** gegen einen echten Seerr-Server.
+
+## Mitteilungen
+
+**Seit 1.2.16 (Plan P17, wie `AppNotifications`, `NotificationsView` und `NotificationCenterModel` der Apple-App).** Seerr meldet einer App keine Ereignisse;
+die App erkennt eine Änderung, indem sie die Anfragen liest und mit dem zuletzt gesehenen Stand vergleicht (`src/shared/notifications.js`).
+
+- **Erkennung:** der erste Abgleich eines Profils mit einem Seerr-Server ist still (nur merken). Danach je eigene Anfrage: angefragt → genehmigt,
+  verfügbar (nur wenn der Titel wirklich da ist), erste Folgen, abgelehnt, fehlgeschlagen; erneut versucht ist keine Nachricht. Eine eigene Anfrage, die die
+  App noch nie gesehen hat und die seit dem letzten Abgleich gestellt wurde, zählt wie eine wartende. Bei Staffeln zählen die angefragten Staffeln, nicht der
+  Stand der Serie. **Eigene Entscheidungen sind keine Nachricht** (nennt Seerr den Nutzer als Bearbeiter, auch bei der automatischen Genehmigung); was er in
+  der App an einer Anfrage ändert, ebenso. Konten, die alle Anfragen sehen, bekommen „Neue Anfrage“ für wartende Anfragen anderer.
+- **Kennung** je Anfrage und Art: dieselbe Änderung ergibt nie zwei Einträge, auch nicht nach einem Neustart; entfernte bleiben entfernt. Höchstens 100.
+- **Anlässe statt Dauerabfrage:** bestätigte Verbindung zu Seerr (Start, Profilwechsel, Rückkehr in die App), Laden der eigenen Anfragen im Reiter
+  *Anfragen* (deren Liste wird mitverwendet), Öffnen der Übersicht (ausdrücklich), eine eigene Aktion an einer Anfrage, bei offener App höchstens alle 15
+  Minuten; sonst liegen zwischen zwei Abgleichen mindestens zwei Minuten. Nie zwei zugleich; was der Nutzer währenddessen liest, entfernt oder einstellt,
+  bleibt. Lässt sich der Titel einer Änderung nicht holen, kommt die Nachricht beim nächsten Abgleich. Die Zeit des Abgleichs hat zwei Minuten Spielraum für
+  Uhren, die voneinander abweichen.
+- **Ort:** kein Reiter. Roter Punkt (#FF453A, 9 px mit Rand) oben rechts am Profilsymbol, im Profilmenü der Eintrag *Mitteilungen* mit „n neue“ (nur mit
+  Seerr). Die Übersicht (`#/notifications`, `views/notifications.js`): je Mitteilung eine Karte (Fläche ohne Glas, Entscheidung E11) mit Plakat, Überschrift
+  (ungelesen halbfett mit Punkt), Text, Stand als Tag und Zeit („vor 3 Minuten“); Antippen öffnet den Titel (Mediathek, sonst seine Seite bei Seerr) und
+  merkt ihn als gelesen; Rechtsklick, langes Drücken und die Menü-Taste: *Als gelesen/ungelesen markieren*, *Entfernen* (statt Wischen); *Mehr*: *Alle
+  gelesen*, *Alle entfernen* (ohne Rückfrage, wie die Mitteilungszentrale).
+- **Einstellungen › Mitteilungen** (je Profil und Seerr-Server): Hauptschalter (aus: kein Abgleich, kein Punkt, keine Zahl; die Liste bleibt; wieder an:
+  der erste Abgleich ist still, nichts aus der ausgeschalteten Zeit kommt nach) und die Arten einzeln, *Neue Anfragen* nur mit dem Recht, alle zu sehen.
+  Mitteilungen des Systems kommen mit P18.
+- **Ablage:** je Profil und Seerr-Server, Namen als Prüfsummen (keine Adressen, keine Kennungen), keine Zugangsdaten. Windows: `userData\notifications\*.json`;
+  Web und Android: eigene Schlüssel `jellycloud.notify.*` im Speicher der Seite (der sichere Speicher der Android-App führt nur die Konfiguration). Gelöscht,
+  wenn das Profil entfernt oder abgemeldet wird; Seerr trennen nimmt die Mitteilungen dieses Seerr mit; eine neue Adresse des Servers zieht sie mit.
+- **Wortlaut** (`NotificationText` der Apple-App): „Dein angefragter Film ist jetzt verfügbar“, Serien mit ihren Staffeln („Staffeln 2, 3 von „…“ wurden
+  deiner Mediathek hinzugefügt.“), „Erste Folgen sind verfügbar“, „Anfrage genehmigt“, „Anfrage abgelehnt“, „Anfrage fehlgeschlagen“, „Neue Anfrage“.
+- Tests: `test/notifications.test.js` (die 14 Fälle aus `NotificationRulesTests`, die Fälle aus `NotificationCenterTests` ohne die zu den Mitteilungen des
+  Systems, ein Fall durch den echten `SeerrClient`; 25 Gegenproben), zwei Fälle der Rückseite gegen den Test-Seerr in `test/seerr-requests.test.js`, Szenario
+  `notifications.js` (Port 8985; 4 Gegenproben an der Oberfläche). Nur gegen den Mock-Seerr geprüft, nicht gegen einen echten Seerr-Server.
 
 ## Probleme an Seerr melden
 
@@ -829,6 +863,7 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `quick-connect.js` | **Konto, Profile, Quick Connect** (48 Prüfungen, Port 8995): Anmeldung (Marke, Kapselfelder, Fehler am richtigen Feld, Code in Kacheln, *Zurück*), *Konto* (Verbindung, Profile, Abmelden mit Rückfrage), Maske für andere Geräte (verdeckt die App, als wer und wo, Eingabe bereinigt, falscher und schon bestätigter Code, Erfolg, ausgeschaltet, Escape, Code nicht in der Konfiguration), Profil umbenennen, neue Adresse desselben Servers, fremder Server abgelehnt, Profil entfernen, Rückkehr in die App prüft, Start ohne Server; Aufnahmen `QC-*.png` |
 | `page-status.js` | **Zustände und Grundmaße** (21 Prüfungen, Port 8996): Leer- und Fehlerhinweis in der Mitte des Inhaltsbereichs, Knopf 18 darunter ohne den Hinweis zu verschieben, Fläche fängt keine Klicks ab, *Erneut versuchen* während des Versuchs gesperrt, Fehler beim Nachladen am Listenende ohne ungefragten neuen Versuch, Detailseite ohne Titel, Suche; Drücken (Knopf 0,94 und blasser, Karte 0,95 und dunkler), Feld so hoch wie der Knopf, Fehlerkontur; Aufnahmen `PS-*.png` |
 | `home-customize.js` | **Startseite anpassen** (32 Prüfungen, Port 8797): Einstellungen *Startseite* (Banner aus, Folien, Reihen ein/aus und umsortieren, Zurücksetzen), Wirkung sofort auf der Startseite, Banner nur aus der Mediathek, neue Bibliothek hinten, alles ausgeblendet, Überstehen eines Neustarts |
+| `notifications.js` | **Mitteilungen** (P17, Port 8985): ohne Seerr kein Eintrag und kein Punkt; erster Abgleich still bei bestätigter Verbindung; je Änderung eine Mitteilung, roter Punkt mit Zahl in der Bezeichnung, „n neue“ im Profilmenü, Übersicht (Wortlaut, Plakat, Tag, Zeit), Kontextmenü, *Alle gelesen*, Antippen öffnet den Titel, *Alle entfernen* (kommt nicht wieder), Einstellungen (Arten, aus: kein Abgleich und kein Punkt, wieder an: still), Verwalter: *Neue Anfrage*, Seerr trennen nimmt alles mit |
 | `item-menu.js` | **Detailseite und Kontextmenü** (P16, Port 8986, echte Mausklicks): Menü am Mauszeiger, unter dem Plakat bei langem Drücken und Tastatur, Einträge je Stand, Schließen (Escape, Klick daneben, Mausrad, Seitenwechsel; Scrollen von selbst nicht); Aus „Weiterschauen“ entfernen, Favorit und Gesehen danach auf Startseite (ohne Neuaufbau, Stellen bleiben), Mediathek (Karte an ihrem Platz), Detailseite (Folgen, *Abspielen*) und in der Seite im Speicher; „Fortsetzen ab“, „S1 E4 Fortsetzen ab“, Staffel beim Öffnen ohne Extras, Knopfreihe in zwei Zeilen, Gesehen-Tag, Informationen; Top 10 am Plakat; Seite eines Seerr-Titels |
 | `top-ten.js` | **Top 10** (P15, Port 8987): ohne Seerr keine Seerr-Reihen, kein Hinweis, keine Anfrage, gesperrt im Editor; Banner nur Neues aus der Mediathek; Top 10 Filme und Serien (nur Mediathek, Reihenfolge der Trends, weniger als zehn ohne Ersatz), Platz nach *Als Nächstes*, Beschriftung, Maße und Ebenen, Rand im Glow-Verlauf, 80 % ohne Zeiger, Platzhalter nur beim ersten Laden, Zeitraum und *Aktuell* in den Einstellungen, ohne Glow farblos, Arbeitsspeicher |
 | `review-fixes.js` | Fehler aus der Durchsicht (14 Prüfungen, Port 8997), jeder nachgestellt und behoben: Bibliothek lädt nach einer kurzen, ganz geladenen Liste (Favoriten) beim Zurückwechseln auf *Alle* weiter, auf einem sehr großen Bildschirm (Zoom 25 %) auch ohne Scrollen, ein Filter während des ersten Ladens gilt, Zurück während eines Seitenübergangs zeigt die passende Seite, der Rahmen der Oberfläche lässt beim Neuaufbau keinen Zuhörer für `route` zurück, die Suche bleibt nach geleertem Feld nicht abgeblendet |

@@ -223,6 +223,10 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .tool.on { color: var(--accent-fg, var(--accent)); background: rgb(var(--accent-rgb) / 0.14); }
 .who { padding: 0; cursor: pointer; font: inherit; }
 .avatar-sm { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; letter-spacing: 0.02em; color: var(--text); }
+/* Ungelesene Mitteilungen: kleiner roter Punkt oben rechts am Profilsymbol, mit duennem Rand in der Seitenfarbe (wie die Apple-App, 9 pt, keine Zahl) */
+.who { position: relative; }
+.notice-dot { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--badge); box-shadow: 0 0 0 1.5px var(--page); pointer-events: none; }
+.notice-dot[hidden] { display: none; }
 .drag-strip { position: fixed; inset: 0 0 auto 0; height: var(--title-h); -webkit-app-region: drag; z-index: 5; }
 
 /* ---------- Buttons & Formular ----------
@@ -1370,6 +1374,28 @@ html.splash-calm.splash-reveal #app { animation-name: sp-app-fade; }
 .sp-word span { display: inline-block; opacity: 0; animation: sp-letter calc(700ms * var(--dur)) var(--ease) calc((1000ms + var(--i) * 52ms) * var(--dur)) both; }
 @keyframes sp-letter { from { opacity: 0; transform: translateY(0.5em); filter: blur(8px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @keyframes sp-word-out { to { opacity: 0; transform: translateY(10px) scale(1.06); } }
+
+/* ---------- Mitteilungen (Plan P17, wie NotificationsView der Apple-App) ----------
+   Eine Seite (kein Reiter) im Rahmen der Einstellungsseiten: je Mitteilung eine Karte als Flaeche (Fläche 2, Rundung 22; kein Glas, Entscheidung E11),
+   Abstand 8. Plakat 46 x 69, Ueberschrift (ungelesen halbfett mit rotem Punkt 8 ohne Rand), Text gedaempft, darunter Tag des Stands und Zeit. */
+.notices-page { padding-top: calc(var(--topbar-h) + 6px); padding-bottom: 48px; }
+.notices-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: calc(760px + 2 * var(--pad)); padding-right: var(--pad); }
+.notices-head .page-title { padding-bottom: 22px; }
+.notices-more { flex: none; margin-bottom: 22px; }
+.notices-list { display: flex; flex-direction: column; gap: 8px; max-width: 760px; margin: 0 var(--pad); }
+.notice-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 22px; background: var(--surface2); box-shadow: 0 0 0 1px var(--line); cursor: pointer; animation: rise calc(420ms * var(--dur)) var(--ease) both; transition: background var(--t-fast), box-shadow var(--t-fast), scale var(--t-press-out) var(--ease); outline: none; }
+.notice-card:hover { background: color-mix(in srgb, var(--surface2) 86%, var(--text)); }
+.notice-card:active { scale: var(--press-scale-wide); transition-duration: var(--t-press-in); }
+.notice-card:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
+.notice-poster { position: relative; flex: none; width: 46px; height: 69px; border-radius: 8px; overflow: hidden; background: var(--surface); }
+.notice-poster .fallback-title { font-size: 9px; line-height: 1.2; padding: 4px; }
+.notice-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.notice-title { display: flex; align-items: baseline; gap: 6px; font-size: 14px; font-weight: 500; line-height: 1.35; }
+.notice-card.unread .notice-title { font-weight: 650; }
+.unread-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--badge); transform: translateY(-1px); }
+.notice-message { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.notice-meta { display: flex; align-items: center; gap: 8px; padding-top: 2px; color: var(--muted); font-size: 12px; }
+.notices-foot { max-width: 760px; margin: 14px var(--pad) 0; padding: 0 16px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
 /* ==========================================================================
    Kompakte Ansicht (Handy): gilt nur, wenn compact.js <html data-compact="on"> setzt, also nie im Windows-Programm (dort ist data-platform "desktop").

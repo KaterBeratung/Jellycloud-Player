@@ -51,6 +51,18 @@ contextBridge.exposeInMainWorld('jc', {
   seerrMedia: (req) => call('seerr:media', req),
   seerrRequestAction: (req) => call('seerr:requestAction', req),
   seerrIssue: (req) => call('seerr:issue', req),
+  notifications: () => call('notify:get'),
+  notificationsSync: (o) => call('notify:sync', { force: o?.force === true }),
+  notificationRead: (req) => call('notify:read', req),
+  notificationsReadAll: () => call('notify:readAll'),
+  notificationRemove: (id) => call('notify:remove', id),
+  notificationsRemoveAll: () => call('notify:removeAll'),
+  notificationPrefs: (p) => call('notify:prefs', p),
+  onNotifications: (cb) => {
+    const h = (_e, s) => cb(s);
+    ipcRenderer.on('notify:changed', h);
+    return () => ipcRenderer.removeListener('notify:changed', h);
+  },
   discordStatus: () => call('discord:status'),
   discordTest: (clientId) => call('discord:test', clientId),
   cacheInfo: () => call('cache:info'),

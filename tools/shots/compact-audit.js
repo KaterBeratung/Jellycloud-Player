@@ -120,6 +120,8 @@ module.exports = async (ctx) => {
     ['settings-network', '#/settings/network', null],
     ['settings-general', '#/settings/general', null],
     ['settings-seerr', '#/settings/seerr', null],
+    ['notifications', '#/notifications', null], // Mitteilungen (P17): ohne Seerr der Hinweis
+    ['settings-notifications', '#/settings/notifications', null],
     ['settings-account', '#/settings/account', null],
     ['settings-about', '#/settings/about', null],
     ['admin-server', '#/admin/server', null],

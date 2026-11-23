@@ -23,10 +23,13 @@ import { installCompact } from './compact.js';
 import { playSplash, splashActive, afterSplash } from './splash.js';
 import { installMotion } from './motion.js';
 import { runConnectionCheck } from './connection.js';
+import { installNotices, notices, readNotices } from './notices.js';
+import { notificationsView } from './views/notifications.js';
 
 installNoDrag();
 installMotion(); // Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (data-anim)
 installCompact(); // Handy: <html data-compact="on"> bei schmalem Fenster (im Desktop-Programm ohne Wirkung)
+installNotices(); // Mitteilungen: Zahl fuer den roten Punkt, Abgleich bei bestaetigter Verbindung und im Takt der offenen App (notices.js)
 const root = $('#app');
 let routerStarted = false;
 let splashStarted = false; // die Startanimation gibt es nur beim Start der App, nicht bei jedem Neuaufbau (erneute Anmeldung, Sprache, Neu laden)
@@ -44,6 +47,7 @@ route(/^\/seerr\/(?<type>movie|tv)\/(?<id>\d{1,9})$/, (p) => seerrTitleView(p));
 route(/^\/person\/tmdb\/(?<tmdb>\d{1,9})$/, (p) => personView(p)); // Seite einer Person aus der Besetzung eines Seerr-Titels (Nummer bei TMDB)
 route(/^\/person\/(?<id>[0-9a-fA-F-]{8,40})$/, (p) => personView(p)); // Seite einer Person der Mediathek
 route(/^\/search$/, (p) => searchView(p), { nav: 'search' });
+route(/^\/notifications$/, () => notificationsView()); // Mitteilungen: kein Reiter, aus dem Profilmenue; der gewaehlte Reiter bleibt gewaehlt
 route(/^\/settings(?:\/(?<section>\w+))?$/, (p) => settingsView(p), { nav: 'settings' });
 route(/^\/admin(?:\/(?<section>\w+))?$/, (p) => adminView(p), { nav: 'admin' });
 
@@ -89,7 +93,7 @@ function buildTabbar() {
 /**
  * Profilmenue am Profilsymbol (wie die Apple-App, Notiz design-system "Profilmenue"): Abschnitt Profile (der Haken beim aktiven, darunter
  * "Aktiv · Adresse"; die anderen mit ihrer Adresse), dann Quick Connect, Server oder Profil hinzufuegen, Einstellungen und zuletzt Abmelden.
- * Haken und Symbole stehen in einer Spalte. (Mitteilungen kommen mit Paket P17 dazu, nur mit Seerr.)
+ * Haken und Symbole stehen in einer Spalte. Mitteilungen (Plan P17) nur mit Seerr, mit "n neue" (aus: ohne Zahl).
  */
 function openProfileMenu(anchor) {
   const max = state.maxProfiles ?? 4;
@@ -100,6 +104,7 @@ function openProfileMenu(anchor) {
       return { id: 'profile', profile: s.id, label: s.label || s.userName, sub: on ? `${t('set.active')} · ${s.url}` : s.url, selected: on };
     }),
     { separator: true },
+    ...(state.seerr && notices.active ? [{ id: 'notifications', label: t('notify.title'), sub: notices.notice ? t('notify.newCount', { n: notices.notice }) : '', icon: 'bell' }] : []),
     { id: 'qc', label: t('qc.title'), icon: 'qc' },
     { id: 'add', label: t('acct.add'), icon: 'plus' },
     { id: 'settings', label: t('nav.settings'), icon: 'settings' },
@@ -120,6 +125,8 @@ function openProfileMenu(anchor) {
         } catch (err) {
           toast(err.message, { type: 'error' });
         }
+      } else if (e.id === 'notifications') {
+        navigate('/notifications');
       } else if (e.id === 'qc') {
         openQuickConnect({ onSignedOut: () => document.dispatchEvent(new CustomEvent('session-expired')) });
       } else if (e.id === 'add') {
@@ -172,6 +179,15 @@ function buildShell() {
   const srv = activeServer();
   const who = h('button', { class: 'tool who', type: 'button', 'aria-haspopup': 'menu', title: srv ? `${srv.label || srv.userName} @ ${srv.name || srv.url}` : '', 'aria-label': t('nav.profileMenu') }, h('span', { class: 'avatar-sm' }, initialsOf(srv?.label || srv?.userName)));
   who.addEventListener('click', () => openProfileMenu(who));
+  // Ungelesene Mitteilungen: ein kleiner roter Punkt oben rechts am Profilsymbol (wie die Apple-App: keine Zahl im Symbol; aus: kein Punkt)
+  const noticeDot = h('span', { class: 'notice-dot', 'aria-hidden': 'true', hidden: true });
+  who.append(noticeDot);
+  const paintNotice = () => {
+    const n = state.seerr ? notices.notice : 0;
+    noticeDot.hidden = n === 0;
+    who.setAttribute('aria-label', n ? `${t('nav.profileMenu')}, ${t('notify.newCount', { n })}` : t('nav.profileMenu'));
+  };
+  paintNotice();
   tools.append(reload, ...(admin ? [admin] : []), settings, who);
   // Versionshinweis in Gruen unter dem Konto (rechtsbuendig unter der Kapsel), solange ein Update gefunden, geladen oder bereit ist
   const updateNote = h('a', { class: 'update-note', href: '#/settings/about', hidden: true });
@@ -246,10 +262,12 @@ function buildShell() {
     syncGlow(view.firstElementChild); // Ambient Glow des Bereichs der jetzt sichtbaren Ansicht (glow.js; Seiten ohne Bereich: keiner)
   };
   document.addEventListener('route', onRoute);
+  document.addEventListener('notices-changed', paintNotice);
   const resizeObserver = new ResizeObserver(() => place(links.find((a) => a.classList.contains('on'))));
   resizeObserver.observe(nav);
   shellCleanup = () => {
     document.removeEventListener('route', onRoute);
+    document.removeEventListener('notices-changed', paintNotice);
     resizeObserver.disconnect();
   };
 
@@ -313,11 +331,12 @@ async function boot() {
   if (conn.jellyfin.state === 'unauthorized') return showLogin({ message: t('toast.sessionExpired') });
   state.isAdmin = !!conn.jellyfin.isAdmin;
   buildShell();
+  readNotices(); // Punkt am Profilsymbol gleich mit dem gemerkten Stand; der Abgleich folgt, sobald Seerr bestaetigt ist
   if (state.justUpdated && !announcedUpdate) {
     announcedUpdate = true;
     afterSplash(() => toast(t('upd.done', { v: state.appVersion }))); // unter der Startanimation sah man ihn nicht
   }
-  if (!/^#\/(home|movies|shows|requests|library|item|seerr|person|search|settings|admin)/.test(location.hash)) location.hash = '#/home';
+  if (!/^#\/(home|movies|shows|requests|library|item|seerr|person|search|notifications|settings|admin)/.test(location.hash)) location.hash = '#/home';
   if (!state.isAdmin && /^#\/admin/.test(location.hash)) location.hash = '#/home';
   if (routerStarted) await refresh();
   else {
