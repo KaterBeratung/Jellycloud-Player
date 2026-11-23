@@ -26,11 +26,10 @@ const DEFAULT_SETTINGS = {
     blur: true, // Glas-Effekte (Backdrop-Blur)
     heroAutoplay: true, // Hero-Banner wechselt automatisch
     ambient: true, // Hintergrund nimmt dezent die Farbe des gezeigten Banners/Titels auf (wie Apple TV)
-    homeTrending: true, // Startseite: Reihe "Filme im Trend" (aus Seerr; ohne Verbindung steht dort ein Hinweis zur Einrichtung) und bis zu zwei gut bewertete davon im Banner
     cardTitles: true // Titel unter den Postern
   },
-  // Startseite anpassen: Banner (an/aus, Folien, Trend-Folien) und Reihen (Reihenfolge, ausgeblendet); Regeln in src/shared/home-rows.js.
-  // "Filme im Trend" blendet appearance.homeTrending aus, "Banner wechselt automatisch" ist appearance.heroAutoplay.
+  // Startseite anpassen: Banner (an/aus, Folien), Zeitraum der Top 10 und Reihen (Reihenfolge, ausgeblendet, je Profil); Regeln in src/shared/home-rows.js.
+  // "Banner wechselt automatisch" ist appearance.heroAutoplay. "Filme im Trend" ist seit 1.2.14 eine Reihe wie jede andere (ausblenden ueber "hidden").
   home: structuredClone(HomeRows.DEFAULTS),
   // Ambient Glow (wie in der Apple-App): an, Verlauf Lila zu Blau, 100 %, je Bereich an und ohne eigene Einstellung. Regeln, tolerantes Lesen und
   // Aendern in src/shared/glow.js; gespeichert wird die ganze Einstellung (updateSettings ersetzt sie, statt sie zu verschmelzen).
@@ -248,6 +247,16 @@ class ConfigCore {
       // Reihen der Startseite je Profil (bleiben auch nach dem Abmelden); die Reihen des Geraets gehen einmal an die gemerkten Profile (_adoptHomeRows)
       this.data.homeRowsByProfile = readRowsMap(raw.homeRowsByProfile);
       this.data.homeRowsAdopted = raw.homeRowsAdopted === true;
+      // Seit 1.2.14 (Entscheidung E8, wie die Apple-App): "Filme im Trend" hat keinen eigenen Schalter mehr, sondern ist eine Reihe wie jede andere. War der
+      // alte Schalter aus, ist die Reihe ausgeblendet: bei jedem Profil und bei den Reihen des Geraets (die gehen spaeter an neue Profile). Laeuft bei jedem
+      // Lesen, bis die Datei ohne den alten Schalter gespeichert ist; doppelt ausgeblendet wird nichts.
+      if (raw.settings?.appearance?.homeTrending === false) {
+        const hide = (r) => ({ order: r.order, hidden: r.hidden.includes('trending') ? r.hidden : [...r.hidden, 'trending'] });
+        const device = this.data.settings.home;
+        this.data.settings.home = HomeRows.homeConfig({ ...device, hidden: hide(device).hidden });
+        if (this.data.homeRowsAdopted) for (const s of this.data.servers) this.setHomeRows(hide(this.homeRows(s.id)), s.id, { save: false });
+      }
+      delete look.homeTrending;
       if (typeof raw.seerrAddress === 'string' && raw.seerrAddress) this.data.seerrAddress = raw.seerrAddress.slice(0, 300);
       // Seerr bis Version 9: eine Verbindung fuer das ganze Geraet. Sie geht an das aktive Profil, wenn der Benutzername passt (Jellyfin-Konto); sonst wird
       // nur die Adresse vorbelegt. Verbindungen mit API-Schluessel verfallen (Entscheidung E12): einmal mit dem Jellyfin-Konto neu anmelden.

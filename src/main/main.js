@@ -288,6 +288,8 @@ function registerIpc() {
   ipcMain.handle('seerr:related', wrap((req) => backend.seerrRelated({ mediaType: req?.mediaType, tmdbId: Number(req?.tmdbId), kind: String(req?.kind ?? '') })));
   ipcMain.handle('seerr:collection', wrap((id) => backend.seerrCollection(Number(id))));
   ipcMain.handle('seerr:imdb', wrap((tmdbId) => backend.seerrImdb(Number(tmdbId))));
+  ipcMain.handle('top10:get', wrap((o) => backend.topTen({ window: o?.window === 'day' ? 'day' : 'week', force: o?.force === true })));
+  ipcMain.handle('top10:status', wrap((o) => backend.topTenStatus({ window: o?.window === 'day' ? 'day' : 'week' })));
   ipcMain.handle('seerr:person', wrap((id) => backend.seerrPerson(Number(id))));
   ipcMain.handle('seerr:filmography', wrap((id) => backend.seerrFilmography(Number(id))));
   ipcMain.handle('seerr:quota', wrap(() => backend.seerrQuota()));

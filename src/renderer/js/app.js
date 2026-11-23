@@ -382,6 +382,7 @@ let reloading = false;
 async function reloadData({ hard = false } = {}) {
   if (!state.loggedIn || reloading) return;
   reloading = true;
+  document.dispatchEvent(new CustomEvent('reload-requested')); // auch Zwischengespeichertes wie die Rangfolge der Top 10 neu holen
   try {
     if (hard) {
       await window.jc.clearCache().catch(() => {});

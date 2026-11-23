@@ -60,14 +60,14 @@ module.exports = async (ctx) => {
   check('Standard: mehrere Reihen, "Filme im Trend" steht zuletzt', base.length >= 4 && base[base.length - 1] === 'Filme im Trend', base.join(' | '));
   const slidesDefault = await ctx.run(`document.querySelectorAll('.hero-slide').length`);
   check('Standard: bis zu 6 Folien', slidesDefault >= 3 && slidesDefault <= 6, String(slidesDefault));
-  check('Standard: die Einstellungen haben die Standardwerte der Startseite', JSON.stringify(cfgHome()) === JSON.stringify({ hero: true, heroSlides: 6, heroTrend: 2, order: [], hidden: [] }), JSON.stringify(cfgHome()));
+  check('Standard: die Einstellungen haben die Standardwerte der Startseite', JSON.stringify(cfgHome()) === JSON.stringify({ hero: true, heroSlides: 6, rankingWindow: 'week', order: [], hidden: [] }), JSON.stringify(cfgHome()));
 
   // ---------- Einstellungsseite ----------
   await go('#/settings/home');
   check('Einstellungen > Startseite: die Seite hat Bereiche Banner und Reihen', await waitFor(`document.querySelectorAll('.settings-panel .group-title').length >= 2 && !!document.querySelector('.home-rows')`, 4000));
   check('...die Seitenleiste hat den Eintrag "Startseite" und er ist gewaehlt', await ctx.run(`document.querySelector('.snav.on')?.textContent.trim() === 'Startseite'`));
   const names = await listNames();
-  check('...die Liste zeigt alle Reihen in der Standardreihenfolge', names.length >= 4 && names[names.length - 1] === 'Filme im Trend' && names.includes('Weiterschauen') && names.includes('Favoriten'), names.join(' | '));
+  check('...die Liste zeigt alle Reihen in der Standardreihenfolge', names.length >= 4 && names[names.length - 1] === 'Filme im Trend (Seerr)' && names.includes('Weiterschauen') && names.includes('Top 10 Filme') && names.includes('Favoriten'), names.join(' | '));
   check('...jede Reihe hat Nummer, zwei Pfeile und einen Schalter, der oberste kann nicht hoch, der unterste nicht runter', await ctx.run(`(() => { const rs = [...document.querySelectorAll('.home-row')]; return rs.every((r) => r.querySelectorAll('.home-row-move button').length === 2 && r.querySelector('button.switch') && r.querySelector('.home-row-pos')) && rs[0].querySelector('.home-row-move button').disabled && rs.at(-1).querySelectorAll('.home-row-move button')[1].disabled; })()`));
   await ctx.capture(path.join(out, 'HC-einstellungen.png'));
 
@@ -89,7 +89,7 @@ module.exports = async (ctx) => {
 
   // Trend-Reihe an die zweite Stelle: der Platzhalter fuellt sich an seiner Stelle
   await go('#/settings/home');
-  await clickRow('Filme im Trend', `for (let i = 0; i < 12; i++) { const b = r.querySelectorAll('.home-row-move button')[0]; if (!b.disabled) b.click(); }`);
+  await clickRow('Filme im Trend (Seerr)', `for (let i = 0; i < 12; i++) { const b = r.querySelectorAll('.home-row-move button')[0]; if (!b.disabled) b.click(); }`);
   await ctx.wait(500);
   await homeReady();
   check('"Filme im Trend" steht ganz oben und ist gefuellt (nicht mehr unten)', await waitFor(`document.querySelector('.home .rows > :first-child.trend-row .req-card, .home .rows > :first-child.trend-row .card')`, 6000), (await rowTitles()).join(' | '));
@@ -118,13 +118,8 @@ module.exports = async (ctx) => {
   await homeReady();
   await waitFor(`!!document.querySelector('.hero-slide')`, 8000);
   const s3 = await ctx.run(`document.querySelectorAll('.hero-slide').length`);
-  check('...das Banner hat hoechstens 3 Folien (die Trend-Folien zaehlen mit)', s3 >= 1 && s3 <= 3, String(s3));
-  await go('#/settings/home');
-  await ctx.run(`(() => { const i = [...document.querySelectorAll('.setting')].find((s) => s.querySelector('.setting-label')?.textContent === 'Trend-Filme im Banner').querySelector('input[type=range]'); i.value = 0; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  await ctx.wait(500);
-  await homeReady();
-  await waitFor(`!!document.querySelector('.hero-slide')`, 8000);
-  check('Trend-Filme im Banner auf 0: keine Trend-Folie (Beschriftung "Im Trend")', await ctx.run(`![...document.querySelectorAll('.hero-slide .hero-label')].some((l) => /Trend/.test(l.textContent))`));
+  check('...das Banner hat hoechstens 3 Folien', s3 >= 1 && s3 <= 3, String(s3));
+  check('...nur Neues aus der Mediathek, auch mit Seerr keine Trend-Folie (Entscheidung E8)', await ctx.run(`[...document.querySelectorAll('.hero-slide .hero-label')].every((l) => /^Neu in (Filme|Serien)$/.test(l.textContent))`));
 
   await go('#/settings/home');
   await ctx.run(`[...document.querySelectorAll('.setting')].find((s) => s.querySelector('.setting-label')?.textContent === 'Banner anzeigen').querySelector('button.switch').click()`);
@@ -152,7 +147,7 @@ module.exports = async (ctx) => {
   await ctx.run(`document.querySelector('.settings-panel .btn.glass.sm:not(.icon)')?.click()`);
   await ctx.wait(500);
   const reset = JSON.stringify(cfgHome());
-  check('Zuruecksetzen: Standardwerte der Startseite', reset === JSON.stringify({ hero: true, heroSlides: 6, heroTrend: 2, order: [], hidden: [] }) && ctx.config.settings.appearance.homeTrending === true && ctx.config.settings.appearance.heroAutoplay === true, reset);
+  check('Zuruecksetzen: Standardwerte der Startseite', reset === JSON.stringify({ hero: true, heroSlides: 6, rankingWindow: 'week', order: [], hidden: [] }) && ctx.config.settings.appearance.heroAutoplay === true && !('homeTrending' in ctx.config.settings.appearance), reset);
   check('...die Liste zeigt wieder alle Reihen eingeschaltet in Standardreihenfolge', JSON.stringify(await listNames()) === JSON.stringify(names) && (await ctx.run(`!document.querySelector('.home-row.off')`)));
   await homeReady();
   check('...die Startseite ist wieder wie am Anfang (Banner und Reihen)', (await waitFor(`!!document.querySelector('.home .hero .hero-slide')`, 8000)) && JSON.stringify(await rowTitles()) === JSON.stringify(base), (await rowTitles()).join(' | '));

@@ -22,6 +22,7 @@ export function glowSection({ save, setting, group }) {
     state.settings.glow = next;
     save(next);
     refreshGlow();
+    document.dispatchEvent(new CustomEvent('glow-settings')); // Rangziffern der Top 10 nehmen die neue Farbe an (views/top-ten.js)
     if (rebuild) render();
   };
 

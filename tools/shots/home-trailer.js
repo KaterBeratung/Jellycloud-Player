@@ -59,15 +59,15 @@ module.exports = async (ctx) => {
   await ctx.wait(1500);
   const labels = await ctx.run(`[...document.querySelectorAll('.hero-slide .hero-label')].map((l) => l.textContent.trim())`);
   check('Banner: sechs Folien', labels.length === 6, String(labels.length));
-  check('Banner: alle Folien sind Neuzugaenge ("Neu hinzugefügt"), nicht Weiterschauen oder Als Naechstes', labels.length > 0 && labels.every((l) => l === 'Neu hinzugefügt'), JSON.stringify(labels));
+  check('Banner: alle Folien sind Neuzugaenge, Filme und Serien abwechselnd ("Neu in Filme", "Neu in Serien" wie die Apple-App), nicht Weiterschauen oder Als Naechstes', labels.length > 0 && labels.every((l, i) => l === (i % 2 ? 'Neu in Serien' : 'Neu in Filme')), JSON.stringify(labels));
   const titles = await ctx.run(`[...document.querySelectorAll('.hero-slide')].map((s) => s.querySelector('.hero-title')?.textContent.trim() ?? s.querySelector('.hero-logo')?.alt ?? '')`);
   check(`Banner: die neuesten Titel, Filme und Serien abwechselnd (${movies[0].Name}, ${shows[0].Name}, ${movies[1].Name}, ${shows[1].Name} ...)`, titles[0] === movies[0].Name && titles[1] === shows[0].Name && titles[2] === movies[1].Name && titles[3] === shows[1].Name, JSON.stringify(titles));
   const kinds = await ctx.run(`[...document.querySelectorAll('.hero-slide')].map((s) => s.querySelector('.hero-logo') ? 'logo' : s.querySelector('.hero-title') ? 'text' : '?')`);
   check('Banner: wo es ein Logo gibt, steht das Logo statt des Titels als Text (Logo, Logo, Logo, dann Text fuer die Serie ohne Logo)', kinds.slice(0, 4).join('|') === 'logo|logo|logo|text', JSON.stringify(kinds));
   check('Banner: die Logos kommen aus der Abfrage der Neuzugaenge (Bilder der Art Logo, nicht nur Hintergrund und Poster)', await ctx.run(`[...document.querySelectorAll('.hero-logo')].every((i) => /\\/Logo\\?/.test(i.getAttribute('src') ?? ''))`));
   const rowTitles = await ctx.run(`[...document.querySelectorAll('.rows .row .row-head h2')].map((h) => h.textContent.trim())`);
-  // Ganz unten steht die Reihe "Filme im Trend" (hier ohne Seerr der Hinweis zur Einrichtung), siehe home-trending.js
-  check('Reihen wie in der Apple-App: Weiterschauen und Als Naechstes ganz oben, danach die Neuzugaenge (Filme, Serien), Favoriten, ganz unten Filme im Trend', rowTitles.join('|') === 'Weiterschauen|Als Nächstes|Neu in Filme|Neu in Serien|Favoriten|Filme im Trend', JSON.stringify(rowTitles));
+  // Ohne Seerr gibt es weder "Filme im Trend" noch die Top 10 (seit 1.2.14, Entscheidung E8), siehe home-trending.js und top-ten.js
+  check('Reihen wie in der Apple-App: Weiterschauen und Als Naechstes ganz oben, danach die Neuzugaenge (Filme, Serien), Favoriten; ohne Seerr keine Seerr-Reihe', rowTitles.join('|') === 'Weiterschauen|Als Nächstes|Neu in Filme|Neu in Serien|Favoriten', JSON.stringify(rowTitles));
   const counts = await ctx.run(`[...document.querySelectorAll('.rows .row')].filter((r) => /^Neu in /.test(r.querySelector('.row-head h2')?.textContent.trim() ?? '')).slice(0, 2).map((r) => r.querySelectorAll('.card').length)`);
   check('Reihen: die Neuzugaenge zeigen bis zu 30 Eintraege (mehr als vorher 20)', counts[0] > 20 && counts[0] <= 30, JSON.stringify(counts));
   check('Aus: kein Trailer im Banner', await ctx.run(`!document.querySelector('.hero .trailer')`));

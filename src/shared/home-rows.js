@@ -12,14 +12,17 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const LIMITS = { heroSlides: [3, 10], heroTrend: [0, 4] };
+  const LIMITS = { heroSlides: [3, 10] };
   const MAX_LIST = 100;
 
-  /** Standardwerte (stehen auch in den Einstellungen, config.js). */
+  /**
+   * Standardwerte (stehen auch in den Einstellungen, config.js). Das Banner zeigt nur Neues aus der Mediathek (seit 1.2.14 ohne Trend-Folien aus Seerr,
+   * Entscheidung E8 wie die Apple-App).
+   */
   const DEFAULTS = {
     hero: true, // Banner oben auf der Startseite
     heroSlides: 6, // Folien im Banner
-    heroTrend: 2, // davon bis zu so viele gut bewertete Trend-Filme (Seerr); 0 = keine
+    rankingWindow: 'week', // Zeitraum der Top 10: 'week' (diese Woche) oder 'day' (heute); gilt fuer das Geraet
     order: [], // gewuenschte Reihenfolge der Reihen (Kennungen)
     hidden: [] // ausgeblendete Reihen (Kennungen)
   };
@@ -59,7 +62,7 @@
     return {
       hero: r.hero !== false,
       heroSlides: clampInt(r.heroSlides, LIMITS.heroSlides[0], LIMITS.heroSlides[1], DEFAULTS.heroSlides),
-      heroTrend: clampInt(r.heroTrend, LIMITS.heroTrend[0], LIMITS.heroTrend[1], DEFAULTS.heroTrend),
+      rankingWindow: r.rankingWindow === 'day' ? 'day' : 'week',
       order: cleanList(r.order),
       hidden: cleanList(r.hidden)
     };

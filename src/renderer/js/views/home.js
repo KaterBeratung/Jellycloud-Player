@@ -1,32 +1,40 @@
 import { h, icon } from '../dom.js';
-import { t } from '../i18n.js';
-import { api, backdropOf, landscapeOf, logoOf, itemHref, mapImage } from '../api.js';
+import { t, getLocale } from '../i18n.js';
+import { api, backdropOf, landscapeOf, logoOf, itemHref } from '../api.js';
 import { state, updateSettings, SUPPORTED_COLLECTIONS } from '../state.js';
 import { lazyImage, pageStatus, row, showPageStatus, skeletonRow, titleOf, toast } from '../ui.js';
-import { cardTags, seerrTitleTag } from '../tags.js';
+import { cardTags } from '../tags.js';
 import { fmtDuration, ticksToSec } from '../utils.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
 import { refreshGlow } from '../glow.js';
 import { createTrailer } from '../trailer.js';
-import { navigate } from '../router.js';
-import { requestCard, requestOne } from './request-card.js';
-import { openSeerrTitle } from '../seerr-open.js';
+import { requestCard } from './request-card.js';
+import { topTenRow } from './top-ten.js';
+import { seerrState } from '../connection.js';
 
 const Media = window.JCMedia;
-const SeerrState = window.JCSeerrState; // Staende bei Seerr (src/shared/seerr-state.js)
 const Format = window.JCFormat; // Schreibweisen der Angabenzeilen (src/shared/format.js)
-const HomeRows = window.JCHomeRows; // Anpassung der Startseite (src/shared/home-rows.js); Folien im Banner und Trend-Folien kommen aus den Einstellungen
+const HomeRows = window.JCHomeRows; // Anpassung der Startseite (src/shared/home-rows.js); Folien im Banner kommen aus den Einstellungen
+const Rankings = window.JCRankings; // Top 10 (src/shared/rankings.js)
 const HERO_MS = 9000; // so lange bleibt eine Folie ohne Trailer stehen
 const HERO_AFTER_TRAILER_MS = 1200; // nach dem Ende eines Trailers noch kurz das Bild, dann geht es weiter
 const LATEST_PER_ROW = 30;
 const TREND_TTL_MS = 10 * 60 * 1000; // so lange gilt die Liste der Trend-Filme, bevor Seerr wieder gefragt wird
 
-const TREND_MIN_RATING = 7; // ab dieser TMDB-Bewertung (0 bis 10) gilt ein Trend-Film als gut bewertet
-const TREND_WAIT_MS = 1500; // so lange wartet der Aufbau des Banners hoechstens auf die Trend-Liste (danach ohne Trend-Folien, die Reihe darunter kommt trotzdem)
+/**
+ * Was die Startseite zuletzt von den Top 10 wusste, je Profil, Seerr und Zeitraum: steht es schon fest (oder ist das Laden schon einmal gescheitert),
+ * baut sich die Startseite ohne Platzhalter auf; Platzhalter gibt es nur beim ersten Laden (sonst erschienen die Reihen nach einem Fehler der Quelle bei
+ * jedem Aufbau kurz und verschwaenden wieder). Die Rangfolge selbst merkt sich die Rueckseite (30 min).
+ */
+let topMemory = null; // { key, result: { window, movies, series } | null }
+let forceTopTen = false; // "Neu laden": auch die Rangfolge neu holen
+document.addEventListener('reload-requested', () => (forceTopTen = true));
+const topWindow = () => HomeRows.homeConfig(state.settings.home).rankingWindow;
+const topKey = () => `${state.activeServerId}|${state.seerr?.url ?? ''}|${topWindow()}`;
 
 /**
  * Filme im Trend von Seerr. Die Startseite wird oft neu aufgebaut (etwa nach jedem Film): innerhalb von TREND_TTL_MS kommt die Liste aus dem Speicher. Gemerkt wird das laufende
- * Versprechen (nicht erst das Ergebnis): Banner und Reihe fragen so nur einmal, auch wenn Seerr langsam ist; ein Fehlschlag wird nicht gemerkt.
+ * Versprechen (nicht erst das Ergebnis): fragt die Startseite waehrenddessen noch einmal, gilt dieselbe Antwort; ein Fehlschlag wird nicht gemerkt.
  */
 let trendCache = null; // { key, at, list: Promise }
 const trendKey = () => `${state.activeServerId}|${state.seerr?.url}|${state.seerr?.userName}`; // Seerr gilt je Profil
@@ -50,46 +58,6 @@ function loadTrending() {
   return entry.list;
 }
 
-/** Wartet hoechstens `ms` auf ein Versprechen; danach kommt `fallback` (das Versprechen selbst laeuft weiter). */
-function within(promise, ms, fallback) {
-  let timer;
-  return Promise.race([promise, new Promise((resolve) => (timer = setTimeout(() => resolve(fallback), ms)))]).finally(() => clearTimeout(timer));
-}
-
-/** Bibliothekseintrag (Film mit Bild) zu einem Seerr-Titel ueber die TMDB-Nummer, sonst null. */
-async function libraryMatch(r) {
-  try {
-    const res = await api.getItems({ anyProviderIdEquals: `tmdb.${r.id}`, includeItemTypes: 'Movie', recursive: true, limit: 1 });
-    const item = res.Items?.[0];
-    return item && (backdropOf(item) || landscapeOf(item)) ? item : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Bis zu `count` (Einstellung "Trend-Filme im Banner") gut bewertete Filme aus dem Trend fuers Banner, in der Reihenfolge von Seerr: Bewertung ab TREND_MIN_RATING und ein Hintergrundbild. Ist ein Titel
- * laut Seerr schon da (verfuegbar oder teilweise) und in der Bibliothek zu finden, kommt dessen Bibliotheksfolie mit "Abspielen" statt der Folie mit "Details" (Anfrage).
- * Leer: ohne Seerr, bei ausgeschaltetem Schalter, ohne Treffer oder wenn Seerr nicht binnen TREND_WAIT_MS antwortet.
- * @returns {Promise<({ kind: 'trend', item: object } | { kind: 'trend', seerr: object })[]>}
- */
-async function trendEntries(count) {
-  dropForeignTrend();
-  if (!state.seerr || state.settings.appearance.homeTrending === false || !(count > 0)) return [];
-  try {
-    const list = await within(loadTrending(), TREND_WAIT_MS, []);
-    const picks = list.filter((r) => r.rating >= TREND_MIN_RATING && r.backdropPath).slice(0, count);
-    return await Promise.all(
-      picks.map(async (r) => {
-        const item = r.status === 4 || r.status === 5 ? await libraryMatch(r) : null;
-        return item ? { kind: 'trend', item } : { kind: 'trend', seerr: r };
-      })
-    );
-  } catch {
-    return []; // Seerr nicht erreichbar oder Anmeldung abgelaufen: das Banner bleibt wie es war (die Reihe darunter zeigt den Hinweis)
-  }
-}
-
 function metaLine(item) {
   const bits = [];
   if (item.Type === 'Episode') bits.push(Format.episodeLabel(item));
@@ -104,7 +72,7 @@ function heroSlide(entry, first) {
   const { item, kind } = entry;
   const bd = backdropOf(item, 1920) ?? landscapeOf(item, 1280);
   const logo = logoOf(item, 640);
-  const label = kind === 'resume' ? t('home.continue') : kind === 'next' ? t('home.nextUp') : kind === 'trend' ? t('home.trendLabel') : t('home.new');
+  const label = kind === 'series' ? t('home.newSeries') : t('home.newMovies');
   const hasProgress = (item.UserData?.PlaybackPositionTicks ?? 0) > 0;
 
   const slide = h('article', { class: 'hero-slide' });
@@ -150,53 +118,12 @@ function heroSlide(entry, first) {
 }
 
 /**
- * Folie fuer einen gut bewerteten Trend-Film von Seerr, der nicht in der Bibliothek liegt: Hintergrundbild von TMDB (ueber das App-Protokoll), Angaben aus der Trend-Liste,
- * "Details" oeffnet die Seite des Titels (wie die Karten der Reihe, seerr-open.js), "Anfragen" fragt gleich an. Der Titel steht als Text (kein Logo).
- */
-function seerrSlide(entry, first) {
-  const r = entry.seerr;
-  const slide = h('article', { class: 'hero-slide' });
-  slide._hash = null; // kein Hintergrundton bekannt (er kommt sonst aus dem Bild der Bibliothek)
-  slide.append(lazyImage({ url: mapImage(`jellycloud://tmdb/w1280${r.backdropPath}`), hash: null }, { cls: 'hero-bg', eager: first }), h('div', { class: 'hero-shade' }));
-
-  const content = h('div', { class: 'hero-content' }, h('span', { class: 'hero-label' }, t('home.trendLabel')), h('h1', { class: 'hero-title' }, r.title));
-  const standTag = h('span', { class: 'hero-stand' }); // Stand bei Seerr als Tag (Angefragt, Verfuegbar ...), nur wenn schon etwas angefragt ist
-  const bits = [r.year ? String(r.year) : null, Format.score(r.rating) ? h('span', { class: 'score' }, icon('star', 14), Format.score(r.rating)) : null, t('seerr.movie'), standTag].filter(Boolean);
-  content.append(h('div', { class: 'hero-meta' }, bits.map((b) => (typeof b === 'string' ? h('span', null, b) : b))));
-  if (r.overview) content.append(h('p', { class: 'hero-overview' }, r.overview));
-
-  const details = h('button', { class: 'btn primary lg', type: 'button' }, icon('info', 20), h('span', null, t('action.details')));
-  const ask = h('button', { class: 'btn glass lg', type: 'button' }, icon('plus', 20), h('span', null, t('seerr.request')));
-  const paint = () => {
-    const open = SeerrState.isRequestable(r.status); // ohne Stand oder geloescht: anfragen moeglich; gesperrt nie
-    ask.hidden = !open;
-    const tag = seerrTitleTag(r.status);
-    standTag.replaceChildren(...(tag ? [tag] : []));
-    standTag.hidden = !tag;
-  };
-  paint();
-  details.addEventListener('click', () => openSeerrTitle({ mediaType: 'movie', tmdbId: r.id, known: r }));
-  ask.addEventListener('click', async () => {
-    ask.disabled = true;
-    try {
-      await requestOne(r);
-    } finally {
-      ask.disabled = false;
-      paint();
-    }
-  });
-  content.append(h('div', { class: 'hero-actions' }, details, ask));
-  slide.append(content);
-  return slide;
-}
-
-/**
  * Hero-Banner mit automatischem Wechsel. Mit `trailers` (die Trailer-Einstellungen) spielt die aktive Folie ihren Trailer im Hintergrund ab (wie auf der
  * Detailseite): das Banner bleibt dann stehen, bis der Trailer zu Ende ist, und geht danach weiter. Laesst er sich nicht abspielen, gilt wieder die normale Zeit.
  */
 function createHero(entries, { autoplay, onActive, trailers = null }) {
   const el = h('section', { class: 'hero', 'aria-roledescription': 'carousel' });
-  const slides = entries.map((e, i) => (e.seerr ? seerrSlide(e, i === 0) : heroSlide(e, i === 0)));
+  const slides = entries.map((e, i) => heroSlide(e, i === 0));
   const dots = h('div', { class: 'hero-dots' });
   let index = 0;
   let timer = null;
@@ -210,14 +137,9 @@ function createHero(entries, { autoplay, onActive, trailers = null }) {
 
   const videoIdOf = (i) => {
     if (!videoIds.has(i)) {
-      const { item, seerr } = entries[i];
-      // Seerr-Folie: der Trailer steht in den Details bei Seerr (relatedVideos, nur ein YouTube-Schluessel); Bibliotheksfolie: aus dem vollstaendigen Eintrag
-      videoIds.set(
-        i,
-        seerr
-          ? window.jc.seerrDetails({ mediaType: seerr.mediaType, mediaId: seerr.id }).then((d) => d?.trailerKey ?? null).catch(() => null)
-          : api.getItem(item.SeriesId ?? item.Id).then((full) => Media.trailerVideoId(full)).catch(() => null)
-      );
+      const { item } = entries[i];
+      // Der Trailer steht im vollstaendigen Eintrag (bei Folgen in dem der Serie)
+      videoIds.set(i, api.getItem(item.SeriesId ?? item.Id).then((full) => Media.trailerVideoId(full)).catch(() => null));
     }
     return videoIds.get(i);
   };
@@ -349,15 +271,11 @@ export function homeView() {
   };
 
   /**
-   * Reihe "Filme im Trend" (Seerr) an der Stelle von `slot` (ein Platzhalter an der gewuenschten Position in der Reihenfolge). Ohne Verbindung ein Hinweis, wie man sie bekommt;
-   * die Bibliotheks-Reihen warten nicht darauf. Gibt es nichts zu zeigen, verschwindet der Platzhalter.
+   * Reihe "Filme im Trend" (Seerr) an der Stelle von `slot`: nur mit Seerr und nur mit Titeln (Entscheidung E8 wie die Apple-App: kein Hinweis zum Einrichten,
+   * bei einem Ausfall oder einer abgelaufenen Anmeldung keine leere Reihe). Die Reihen der Mediathek warten nicht darauf.
    */
   function fillTrending(slot) {
     dropForeignTrend();
-    if (!state.seerr) {
-      slot.replaceWith(trendingHint());
-      return;
-    }
     loadTrending()
       .then((list) => {
         if (destroyed) return;
@@ -365,44 +283,62 @@ export function homeView() {
         const sec = row(t('home.trending'), list, { sub: t('home.trendingSub'), render: (r, i) => requestCard(r, i) });
         sec.classList.add('trend-row');
         slot.replaceWith(sec);
+        syncEmpty();
       })
-      .catch((e) => {
-        if (destroyed) return;
-        // Abgelaufene Seerr-Anmeldung sagt es und zeigt den Weg; sonst (Seerr gerade nicht erreichbar) bleibt die Startseite ohne die Reihe
-        if (e.code !== 'SEERR_AUTH') return slot.remove();
-        slot.replaceWith(h('section', { class: 'row trend-row' }, h('div', { class: 'row-head' }, h('h2', null, t('home.trending'))), h('p', { class: 'seerr-note' }, t('seerr.authExpired'), h('a', { class: 'link-btn', href: '#/settings/seerr' }, ` ${t('toast.openSettings')}`))));
+      .catch(() => {
+        if (!destroyed) slot.remove();
       });
   }
 
-  function trendingHint() {
-    const hide = h('button', { class: 'btn glass', type: 'button' }, t('home.trendingHide'));
-    const sec = h(
-      'section',
-      { class: 'row trend-row trend-hint' },
-      h('div', { class: 'row-head' }, h('h2', null, t('home.trending')), h('span', { class: 'sub' }, t('home.trendingSub'))),
-      h(
-        'div',
-        { class: 'trend-hint-box' },
-        h(
-          'div',
-          { class: 'trend-hint-text' },
-          h('h3', null, t('home.trendingHintTitle')),
-          h('p', null, t('home.trendingHintText')),
-          h('div', { class: 'trend-hint-actions' }, h('a', { class: 'btn primary', href: '#/settings/seerr' }, icon('plus', 18), h('span', null, t('home.trendingSetup'))), hide)
-        ),
-        h('div', { class: 'trend-ghosts', 'aria-hidden': 'true' }, Array.from({ length: 6 }, () => h('i')))
-      )
-    );
-    hide.addEventListener('click', async () => {
-      sec.remove();
-      try {
-        await updateSettings({ appearance: { homeTrending: false } });
-      } catch {
-        /* bleibt bis zum naechsten Aufbau weg */
-      }
-      toast(t('home.trendingHidden'), { action: { label: t('toast.openSettings'), run: () => navigate('/settings/home') } });
-    });
-    return sec;
+  /**
+   * Platz einer Top-10-Reihe (rankings.js, wie RankingStore der Apple-App): die Reihe von vorhin, beim ersten Laden Platzhalter, sonst nichts Sichtbares. Die
+   * Startseite wartet nie auf die Rangliste.
+   */
+  function topSlot(kind, memo, first) {
+    const items = memo?.result?.[kind] ?? [];
+    if (items.length) return topTenRow(kind, { items, caption: Rankings.caption(memo.result.window, getLocale()), onPlay });
+    if (first) return topTenRow(kind, { loading: true, caption: Rankings.caption(topWindow(), getLocale()) });
+    return h('div', { class: 'top10-slot', hidden: true });
+  }
+
+  /** Fuellt die Plaetze der Top 10, sobald die Rueckseite antwortet. Ohne Quelle oder ohne passende Titel fehlt die Reihe; scheitert es, bleibt, was dastand. */
+  function fillTopTen(slots) {
+    const key = topKey();
+    const force = forceTopTen;
+    forceTopTen = false;
+    const put = (kind, next) => {
+      slots[kind].replaceWith(next);
+      slots[kind] = next;
+    };
+    window.jc
+      .topTen({ window: topWindow(), force })
+      .then((r) => {
+        const result = r?.available ? { window: r.window, movies: r.movies ?? [], series: r.series ?? [] } : null;
+        topMemory = { key, result };
+        if (destroyed) return;
+        for (const kind of Object.keys(slots)) {
+          const items = result?.[kind] ?? [];
+          put(kind, items.length ? topTenRow(kind, { items, caption: Rankings.caption(result.window, getLocale()), onPlay }) : h('div', { class: 'top10-slot', hidden: true }));
+        }
+        syncEmpty();
+      })
+      .catch((e) => {
+        if (e?.code === 'RANKINGS_STALE') return; // gehoert zu einem vorigen Profil
+        // Gescheitert: die Reihen von vorhin bleiben stehen; Platzhalter gehen, und beim naechsten Aufbau kommen keine mehr
+        if (topMemory?.key !== key) topMemory = { key, result: null };
+        if (destroyed) return;
+        for (const kind of Object.keys(slots)) if (slots[kind].classList.contains('loading')) put(kind, h('div', { class: 'top10-slot', hidden: true }));
+      });
+  }
+
+  /** "Noch nichts da" gilt nur, solange weder Banner noch eine Reihe dasteht: kommt eine Reihe von Seerr dazu, geht der Hinweis (wie die Apple-App). */
+  let emptyShown = false;
+  function syncEmpty() {
+    if (!emptyShown || destroyed) return;
+    if ([...rows.children].some((c) => !c.hidden && c.matches('section.row:not(.loading)'))) {
+      showPageStatus(el, null);
+      emptyShown = false;
+    }
   }
 
   async function load() {
@@ -410,11 +346,10 @@ export function homeView() {
     const libs = state.views.filter((v) => SUPPORTED_COLLECTIONS.has(v.CollectionType));
     // Die Neuzugaenge je Bibliothek laufen gleichzeitig mit den anderen Abfragen (frueher erst danach: eine Wartezeit mehr bis zur fertigen Startseite)
     const latestAll = Promise.all(libs.filter((v) => ['movies', 'tvshows'].includes(v.CollectionType)).map(async (v) => ({ view: v, items: await api.getLatest(v.Id, LATEST_PER_ROW).catch(() => []) })));
-    const [resume, nextUp, favorites, trend] = await Promise.all([
+    const [resume, nextUp, favorites] = await Promise.all([
       api.getResume(16).catch(() => []),
       api.getNextUp(16).catch(() => []),
-      api.getItems({ filters: 'IsFavorite', recursive: true, includeItemTypes: 'Movie,Series', limit: 20, sortBy: 'DateCreated', sortOrder: 'Descending' }).then((r) => r.Items ?? []).catch(() => []),
-      cfg.hero ? trendEntries(cfg.heroTrend) : [] // laeuft gleichzeitig mit den Bibliotheksabfragen (Seerr, hoechstens TREND_WAIT_MS) und wirft nie
+      api.getItems({ filters: 'IsFavorite', recursive: true, includeItemTypes: 'Movie,Series', limit: 20, sortBy: 'DateCreated', sortOrder: 'Descending' }).then((r) => r.Items ?? []).catch(() => [])
     ]);
     const latestPerLib = await latestAll;
     if (destroyed) return;
@@ -423,28 +358,25 @@ export function homeView() {
     heroHost.replaceChildren();
     el.classList.toggle('no-hero', !cfg.hero);
 
-    // Hero: vor allem Neuzugaenge (Filme und Serien abwechselnd, jeweils die neuesten zuerst, nur mit Hintergrundbild). Nur wenn es kaum Neues gibt,
-    // kommen Weiterschauen und Als Naechstes dazu, damit das Banner nicht fast leer ist. Dazwischen (an dritter und fuenfter Stelle) stehen bis zu so viele gut bewertete
-    // Trend-Filme (Seerr, siehe trendEntries), wie eingestellt sind; sie nehmen Platz von den Neuzugaengen, das Banner hat weiter cfg.heroSlides Folien. Ein Trend-Film aus der
-    // Bibliothek steht nur einmal im Banner (als Trend-Folie, nicht noch einmal als Neuzugang). Ist das Banner ausgeschaltet, gibt es nichts davon.
-    const seen = new Set(trend.filter((e) => e.item).map((e) => e.item.SeriesId ?? e.item.Id));
-    const libEntries = [];
-    const add = (item, kind) => {
-      const key = item.SeriesId ?? item.Id;
-      if (libEntries.length >= cfg.heroSlides - trend.length || seen.has(key) || (!backdropOf(item) && !landscapeOf(item))) return;
-      seen.add(key);
-      libEntries.push({ item, kind });
-    };
-    const longest = Math.max(0, ...latestPerLib.map(({ items }) => items.length));
+    // Banner (wie die Apple-App, Entscheidung E8): nur Neues aus der Mediathek, Filme und Serien abwechselnd, jeweils die neuesten zuerst, nur mit
+    // Hintergrundbild, so viele Folien wie eingestellt. Keine Titel aus Seerr und kein Weiterschauen darin.
+    const entries = [];
     if (cfg.hero) {
-      for (let k = 0; k < longest; k++) latestPerLib.forEach(({ items }) => items[k] && add(items[k], 'new'));
-      if (libEntries.length < Math.min(3, cfg.heroSlides)) {
-        resume.slice(0, 3).forEach((i) => add(i, 'resume'));
-        nextUp.slice(0, 2).forEach((i) => add(i, 'next'));
+      const withBackdrop = (list) => list.filter((i) => backdropOf(i));
+      const movies = withBackdrop(latestPerLib.filter((l) => l.view.CollectionType !== 'tvshows').flatMap((l) => l.items));
+      const shows = withBackdrop(latestPerLib.filter((l) => l.view.CollectionType === 'tvshows').flatMap((l) => l.items));
+      const seen = new Set();
+      const add = (item, kind) => {
+        const key = item.SeriesId ?? item.Id;
+        if (entries.length >= cfg.heroSlides || seen.has(key)) return;
+        seen.add(key);
+        entries.push({ item, kind });
+      };
+      for (let i = 0; i < Math.max(movies.length, shows.length) && entries.length < cfg.heroSlides; i++) {
+        if (movies[i]) add(movies[i], 'movies');
+        if (shows[i]) add(shows[i], 'series');
       }
     }
-    const entries = [...libEntries];
-    trend.forEach((e, k) => entries.splice(Math.min(2 + 2 * k, entries.length), 0, e));
     if (!cfg.hero) {
       /* Banner ausgeschaltet: kein Platzhalter, die Reihen beginnen unter der Kopfleiste (.home.no-hero) */
     } else if (entries.length) {
@@ -461,9 +393,9 @@ export function homeView() {
     }
     refreshGlow(); // Ambient Glow: das Banner steht jetzt (Reichweite von unten, oberer Schein erst ohne Banner)
 
-    // Reihen in der Standardreihenfolge aus HomeRows.defaultOrder (Weiterschauen, Als Naechstes, Neuzugaenge je Bibliothek, Favoriten, Filme im Trend);
-    // der Nutzer kann sie umordnen und ausblenden (Einstellungen > Startseite). "Filme im Trend" kommt als Platzhalter an seinen Platz und fuellt sich,
-    // sobald Seerr geantwortet hat.
+    // Reihen in der Standardreihenfolge aus HomeRows.defaultOrder (Weiterschauen, Als Naechstes, Top 10, Neuzugaenge je Bibliothek, Favoriten, Filme im Trend);
+    // der Nutzer kann sie umordnen und ausblenden (Einstellungen > Startseite, je Profil). Die Reihen von Seerr (Top 10, Filme im Trend) gibt es nur mit
+    // Seerr; sie kommen als Platz an ihre Stelle und fuellen sich, sobald Seerr geantwortet hat.
     const builders = new Map();
     const offer = (id, build) => builders.set(id, build);
     if (resume.length) offer('continue', () => row(t('home.continue'), resume, { variant: 'landscape', onPlay }));
@@ -474,20 +406,32 @@ export function homeView() {
     if (favorites.length) offer('favorites', () => row(t('home.favorites'), favorites, { onPlay: onPlaySeries }));
     const contentRows = builders.size;
     let trendSlot = null;
-    offer('trending', () => (trendSlot = h('div', { class: 'trend-slot', hidden: true })));
+    const topSlots = {};
+    if (state.seerr) {
+      offer('trending', () => (trendSlot = h('div', { class: 'trend-slot', hidden: true })));
+      // Top 10 nur mit Titeln der Mediathek: ist sie leer, gibt es nichts zu ordnen. Platzhalter nur beim ersten Laden und nur, wenn Seerr nicht
+      // gerade als nicht erreichbar oder abgemeldet bekannt ist
+      if (contentRows) {
+        const memo = topMemory?.key === topKey() ? topMemory : null;
+        const first = !memo && ['connected', 'checking'].includes(seerrState());
+        for (const kind of ['movies', 'series']) offer(Rankings.KINDS[kind].row, () => (topSlots[kind] = topSlot(kind, memo, first)));
+      }
+    }
     const present = HomeRows.defaultOrder(latestPerLib.map((l) => l.view.Id)).filter((id) => builders.has(id));
-    const hidden = state.settings.appearance.homeTrending === false ? [...cfg.hidden, 'trending'] : cfg.hidden; // "Filme im Trend" schaltet die Einstellung aus Erscheinungsbild/Startseite
-    const shown = HomeRows.arrangeRows(present, cfg.order, hidden);
+    const shown = HomeRows.arrangeRows(present, cfg.order, cfg.hidden);
     for (const id of shown) rows.append(builders.get(id)());
-    // Hinweise: fuer die ganze Seite, wenn sonst nichts darauf steht; unter dem Banner oder ueber "Filme im Trend" im Inhalt
-    const alone = !hero && !rows.children.length;
-    const notice = (status) => (alone ? showPageStatus(el, status) : rows.prepend(status));
     if (!contentRows) {
-      notice(pageStatus({ symbol: 'film', title: t('home.emptyTitle'), text: t('home.emptyText'), inline: !alone }));
-    } else if (!rows.children.length) {
-      notice(pageStatus({ kind: 'action', symbol: 'settings', title: t('home.allHiddenTitle'), text: t('home.allHiddenText'), action: { label: t('toast.openSettings'), href: '#/settings/home' }, inline: !alone }));
+      // Nichts aus der Mediathek (und damit auch kein Banner): "Noch nichts da" fuer die ganze Seite; kommt eine Reihe von Seerr, geht der Hinweis
+      showPageStatus(el, pageStatus({ symbol: 'film', title: t('home.emptyTitle'), text: t('home.emptyText') }));
+      emptyShown = true;
+    } else if (!shown.length) {
+      // Alles ausgeblendet: der Weg in die Einstellungen, fuer die ganze Seite oder unter dem Banner
+      const status = pageStatus({ kind: 'action', symbol: 'settings', title: t('home.allHiddenTitle'), text: t('home.allHiddenText'), action: { label: t('toast.openSettings'), href: '#/settings/home' }, inline: !!hero });
+      if (hero) rows.prepend(status);
+      else showPageStatus(el, status);
     }
     if (trendSlot) fillTrending(trendSlot);
+    if (Object.keys(topSlots).length) fillTopTen(topSlots);
   }
 
   /** Startseite laden; scheitert es, steht der Fehler fuer die ganze Seite da (ohne Banner und Platzhalter), "Erneut versuchen" baut sie neu auf. */

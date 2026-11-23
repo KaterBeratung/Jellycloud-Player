@@ -28,7 +28,7 @@ const ALIASES = { playback: 'video' };
 // Bereiche, die nur das Desktop-Programm braucht (mpv-Bild, Audio-Ausgabe des Rechners, Discord); auf dem Handy und im Browser entfallen sie
 const DESKTOP_ONLY = new Set(['video', 'audio', 'discord']);
 // Einstellungen, die Ansichten beim Aufbau lesen (siehe saveSoon): Abschnitt -> Schluessel ('*' = alle)
-const LIVE_VIEW_KEYS = { appearance: ['heroAutoplay', 'homeTrending'], general: ['spoilerProtection'], trailer: '*', home: '*' };
+const LIVE_VIEW_KEYS = { appearance: ['heroAutoplay', 'posterSize'], general: ['spoilerProtection'], trailer: '*', home: '*' }; // posterSize: die Masse der Top-10-Karten rechnet die Startseite beim Aufbau
 const HomeRows = window.JCHomeRows; // Regeln fuer Reihenfolge und Grenzen der Startseite (src/shared/home-rows.js)
 
 const LANGS = ['de', 'en', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'tr', 'ja', 'ko', 'zh', 'sv', 'da', 'no', 'fi', 'cs', 'hu', 'ar', 'he', 'el', 'uk', 'ro'];
@@ -267,13 +267,14 @@ export function settingsView({ section, query: q }) {
     const libs = () => state.views.filter((v) => ['movies', 'tvshows'].includes(v.CollectionType));
     const labelOf = (id) => {
       if (id.startsWith('latest:')) return t('home.latestIn', { name: state.views.find((v) => v.Id === id.slice(7))?.Name ?? '…' });
-      return { continue: t('home.continue'), nextUp: t('home.nextUp'), favorites: t('home.favorites'), trending: t('home.trending') }[id] ?? id;
+      return { continue: t('home.continue'), nextUp: t('home.nextUp'), favorites: t('home.favorites'), trending: t('set.rowTrending'), top10Movies: t('top10.movies'), top10Series: t('top10.series') }[id] ?? id;
     };
-    // Die Top-10-Reihen kennt diese Fassung noch nicht (sie kommen mit den Ranglisten von Seerr): ohne sie keine Schalter, die nichts bewirken
-    const presentIds = () => HomeRows.defaultOrder(libs().map((v) => v.Id)).filter((id) => !HomeRows.RANKING_ROWS.includes(id));
+    const presentIds = () => HomeRows.defaultOrder(libs().map((v) => v.Id));
     const arranged = () => HomeRows.arrangeAll(presentIds(), cfg().order);
-    // "Filme im Trend" nutzt den bestehenden Schalter (appearance.homeTrending), alle anderen Reihen die Liste "hidden"
-    const isOff = (id) => (id === 'trending' ? app().homeTrending === false : cfg().hidden.includes(id));
+    const isOff = (id) => cfg().hidden.includes(id);
+    // Ohne Seerr gibt es die Seerr-Reihen nicht (Trend, Top 10): sie stehen ausgeschaltet da, und der Hinweis sagt warum (wie die Apple-App); Platz und
+    // Schalter bleiben gemerkt, die uebrigen Reihen lassen sich an ihnen vorbei verschieben
+    const locked = (id) => !state.seerr && HomeRows.SEERR_ROWS.includes(id);
 
     const list = h('div', { class: 'home-rows' });
     const move = (id, delta) => {
@@ -285,21 +286,22 @@ export function settingsView({ section, query: q }) {
       list.replaceChildren(
         ...ids.map((id, i) => {
           const name = labelOf(id);
-          const line = h('div', { class: `home-row${isOff(id) ? ' off' : ''}`, 'data-row': id });
+          const lock = locked(id);
+          const line = h('div', { class: `home-row${isOff(id) || lock ? ' off' : ''}${lock ? ' locked' : ''}`, 'data-row': id });
           const mover = (delta, ic, key) => {
-            const b = h('button', { class: 'btn glass icon sm', type: 'button', title: t(key), 'aria-label': `${name}: ${t(key)}`, disabled: delta < 0 ? i === 0 : i === ids.length - 1 }, icon(ic, 16));
+            const b = h('button', { class: 'btn glass icon sm', type: 'button', title: t(key), 'aria-label': `${name}: ${t(key)}`, disabled: lock || (delta < 0 ? i === 0 : i === ids.length - 1) }, icon(ic, 16));
             b.addEventListener('click', () => move(id, delta));
             return b;
           };
           const sw = toggle(
-            !isOff(id),
+            !isOff(id) && !lock,
             (on) => {
-              if (id === 'trending') setAppearance({ homeTrending: on });
-              else setHome({ hidden: on ? cfg().hidden.filter((x) => x !== id) : [...cfg().hidden.filter((x) => x !== id), id] });
+              setHome({ hidden: on ? cfg().hidden.filter((x) => x !== id) : [...cfg().hidden.filter((x) => x !== id), id] });
               line.classList.toggle('off', !on);
             },
             name
           );
+          sw.disabled = lock;
           line.append(h('span', { class: 'home-row-pos' }, String(i + 1)), h('span', { class: 'home-row-name' }, name), h('div', { class: 'home-row-move' }, mover(-1, 'chevron-up', 'set.homeRowUp'), mover(1, 'chevron-down', 'set.homeRowDown')), sw);
           return line;
         })
@@ -311,10 +313,60 @@ export function settingsView({ section, query: q }) {
     resetBtn.addEventListener('click', () => {
       state.settings.home = HomeRows.homeConfig(HomeRows.DEFAULTS);
       saveSoon({ home: structuredClone(HomeRows.DEFAULTS) });
-      setAppearance({ homeTrending: true, heroAutoplay: true });
+      setAppearance({ heroAutoplay: true });
       toast(t('set.homeResetDone'));
       panel.replaceChildren(homePanel());
     });
+
+    // ---------- Top 10 (wie TopTenSettingsSection der Apple-App): Zeitraum (nur, was Seerr liefert), "Aktuell" und der Fusstext ----------
+    const Rankings = window.JCRankings;
+    const lang = getLocale();
+    const current = h('span', { class: 'setting-value small', 'aria-live': 'polite' }, Rankings.currentLine({ connected: !!state.seerr, loading: !!state.seerr }, lang));
+    const topFoot = h('p', { class: 'group-foot' });
+    const windowHost = h('div', { class: 'top10-window' });
+    let honors = null;
+    const paintTop = async ({ load = false } = {}) => {
+      const connected = !!state.seerr;
+      topFoot.textContent = Rankings.footer({ connected, honors }, lang);
+      if (!connected) return (current.textContent = Rankings.currentLine({ connected }, lang));
+      const w = cfg().rankingWindow;
+      try {
+        let st = await window.jc.topTenStatus({ window: w });
+        honors = st.honors;
+        paintWindow();
+        current.textContent = Rankings.currentLine({ connected: st.available, result: st.result, loading: st.loading || (load && st.available && !st.result), failure: st.failure }, lang);
+        if (load && st.available && !st.result) {
+          await window.jc.topTen({ window: w }).catch(() => {});
+          st = await window.jc.topTenStatus({ window: w });
+          honors = st.honors;
+          paintWindow();
+          current.textContent = Rankings.currentLine({ connected: st.available, result: st.result, loading: st.loading, failure: st.failure }, lang);
+        }
+        topFoot.textContent = Rankings.footer({ connected: st.available, honors }, lang);
+      } catch {
+        current.textContent = Rankings.currentLine({ connected, failure: true }, lang);
+      }
+    };
+    function paintWindow() {
+      const options = Rankings.windows(honors);
+      if (!state.seerr) return windowHost.replaceChildren();
+      if (options.length > 1) {
+        windowHost.replaceChildren(
+          segmented(
+            options.map((w) => ({ value: w, label: Rankings.windowTitle(w, lang) })),
+            cfg().rankingWindow,
+            (w) => {
+              setHome({ rankingWindow: w }); // die Startseite baut sich mit dem neuen Zeitraum neu auf (LIVE_VIEW_KEYS)
+              paintTop({ load: true });
+            }
+          )
+        );
+      } else {
+        windowHost.replaceChildren(h('span', { class: 'setting-value small' }, Rankings.windowTitle(options[0], lang)));
+      }
+    }
+    paintWindow();
+    paintTop({ load: true });
 
     return h(
       'div',
@@ -323,10 +375,16 @@ export function settingsView({ section, query: q }) {
         t('set.homeBannerGroup'),
         setting(t('set.homeHero'), t('set.homeHeroDesc'), toggle(cfg().hero, (v) => setHome({ hero: v }), t('set.homeHero'))),
         setting(t('set.heroAutoplay'), t('set.heroAutoplayDesc'), toggle(app().heroAutoplay, (v) => setAppearance({ heroAutoplay: v }), t('set.heroAutoplay'))),
-        setting(t('set.homeHeroSlides'), t('set.homeHeroSlidesDesc'), slider({ min: HomeRows.LIMITS.heroSlides[0], max: HomeRows.LIMITS.heroSlides[1], step: 1, value: cfg().heroSlides, onInput: (v) => setHome({ heroSlides: v }) })),
-        setting(t('set.homeHeroTrend'), t('set.homeHeroTrendDesc'), slider({ min: HomeRows.LIMITS.heroTrend[0], max: HomeRows.LIMITS.heroTrend[1], step: 1, value: cfg().heroTrend, onInput: (v) => setHome({ heroTrend: v }) }))
+        setting(t('set.homeHeroSlides'), t('set.homeHeroSlidesDesc'), slider({ min: HomeRows.LIMITS.heroSlides[0], max: HomeRows.LIMITS.heroSlides[1], step: 1, value: cfg().heroSlides, onInput: (v) => setHome({ heroSlides: v }) }))
       ),
-      group(t('set.homeRowsGroup'), h('div', { class: 'home-rows-note' }, t('set.homeRowsDesc')), list),
+      h(
+        'div',
+        { class: 'settings-block top10-settings' },
+        h('h3', { class: 'group-title' }, t('set.top10Group')),
+        h('div', { class: 'settings-group' }, ...(state.seerr ? [setting(t('set.top10Window'), null, windowHost)] : []), setting(t('set.top10Current'), null, current)),
+        topFoot
+      ),
+      group(t('set.homeRowsGroup'), h('div', { class: 'home-rows-note' }, t('set.homeRowsDesc') + (state.seerr ? '' : ` ${t('set.homeRowsNoSeerr')}`)), list),
       group(null, setting(t('set.homeReset'), t('set.homeResetDesc'), resetBtn))
     );
   }

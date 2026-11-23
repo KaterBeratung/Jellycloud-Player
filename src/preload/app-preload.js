@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('jc', {
   seerrCollection: (id) => call('seerr:collection', id),
   seerrImdb: (tmdbId) => call('seerr:imdb', tmdbId),
   seerrPerson: (id) => call('seerr:person', id),
+  topTen: (o) => call('top10:get', o),
+  topTenStatus: (o) => call('top10:status', o),
   seerrFilmography: (id) => call('seerr:filmography', id),
   seerrQuota: () => call('seerr:quota'),
   seerrMedia: (req) => call('seerr:media', req),

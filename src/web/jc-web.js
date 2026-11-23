@@ -189,6 +189,8 @@
     seerrCollection: (id) => call(() => backend.seerrCollection(Number(id))),
     seerrImdb: (tmdbId) => call(() => backend.seerrImdb(Number(tmdbId))),
     seerrPerson: (id) => call(() => backend.seerrPerson(Number(id))),
+    topTen: (o) => call(() => backend.topTen({ window: o?.window === 'day' ? 'day' : 'week', force: o?.force === true })),
+    topTenStatus: (o) => call(() => backend.topTenStatus({ window: o?.window === 'day' ? 'day' : 'week' })),
     seerrFilmography: (id) => call(() => backend.seerrFilmography(Number(id))),
     seerrQuota: () => call(() => backend.seerrQuota()),
     seerrRequests: (o) => call(() => backend.seerrRequests({ scope: o?.scope === 'manage' ? 'manage' : 'mine', skip: Number(o?.skip) || 0, take: Number(o?.take) || 50 })),

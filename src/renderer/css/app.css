@@ -1184,8 +1184,6 @@ html[data-compact='on'] .person-page { padding-top: calc(var(--topbar-h) + 12px)
 /* Stand bei Seerr auf dem Plakat: ein Tag oben links (wie die Tags der Bibliothek ein festes Farbpaar je Stand, keine eigene Palette) */
 .req-status { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; pointer-events: none; }
 .req-status[hidden] { display: none; }
-.hero-stand { display: inline-flex; align-items: center; }
-.hero-stand[hidden] { display: none; }
 .req-actions { margin-top: 8px; }
 .req-actions[hidden] { display: none; }
 .req-actions .btn { width: 100%; justify-content: center; }
@@ -1205,16 +1203,28 @@ html[data-compact='on'] .person-page { padding-top: calc(var(--topbar-h) + 12px)
 .rq-item.busy .rq-busy { display: block; }
 .rq-item .meta .l1.sk { margin-top: 2px; }
 .seerr-group { margin-top: 28px; }
-/* Startseite: Reihe "Filme im Trend" (Seerr). Ohne Verbindung steht an ihrer Stelle ein Hinweis mit angedeuteten Postern (views/home.js). */
-.trend-hint-box { display: flex; align-items: center; gap: clamp(22px, 4vw, 56px); margin: 16px var(--pad) 22px; padding: clamp(20px, 2.6vw, 32px); border-radius: calc(var(--radius) * 1.3); background: var(--surface); border: 1px solid var(--line); }
-.trend-ghosts { display: flex; flex: none; gap: 12px; margin-left: auto; } /* die angedeuteten Poster laufen nach rechts aus, wie eine Reihe, die weitergeht */
-.trend-ghosts i { width: clamp(52px, 5.4vw, 80px); aspect-ratio: 2 / 3; border-radius: calc(var(--radius) * 0.5); background: linear-gradient(160deg, var(--surface2), transparent 120%); border: 1px solid var(--line); }
-.trend-ghosts i:nth-child(1) { opacity: 0.95; } .trend-ghosts i:nth-child(2) { opacity: 0.8; } .trend-ghosts i:nth-child(3) { opacity: 0.65; } .trend-ghosts i:nth-child(4) { opacity: 0.5; } .trend-ghosts i:nth-child(5) { opacity: 0.36; } .trend-ghosts i:nth-child(6) { opacity: 0.24; }
-.trend-hint-text { min-width: 0; max-width: 58ch; }
-.trend-hint-text h3 { font: 700 20px/1.25 var(--font-display); letter-spacing: -0.015em; }
-.trend-hint-text p { margin-top: 6px; color: var(--muted); line-height: 1.5; }
-.trend-hint-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
-@media (max-width: 1040px) { .trend-ghosts { display: none; } }
+/* Startseite: Top 10 Filme und Top 10 Serien (views/top-ten.js, wie TopTenRow der Apple-App). Die Ziffer steht hoch und schmal hinter dem Plakat, dunkel und
+   deckend gefuellt, mit Rand (SVG) und Schein (einmal in ein Canvas gezeichnet) in der Farbe des Ambient Glow; dahinter ein grosser Lichtschein. Fruehere Karten liegen ueber
+   spaeteren (z-index aus JS). Am Desktop leuchten Rand und Scheine unter dem Zeiger voll, sonst zu 80 %; auf dem Handy immer voll. Beim ersten Laden Platzhalter. */
+.top10-row .scroller { padding-top: 22px; }
+.t10-card { position: relative; isolation: isolate; }
+.t10-figure { position: relative; }
+.t10-figure .thumb { position: absolute; top: 0; bottom: 0; aspect-ratio: auto; z-index: 2; box-shadow: 0 0 0 1px var(--line), -5px 2px 18px rgb(0 0 0 / 0.5); }
+.t10-numeral-box { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.t10-numeral, .t10-glow { position: absolute; overflow: visible; pointer-events: none; }
+.t10-numeral text { font-family: 'Bahnschrift', 'Roboto Condensed', 'sans-serif-condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-stretch: condensed; font-variation-settings: 'wdth' 75, 'wght' 600; font-variant-numeric: tabular-nums; }
+.t10-aura, .t10-glow, .t10-halo { opacity: 0.8; transition: opacity var(--t-fast) var(--ease); }
+.t10-card:hover :is(.t10-aura, .t10-glow, .t10-halo), .t10-card:focus-visible :is(.t10-aura, .t10-glow, .t10-halo) { opacity: 1; }
+html[data-compact='on'] :is(.t10-aura, .t10-glow, .t10-halo) { opacity: 1; }
+.t10-halo { position: absolute; top: 0; z-index: 0; pointer-events: none; }
+.t10-halo[hidden] { display: none; }
+.t10-card .meta { position: relative; z-index: 2; }
+.t10-card.ph .t10-numeral-box { opacity: 0.3; }
+.t10-card.ph .t10-halo { opacity: 0.25; }
+.t10-card.ph .thumb { box-shadow: none; background: rgb(255 255 255 / 0.06); }
+.top10-slot[hidden] { display: none; }
+/* Startseite: Reihe "Filme im Trend" (Seerr): nur mit Seerr und nur mit Titeln (seit 1.2.14 kein Hinweis zum Einrichten mehr, Entscheidung E8). */
+.setting-value { color: var(--muted); font-size: 13.5px; text-align: right; }
 .settings .setting-control .field { width: min(380px, 100%); min-width: min(300px, 100%); }
 .setting[hidden] { display: none; }
 

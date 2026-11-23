@@ -7,8 +7,8 @@ const path = require('node:path');
 const HR = require('../src/shared/home-rows');
 const { ConfigStore, DEFAULT_SETTINGS } = require('../src/main/config');
 
-test('Standardwerte der Startseite: Banner an, 6 Folien, 2 Trend-Folien, nichts umgestellt oder ausgeblendet', () => {
-  assert.deepEqual(HR.DEFAULTS, { hero: true, heroSlides: 6, heroTrend: 2, order: [], hidden: [] });
+test('Standardwerte der Startseite: Banner an, 6 Folien, Top 10 dieser Woche, nichts umgestellt oder ausgeblendet (keine Trend-Folien mehr, E8)', () => {
+  assert.deepEqual(HR.DEFAULTS, { hero: true, heroSlides: 6, rankingWindow: 'week', order: [], hidden: [] });
   assert.deepEqual(DEFAULT_SETTINGS.home, HR.DEFAULTS);
   assert.notEqual(DEFAULT_SETTINGS.home, HR.DEFAULTS, 'die Einstellungen haben eine eigene Kopie');
 });
@@ -17,10 +17,12 @@ test('homeConfig: Grenzen, Typen, doppelte und fremde Eintraege werden bereinigt
   assert.deepEqual(HR.homeConfig(undefined), HR.DEFAULTS);
   assert.deepEqual(HR.homeConfig(null), HR.DEFAULTS);
   assert.deepEqual(HR.homeConfig('x'), HR.DEFAULTS);
-  const c = HR.homeConfig({ hero: false, heroSlides: 99, heroTrend: -5, order: ['continue', 'continue', 7, '', null, 'favorites'], hidden: 'nein' });
+  const c = HR.homeConfig({ hero: false, heroSlides: 99, heroTrend: 2, rankingWindow: 'monat', order: ['continue', 'continue', 7, '', null, 'favorites'], hidden: 'nein' });
   assert.equal(c.hero, false);
   assert.equal(c.heroSlides, 10, 'obere Grenze');
-  assert.equal(c.heroTrend, 0, 'untere Grenze');
+  assert.equal(c.heroTrend, undefined, 'die Trend-Folien gibt es nicht mehr (E8): ein gespeicherter Wert faellt weg');
+  assert.equal(c.rankingWindow, 'week', 'unbekannter Zeitraum: diese Woche');
+  assert.equal(HR.homeConfig({ rankingWindow: 'day' }).rankingWindow, 'day');
   assert.deepEqual(c.order, ['continue', 'favorites'], 'Doppelte, Zahlen und leere Eintraege fallen weg');
   assert.deepEqual(c.hidden, [], 'keine Liste: leer');
   assert.equal(HR.homeConfig({ heroSlides: 2 }).heroSlides, 3);
@@ -109,8 +111,8 @@ test('Einstellungen: eine von Hand zerlegte Datei wirft nichts und ergibt guelti
   const file = path.join(dir, 'config.json');
   fs.writeFileSync(file, JSON.stringify({ version: 9, settings: { home: { hero: 'ja', heroSlides: 'viele', heroTrend: 77, order: { a: 1 }, hidden: [1, 'x', 'x'] } } }));
   const s = new ConfigStore(dir, null);
-  assert.deepEqual(s.settings.home, { hero: true, heroSlides: 6, heroTrend: 4, order: [], hidden: ['x'] });
-  fs.writeFileSync(file, JSON.stringify({ version: 9, settings: { appearance: { homeTrending: false } } }));
+  assert.deepEqual(s.settings.home, { hero: true, heroSlides: 6, rankingWindow: 'week', order: [], hidden: ['x'] });
+  fs.writeFileSync(file, JSON.stringify({ version: 9, settings: { appearance: { homeTrending: true } } }));
   assert.deepEqual(new ConfigStore(dir, null).settings.home, HR.DEFAULTS, 'alte Datei ohne home: Standardwerte');
 });
 
@@ -119,4 +121,20 @@ test('Einstellungen zuruecksetzen: die Startseite kehrt zu den Standardwerten zu
   s.updateSettings({ home: { hero: false, order: ['favorites'] } });
   s.resetSettings();
   assert.deepEqual(s.settings.home, HR.DEFAULTS);
+});
+
+test('Der alte Schalter "Filme im Trend" (aus) wird zu "ausgeblendet": beim Geraet und bei jedem Profil; er selbst faellt weg (E8)', () => {
+  const { dir } = store();
+  const file = path.join(dir, 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ version: 9, settings: { appearance: { homeTrending: false, theme: 'graphite' }, home: { hidden: ['nextUp'] } } }));
+  const s = new ConfigStore(dir, null);
+  assert.deepEqual(s.settings.home.hidden, ['nextUp', 'trending']);
+  assert.equal(s.settings.appearance.homeTrending, undefined);
+  assert.equal(s.settings.appearance.theme, 'graphite', 'die uebrigen Werte bleiben');
+  // mit Profilen (Reihen je Profil): jedes Profil blendet die Reihe aus, auch eines ohne eigene Reihen; doppelt wird nichts
+  fs.writeFileSync(file, JSON.stringify({ version: 10, homeRowsAdopted: true, activeServerId: 'p1', servers: [{ id: 'p1', url: 'http://a', userId: 'u1', userName: 'a' }, { id: 'p2', url: 'http://b', userId: 'u2', userName: 'b' }], homeRowsByProfile: { p1: { order: ['favorites'], hidden: ['trending'] } }, settings: { appearance: { homeTrending: false } } }));
+  const t = new ConfigStore(dir, null);
+  assert.deepEqual(t.homeRows('p1'), { order: ['favorites'], hidden: ['trending'] });
+  assert.deepEqual(t.homeRows('p2'), { order: [], hidden: ['trending'] });
+  fs.rmSync(dir, { recursive: true, force: true });
 });

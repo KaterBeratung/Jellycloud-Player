@@ -277,7 +277,67 @@
     return { background: 'linear-gradient(90deg, rgb(' + st.rgb.join(' ') + '), rgb(' + st.rgb2.join(' ') + '))', mask: shape([0, 0, 0]) };
   }
 
+  // ---------- Rangziffern der Top 10 (Rand und Schein in der Farbe des Ambient Glow; Apple: Features/Home/TopTenAura.swift) ----------
+  /**
+   * Die zwei Farben eines harmonischen Verlaufs zu einer Farbe: ihre Nachbarn im Farbkreis, 28 Grad zur einen und 34 Grad zur anderen Seite, bei gleicher
+   * Saettigung und Helligkeit (Dunkles Lila: Violett und Blau). Eine fast farblose Farbe (Saettigung unter 18 %) hat keinen Farbton zum Drehen: ihr Verlauf geht
+   * von einer 30 % helleren zur gewaehlten Stufe.
+   */
+  function gradientPair(rgb) {
+    var r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    var high = Math.max(r, g, b), low = Math.min(r, g, b), span = high - low;
+    var saturation = high === 0 ? 0 : span / high;
+    if (saturation < 0.18 || span <= 0) return [rgb.map(function (v) { return v + Math.trunc((255 - v) * 3 / 10); }), rgb.slice()];
+    var hue = high === r ? ((g - b) / span) % 6 : high === g ? (b - r) / span + 2 : (r - g) / span + 4;
+    hue *= 60;
+    var color = function (degrees) {
+      var hh = (((degrees % 360) + 360) % 360) / 60;
+      var c = high * saturation, x = c * (1 - Math.abs((hh % 2) - 1)), m = high - c;
+      var parts = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.min(5, Math.floor(hh))];
+      return parts.map(function (v) { return Math.round((v + m) * 255); });
+    };
+    return [color(hue + 28), color(hue - 34)];
+  }
+  /**
+   * Eine Glow-Farbe als Linienfarbe: die Farben sind fuer grosse, weiche Flaechen gewaehlt und dunkel; als feine Linie waeren sie auf dem dunklen Seitengrund
+   * kaum zu sehen. Der Ton geht in Schritten auf Weiss zu, bis seine Helligkeit fuer 4,5:1 zum Seitengrund reicht; der Farbcharakter bleibt.
+   */
+  function outlineTone(rgb) {
+    for (var step = 0; step <= 20; step++) {
+      var tone = rgb.map(function (v) { return Math.round(v + (255 - v) * step / 20); });
+      if (Accent.luminance(tone) >= 0.21) return tone;
+    }
+    return [255, 255, 255];
+  }
+  /**
+   * Was um eine Rangziffer gezeichnet wird, aus der Glow-Einstellung ihres Bereichs (resolve: "Top 10 Filme" die der Filme, "Top 10 Serien" die der
+   * Serien): die zwei Farben des Randes (von oben links nach unten rechts), seine Deckkraft, die Staerke des Scheins an der Kontur und des grossen
+   * Lichtscheins dahinter (beide wachsen mit der Wurzel der Intensitaet) und dessen Farben. Ist ein Verlauf gewaehlt, ist er der Verlauf des Randes.
+   * Ambient Glow aus: null (dann NUMERAL_PLAIN).
+   */
+  function numeralAura(st) {
+    if (!st || !st.enabled) return null;
+    var share = Math.min(Math.max(Number(st.intensity) || 0, 0), 100) / 100;
+    var pair = st.rgb2 ? [st.rgb, st.rgb2] : gradientPair(st.rgb);
+    var tone = outlineTone(pair[0]), toneEnd = outlineTone(pair[1]);
+    var mid = function (a, b) { return a.map(function (v, i) { return Math.trunc((v + b[i]) / 2); }); };
+    return { tone: tone, toneEnd: toneEnd, rim: 1, glow: Math.sqrt(share), haloTone: mid(pair[0], tone), haloToneEnd: mid(pair[1], toneEnd), halo: Math.sqrt(share) };
+  }
+  /** Ohne Ambient Glow: die dunkle Ziffer mit einem ruhigen, farblosen Rand, ohne Schein. */
+  var NUMERAL_PLAIN = { tone: [120, 120, 130], toneEnd: [120, 120, 130], rim: 0.7, glow: 0, haloTone: [120, 120, 130], haloToneEnd: [120, 120, 130], halo: 0 };
+  /** Stufen des grossen Lichtscheins: Glockenabfall der Deckkraft wie beim Ambient Glow, die Farbe wandert dabei von der ersten zur zweiten des Verlaufs. */
+  function haloStops(aura) {
+    var count = 15;
+    var out = [];
+    for (var i = 0; i < count; i++) {
+      var t = Math.min(i / (count - 1) * 1.6, 1);
+      out.push({ rgb: aura.haloTone.map(function (v, k) { return Math.round(v + (aura.haloToneEnd[k] - v) * t); }), alpha: bellShare(i, count) * aura.halo, at: i / (count - 1) });
+    }
+    return out;
+  }
+
   return {
+    gradientPair: gradientPair, outlineTone: outlineTone, numeralAura: numeralAura, NUMERAL_PLAIN: NUMERAL_PLAIN, haloStops: haloStops,
     COLORS: COLORS, COLOR_IDS: COLOR_IDS, GRADIENTS: GRADIENTS, SCOPES: SCOPES,
     defaults: defaults, normalize: normalize, area: area, fields: fields, resolve: resolve, general: general, styleOf: styleOf, set: set,
     isStandard: isStandard, presetColor: presetColor, presetGradient: presetGradient,

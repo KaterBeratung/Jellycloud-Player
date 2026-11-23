@@ -361,6 +361,39 @@ class JellyfinClient {
     }
   }
 
+  // ---------- Top 10 (src/shared/rankings.js; nur fuer die Rueckseite, nicht aus der Oberflaeche aufrufbar) ----------
+
+  /**
+   * TMDB-Nummer -> Eintrag fuer alle Filme ("Movie") oder Serien ("Series"), die das angemeldete Profil sehen darf: eine schlanke Liste (nur Kennung und
+   * Nummern, ohne Bilder und Nutzerdaten), seitenweise, damit auch grosse Mediatheken bei wenigen hundert Kilobyte je Seite bleiben. Hat die Mediathek einen
+   * Titel mehrfach (zwei Fassungen, zwei Bibliotheken), gilt der erste Eintrag.
+   * @returns {Promise<Map<number,string>>}
+   */
+  async tmdbIndex(itemType, { pageSize = 2000, maxItems = 60000 } = {}) {
+    if (itemType !== 'Movie' && itemType !== 'Series') throw new JellyfinError('Unbekannte Art', { status: 400 });
+    const index = new Map();
+    for (let start = 0; start < maxItems; start += pageSize) {
+      const r = await this.request('GET', '/Items', { query: { userId: this.userId, includeItemTypes: itemType, recursive: true, fields: 'ProviderIds', enableImages: false, enableUserData: false, enableTotalRecordCount: false, startIndex: start, limit: pageSize } });
+      const page = r?.Items ?? [];
+      for (const item of page) {
+        const raw = Object.entries(item?.ProviderIds ?? {}).find(([k]) => k.toLowerCase() === 'tmdb')?.[1];
+        const id = /^\d{1,9}$/.test(String(raw ?? '')) ? Number(raw) : null;
+        if (id && !index.has(id) && typeof item.Id === 'string') index.set(id, item.Id);
+      }
+      if (page.length < pageSize) break;
+    }
+    return index;
+  }
+
+  /** Die Eintraege zu diesen Kennungen in deren Reihenfolge, mit allem, was eine Karte braucht. Was das Profil nicht (mehr) sehen darf oder was geloescht ist, fehlt. */
+  async itemsInOrder(ids) {
+    const list = (Array.isArray(ids) ? ids : []).filter((id) => /^[0-9a-fA-F-]{8,40}$/.test(String(id))).slice(0, 50);
+    if (!list.length) return [];
+    const r = await this.getItems({ ids: list.join(','), fields: [...LIST_FIELDS, 'ProviderIds'] });
+    const byId = new Map((r.Items ?? []).map((i) => [i.Id, i]));
+    return list.map((id) => byId.get(id)).filter(Boolean);
+  }
+
   // ---------- Personen (wie die Apple-App, Seite einer Person) ----------
 
   /** Eine Person (Schauspiel, Regie ...) mit Biografie, Geburts- und Todestag, Geburtsort und ihren Nummern bei anderen Diensten (TMDB). */

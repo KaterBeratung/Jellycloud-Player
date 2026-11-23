@@ -503,8 +503,8 @@ test('Reihen je Profil: Unlesbares faellt einzeln weg', () => {
 // Tolerantes Lesen (nach JellycloudTests/SettingsReadingTests.swift): ein unlesbarer Wert faellt auf seinen Standard, alle uebrigen bleiben
 const custom = {
   language: 'en',
-  appearance: { theme: 'graphite', accent: '#ff8800', posterSize: 200, blur: false, heroAutoplay: false, ambient: false, homeTrending: false, cardTitles: false },
-  home: { hero: false, heroSlides: 9, heroTrend: 1 },
+  appearance: { theme: 'graphite', accent: '#ff8800', posterSize: 200, blur: false, heroAutoplay: false, ambient: false, cardTitles: false },
+  home: { hero: false, heroSlides: 9, rankingWindow: 'day' },
   player: { hwdec: 'no', subtitleMode: 'always', skipIntro: 'auto', skipCountdown: 8, volume: 40, subtitleScale: 1.5, autoplayNext: false, maxBitrateMbps: 20 },
   trailer: { autoplay: false, quality: '1080', muted: false },
   general: { spoilerProtection: true, autoUpdate: false },

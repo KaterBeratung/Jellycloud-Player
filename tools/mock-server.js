@@ -300,6 +300,8 @@ items.get(id32('movie:Paper Moons')).ProviderIds = { Tmdb: '4242' };
 // Abgleich der Suche (P14): "The Glass Garden" gibt es auch bei Seerr (Film 5501 ohne Stand, Seerr kennt die Mediathek noch nicht, dazu eine Serie mit derselben
 // Nummer); die Serie "Code of the Wild" ist bei Seerr teilweise verfuegbar (5502, Stand 4, unten bei den Serien)
 items.get(id32('movie:The Glass Garden')).ProviderIds = { Tmdb: '5501' };
+// Top 10 (P15): diese Filme stehen in den Trendlisten von Seerr (SEERR.trendLists, "Top Film 1" bis "6"); mit Paper Moons (4242) sind es sieben Treffer
+['Echoes of Tomorrow', 'Iron Meridian', 'Midnight Cartographers', 'Solar Winds', 'Velocity', 'Hollow Crown'].forEach((name, i) => (items.get(id32(`movie:${name}`)).ProviderIds = { Tmdb: String(8101 + i) }));
 
 /** Fuer Leistungstests: haengt n weitere Filme an (grosse Bibliothek). */
 function addMovies(n) {
@@ -509,6 +511,7 @@ function listItems(q) {
   if (show) show.ProviderIds = { Tmdb: '1399' };
 }
 items.get(id32('series:Code of the Wild')).ProviderIds = { Tmdb: '5502' }; // Abgleich der Suche (P14): bei Seerr teilweise verfuegbar
+items.get(id32('series:Harbor Lights')).ProviderIds = { Tmdb: '8201' }; // Top 10 Serien (P15): mit Starfall Station (1399) zwei Treffer ("Top Serie 1")
 
 // ---------- Mock-Seerr (/api/v1): Anmeldung per Jellyfin-Konto oder API-Schluessel, Suche, Anfragen ----------
 const SEERR = {
@@ -801,7 +804,7 @@ async function handleSeerr(req, res, p, q, method) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
     res.end(JSON.stringify(body));
   };
-  state.log.push({ at: `seerr:${method} ${sub}`, ...(q.get('language') ? { language: q.get('language') } : {}) });
+  state.log.push({ at: `seerr:${method} ${sub}`, ...(q.get('language') ? { language: q.get('language') } : {}), ...(q.get('mediaType') ? { mediaType: q.get('mediaType') } : {}) }); // mediaType: Trends einer Art (Top 10)
   SEERR.counters.apiRequests++;
   const cookie = req.headers.cookie ?? '';
   // Jede Anmeldung hat ihre eigene Sitzung: "demo" die Grundsitzung, "demo2" eine zweite (anderer Seerr-Benutzer, anderes Jellyfin-Konto)

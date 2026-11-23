@@ -4,9 +4,9 @@
    Die Rueckgaben sind die Werte der IPC-Handler (ohne { ok, data }-Huelle); Fehler sind JellyfinError/SeerrError mit status und code.
    Laeuft als CommonJS (Hauptprozess, Tests) und als klassisches Skript (window.JCBackend). */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'));
-  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect);
-})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./jellyfin'), require('./seerr'), require('./quick-connect'), require('./rankings'));
+  else root.JCBackend = factory(root.JCJellyfin, root.JCSeerr, root.JCQuickConnect, root.JCRankings);
+})(typeof self !== 'undefined' ? self : this, function (Jelly, Seerr, QuickConnect, Rankings) {
   'use strict';
 
   const { JellyfinClient, JellyfinError, probeServer, CALLABLE_METHODS } = Jelly;
@@ -87,6 +87,10 @@
     let limitsRun = null;
     let check = null; // laufende Verbindungspruefung { client, run }: ein zweiter Anlass waehrenddessen bekommt dieselbe (keine Doppelanfragen)
     const callable = new Set(CALLABLE_METHODS);
+    const rankings = Rankings.createStore(); // Top 10: Rangfolge je Server, Profil, Seerr und Zeitraum fuer 30 min (src/shared/rankings.js)
+
+    /** Schluessel der Top 10 fuer das aktive Profil; null ohne Jellyfin-Anmeldung oder ohne Seerr mit Sitzung (dann keine Quelle, keine Anfrage). */
+    const rankingKey = (window) => (client && seerr ? Rankings.cacheKey({ server: client.baseUrl, user: client.userId ?? '', seerrAddress: seerr.baseUrl, window }) : null);
 
     const newClient = (o = {}) => new JellyfinClient({ deviceId: config.deviceId, clientVersion: appVersion(), ...(deviceName ? { deviceName } : {}), fetch, ...o });
 
@@ -116,6 +120,7 @@
       seerrEpoch++;
       seerrUser = null;
       seerrCheckRun = null;
+      rankings.reset(); // die Top 10 des vorigen Profils oder Seerr gelten nicht mehr
       seerrAccount = s ? { url: s.url, userName: s.userName, jellyfinUserId: s.jellyfinUserId } : null;
       seerr = s?.secret ? seerrClient(s.url, s.secret) : null;
       return !!seerr;
@@ -534,6 +539,25 @@
       },
       seerrSearch: (query, page) => seerrRead((s) => s.search(String(query ?? '').slice(0, 200), Number(page) || 1)),
       seerrTrending: () => seerrRead((s) => s.trending()),
+      /**
+       * Top 10 Filme und Top 10 Serien des aktiven Profils ({ available, window, honors, movies, series, failure? }); ohne Seerr { available: false } ohne
+       * jede Anfrage. Die Startseite wartet nicht darauf. force: auch die Rangfolge neu (Neu laden). Wechselt waehrenddessen Profil oder Seerr, kommt die
+       * Antwort nicht an (Code RANKINGS_STALE).
+       */
+      topTen(o) {
+        const window = Rankings.normWindow(o?.window);
+        if (!client) return Promise.reject(new JellyfinError('Nicht angemeldet', { status: 401 }));
+        const c = client;
+        const s = seerr;
+        const key = rankingKey(window);
+        return rankings.get(key, {
+          force: o?.force === true,
+          full: () => seerrCall(() => Rankings.load({ jellyfin: c, seerr: { rankingPage: (kind, w, page) => s.trendingPage({ mediaType: Rankings.KINDS[kind].mediaType, timeWindow: w, page }).then((r) => Rankings.parsePage(r, kind, page)) }, window })),
+          items: (ids) => c.itemsInOrder(ids)
+        });
+      },
+      /** Stand der Top 10 fuer die Einstellungen (ohne zu laden): Quelle da, befolgt Seerr den Zeitraum, laedt, Fehler, Zahl der Titel. */
+      topTenStatus: (o) => rankings.status(rankingKey(Rankings.normWindow(o?.window))),
       seerrDetails: (req) => seerrRead((s) => s.details(req?.mediaType, req?.mediaId)),
       // Anfrage: ein Film oder die gewaehlten Staffeln einer Serie (ohne Wahl alle); nie 4K. Ein Schreibvorgang: laeuft mit seiner Sitzung zu Ende.
       seerrRequest: (req) => seerrCall(() => requireSeerr().requestMedia({ mediaType: req?.mediaType, mediaId: req?.mediaId, seasons: Array.isArray(req?.seasons) ? req.seasons.slice(0, 200) : null })),

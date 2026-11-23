@@ -602,6 +602,16 @@ class SeerrClient {
   }
 
   /**
+   * Eine Seite der Trends einer Art und eines Zeitraums (Top 10, src/shared/rankings.js liest sie mit parsePage): roh, wie Seerr sie liefert. Das aktuelle
+   * Seerr nimmt mediaType und timeWindow an; aeltere uebergehen beide (gemischte Liste, Trends von heute).
+   */
+  async trendingPage({ mediaType, timeWindow, page = 1 }) {
+    if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
+    const p = Math.max(1, Math.min(50, Math.trunc(Number(page)) || 1));
+    return this.request('GET', '/discover/trending', { query: { page: p, mediaType, timeWindow: timeWindow === 'day' ? 'day' : 'week' } });
+  }
+
+  /**
    * Meldet ein Problem zu einem Titel (Seerr: "Issues"). Seerr will seine eigene Medien-Nummer, nicht die TMDB-Nummer: sie steht in den Details des Titels (mediaInfo.id)
    * und gibt es nur, wenn Seerr den Titel kennt (angefragt oder aus der Bibliothek synchronisiert). Der Kommentar ist freiwillig; Seerr verlangt aber einen Text,
    * deshalb ersetzt ein leerer Kommentar durch `fallbackMessage` (die Oberflaeche liefert ihn in ihrer Sprache).
