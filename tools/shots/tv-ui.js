@@ -258,6 +258,14 @@ module.exports = async (ctx) => {
   await key('ArrowDown');
   const e2 = await focusInfo();
   check('Folgen: Pfeil runter zur naechsten Folge', /(^|\s)ep(\s|$)/.test(e2.cls) && e2.onScreen && e2.y > f.y - 2, JSON.stringify(e2));
+  // Die Seite einer Folge: ueber das Kontextmenue (der Titel-Link in der Folge ist auf dem Fernseher kein eigenes Ziel)
+  await key('Enter', { hold: 750 });
+  await waitFor(`!!document.querySelector('.menu.open')`, 2000);
+  const entries = await ev(`[...document.querySelectorAll('.menu.open .menu-item .lbl')].map((x) => x.textContent)`);
+  check('Langes OK auf einer Folge: das Menue hat "Details"', entries.includes('Details'), JSON.stringify(entries));
+  await ev(`[...document.querySelectorAll('.menu.open .menu-item')].find((b) => b.textContent.includes('Details'))?.focus()`);
+  await key('Enter');
+  check('"Details" oeffnet die Seite der Folge', await waitFor(`location.hash.startsWith('#/item/') && location.hash !== '#/item/${series.Id}'`, 4000), await ev('location.hash'));
 
   check('Keine Fehler in der Konsole', errors.length === 0, errors.slice(0, 3).join(' | '));
   console.log(`Aufnahmen: ${shotDir}`);

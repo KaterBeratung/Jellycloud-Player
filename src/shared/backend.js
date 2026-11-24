@@ -232,13 +232,15 @@
      * abgelaufene Anmeldung, daher Code SEERR_DENIED (die Oberflaeche prueft dann still, ob die Sitzung noch gilt); 404 heisst, die Anfrage gibt es nicht
      * mehr (SEERR_GONE); 409, sie ist nicht mehr ausstehend (SEERR_CHANGED).
      */
-    async function requestManage(fn) {
+    async function requestManage(fn, { issue = false } = {}) {
       try {
         return await fn();
       } catch (e) {
-        if (e instanceof SeerrError && (e.status === 401 || e.status === 403)) throw Object.assign(new SeerrError('Das ist mit deinem Seerr-Konto nicht möglich, oder die Anfrage hat sich inzwischen geändert.'), { status: e.status, code: 'SEERR_DENIED' });
-        if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError('Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
-        if (e instanceof SeerrError && e.status === 409) throw Object.assign(new SeerrError('Die Anfrage wartet nicht mehr auf eine Entscheidung und lässt sich nicht mehr ändern.'), { status: 409, code: 'SEERR_CHANGED' });
+        // issue: Meldungen zu einem gemeldeten Problem statt zu einer Anfrage (gleiche Codes, eigener Wortlaut)
+        const what = issue ? 'das Problem' : 'die Anfrage';
+        if (e instanceof SeerrError && (e.status === 401 || e.status === 403)) throw Object.assign(new SeerrError(`Das ist mit deinem Seerr-Konto nicht möglich, oder ${what} hat sich inzwischen geändert.`), { status: e.status, code: 'SEERR_DENIED' });
+        if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError(issue ? 'Dieses Problem gibt es nicht mehr.' : 'Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
+        if (e instanceof SeerrError && e.status === 409) throw Object.assign(new SeerrError(issue ? 'Das Problem hat sich inzwischen geändert.' : 'Die Anfrage wartet nicht mehr auf eine Entscheidung und lässt sich nicht mehr ändern.'), { status: 409, code: 'SEERR_CHANGED' });
         throw e;
       }
     }
@@ -787,9 +789,9 @@
       // Gemeldete Probleme (Apple-App Build 94): lesen, antworten, Stand aendern, loeschen; Fehler wie bei den Anfragen
       seerrIssues: ({ open = true } = {}) => seerrRead((s) => s.issues({ open: open !== false, take: 50 })),
       seerrIssueGet: (id) => seerrRead((s) => s.issue(Number(id))), // (seerrIssue ist das Melden, weiter unten)
-      seerrIssueComment: ({ id, message } = {}) => requestManage(() => requireSeerr().commentIssue(Number(id), message)).then(() => true),
-      seerrIssueResolve: ({ id, resolved } = {}) => requestManage(() => requireSeerr().setIssueResolved(Number(id), resolved === true)).then(() => true),
-      seerrIssueDelete: (id) => requestManage(() => requireSeerr().deleteIssue(Number(id))).then(() => true),
+      seerrIssueComment: ({ id, message } = {}) => requestManage(() => requireSeerr().commentIssue(Number(id), message), { issue: true }).then(() => true),
+      seerrIssueResolve: ({ id, resolved } = {}) => requestManage(() => requireSeerr().setIssueResolved(Number(id), resolved === true), { issue: true }).then(() => true),
+      seerrIssueDelete: (id) => requestManage(() => requireSeerr().deleteIssue(Number(id)), { issue: true }).then(() => true),
       seerrServices: (movie) => seerrRead((s) => s.services(movie === true)),
       seerrServiceChoices: ({ movie, serverId } = {}) => seerrRead((s) => s.serviceChoices(movie === true, Number(serverId))),
       seerrRequesters: () => seerrRead((s) => s.requesters()),

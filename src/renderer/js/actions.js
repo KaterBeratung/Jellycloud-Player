@@ -2,6 +2,7 @@ import { t } from './i18n.js';
 import { toast, openMenu, refreshCards } from './ui.js';
 import { api } from './api.js';
 import { navigate, liveViews } from './router.js';
+import { isTv } from './tv.js';
 
 const SeasonChoice = window.JCSeasonChoice; // welche Staffel zuerst (src/shared/season-choice.js)
 
@@ -122,6 +123,9 @@ export function itemMenuEntries(item) {
   }
   entries.push({ id: 'played', label: u.Played ? t('action.markUnwatched') : t('action.markWatched'), icon: u.Played ? 'circle' : 'check-circle' });
   entries.push({ id: 'favorite', label: u.IsFavorite ? t('action.unfavorite') : t('action.favorite'), icon: u.IsFavorite ? 'heart-off' : 'heart' });
+  // Fernseher (tv.js): eine Folge in der Liste ist ein Ganzes (OK spielt sie), ihr Titel-Link ist dort nicht einzeln erreichbar; die Seite der Folge
+  // oeffnet dann dieser Eintrag
+  if (item.Type === 'Episode' && isTv()) entries.push({ id: 'details', label: t('action.details'), icon: 'info' });
   return entries;
 }
 
@@ -130,6 +134,7 @@ const busyItems = new Set(); // Eintraege, deren Aenderung gerade laeuft: ein zw
 async function runItemAction(item, action) {
   if (action === 'play') return item.Type === 'Series' ? playSeries(item) : playItem({ itemId: item.Id, resume: true });
   if (action === 'restart') return playItem({ itemId: item.Id, resume: false, startTicks: 0 });
+  if (action === 'details') return navigate(`/item/${item.Id}`);
   if (busyItems.has(item.Id)) return;
   busyItems.add(item.Id);
   try {

@@ -232,15 +232,23 @@ function onKeyDown(e) {
   lastKeyAt = Date.now();
   const dir = ARROWS[e.key];
   const active = document.activeElement;
+  // Waehrend der Startanimation gehoert jede Taste ihr (splash.js ueberspringt damit), der Fokus dahinter bleibt, wo er ist
+  if (document.getElementById('splash')) return;
   if (dir) {
     // Menues gehen mit hoch/runter selbst durch ihre Eintraege (ui.js openMenu); seitlich zwischen Spalten hilft die raeumliche Suche
     const scope = layer();
     if (scope.classList?.contains('menu') && (dir === 'up' || dir === 'down') && scope.contains(active)) return;
     if (active && isTextField(active)) {
+      const value = active.value ?? '';
       if (dir === 'left' || dir === 'right') {
         const atStart = active.selectionStart === 0 && active.selectionEnd === 0;
-        const atEnd = active.selectionStart === active.value.length;
+        const atEnd = active.selectionStart === value.length;
         if ((dir === 'left' && !atStart) || (dir === 'right' && !atEnd)) return;
+      } else if (active.tagName === 'TEXTAREA') {
+        // Mehrzeilig: hoch/runter bewegen den Cursor zwischen den Zeilen; erst aus der ersten bzw. letzten Zeile heraus geht der Fokus weiter
+        const before = value.slice(0, active.selectionStart);
+        const after = value.slice(active.selectionEnd);
+        if ((dir === 'up' && before.includes('\n')) || (dir === 'down' && after.includes('\n'))) return;
       }
     }
     if (active?.matches?.('input[type="range"]') && (dir === 'left' || dir === 'right')) return;
@@ -265,6 +273,13 @@ function onKeyDown(e) {
       openContextMenu(el);
     }, LONG_PRESS_MS) };
   }
+}
+
+/** Ein Druecken von OK, dessen Loslassen nie ankommt (Fenster verliert den Fokus, App im Hintergrund, Seitenwechsel), darf OK nicht sperren. */
+function cancelPress() {
+  if (!press) return;
+  clearTimeout(press.timer);
+  press = null;
 }
 
 function onKeyUp(e) {
@@ -410,6 +425,11 @@ export function installTv() {
     const lost = focusedPage;
     setTimeout(() => recover(lost), 0);
   });
-  document.addEventListener('route', () => requestAnimationFrame(onRoute));
+  document.addEventListener('route', () => {
+    cancelPress();
+    requestAnimationFrame(onRoute);
+  });
+  window.addEventListener('blur', cancelPress);
+  document.addEventListener('visibilitychange', cancelPress);
   document.addEventListener('scroll', syncBar, { capture: true, passive: true });
 }
