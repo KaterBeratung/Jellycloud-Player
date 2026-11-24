@@ -13,7 +13,7 @@ PGS-/ASS-Untertitel.
   Dolby Vision (Profil 5/8) wird über die RPU-Daten abgebildet, Profil 7 FEL nur als Basisschicht.
 - **Audio:** WASAPI-Passthrough für AC3/E-AC3/DTS/DTS-HD/TrueHD, optional exklusiv (für Bitstream von TrueHD/DTS-HD).
   Die App erkennt das Ausgabegerät (Kanalzahl, Bauart) und wählt danach Stereo oder Surround, siehe *Ton-Ausgabe und Kanalerkennung*.
-- **Infuse-ähnliche Oberfläche:** Hero-Banner und Reihen vor allem mit **Neuzugängen** (Banner: nur Neues, Filme und Serien abwechselnd; darunter ganz oben *Weiterschauen* und *Als Nächstes*, dann *Neu in Filme*, *Neu in Serien*, Favoriten), Poster-Raster mit **Tags wie in der Apple-App** (4K, HDR-Format, Premium-Ton, siehe *Tags*),
+- **Oberfläche wie Apple TV:** Hero-Banner und Reihen vor allem mit **Neuzugängen** (Banner: nur Neues, Filme und Serien abwechselnd; darunter ganz oben *Weiterschauen* und *Als Nächstes*, dann *Neu in Filme*, *Neu in Serien*, Favoriten), Poster-Raster mit **Tags wie in der Apple-App** (4K, HDR-Format, Premium-Ton, siehe *Tags*),
   Detailseite mit Version, Audio und Untertiteln vor dem Start, Staffeln und Folgen, Besetzung, Informationen; jede Karte hat ein **Kontextmenü**
   (Rechtsklick, langes Drücken; siehe *Detailseite und Kontextmenü*).
 - **Player:** eigene Steuerung im Liquid-Glass-Stil (Seekbar mit Trickplay-Vorschau, Kapitel, *Intro überspringen*, Rückblick und Vorschau automatisch,
@@ -168,7 +168,7 @@ Trailer-Einstellungen ohne automatisches Abspielen, *Anzeigen nach* ohne Pausenb
 ohne Passthrough und *Minimiert starten* ohne Autostart. Unter dem Untertitel-Modus steht ein Hinweis je Modus. Unteroptionen des Banners
 (*wechselt automatisch*, *Folien*) stehen nur mit Banner da. Geprüft: `tools/shots/settings-rules.js`.
 
-Bereiche im Einzelnen, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbieten:
+Bereiche im Einzelnen, orientiert an dem, was verbreitete Mediaplayer und mpv-Frontends anbieten:
 
 | Bereich | Auswahl |
 | --- | --- |
