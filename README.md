@@ -1,6 +1,6 @@
 # Jellycloud Player
 
-Jellyfin-Client für Windows im Stil von Infuse. Die Oberfläche läuft in Electron, abgespielt wird mit **mpv**:
+Die Oberfläche läuft in Electron, abgespielt wird mit **mpv**:
 Direct Play ohne Transcoding, HDR10 / HLG / Dolby Vision, Audio-Passthrough (Dolby Digital, DTS, TrueHD, Atmos),
 PGS-/ASS-Untertitel.
 
