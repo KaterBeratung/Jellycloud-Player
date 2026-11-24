@@ -11,19 +11,22 @@ import { runSeerrCheck, seerrState } from '../connection.js';
 import { applyNotices } from '../notices.js';
 
 // Bereiche der Einstellungen (Icon fuer die Seitenleiste)
+// Reihenfolge der Apple-App (SettingsView: Konto; Player, Erscheinungsbild, Startseite; Seerr, Mitteilungen, Info, Plan P23). Der Player der
+// Apple-App ist hier auf Wiedergabe, Sprache & Untertitel und Netzwerk verteilt; dahinter stehen die Bereiche, die es nur im Desktop-Programm gibt
+// (Bild & HDR, Ton, Discord) und "Allgemein" an der Stelle vor Info.
 const SECTIONS = [
-  ['appearance', 'palette'],
-  ['home', 'home'],
+  ['account', 'user'],
+  ['behavior', 'play'],
+  ['subtitles', 'subtitles'],
+  ['network', 'link'],
   ['video', 'monitor'],
   ['audio', 'audio'],
-  ['subtitles', 'subtitles'],
-  ['behavior', 'play'],
-  ['network', 'link'],
-  ['general', 'settings'],
+  ['appearance', 'palette'],
+  ['home', 'home'],
   ['seerr', 'plus'],
   ['notifications', 'bell'],
   ['discord', 'tv'],
-  ['account', 'user'],
+  ['general', 'settings'],
   ['about', 'info']
 ];
 const ALIASES = { playback: 'video' };
@@ -45,11 +48,29 @@ function diagLine() {
 }
 
 function setting(label, desc, control, { wide = false } = {}) {
+  // Schieberegler und Felder ohne eigenen Namen heissen fuer Bildschirmleser wie ihre Zeile (Plan P23, B1: vorher ohne Namen)
+  if (control instanceof Element) for (const el of control.matches('input, select, textarea') ? [control] : control.querySelectorAll('input, select, textarea')) if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
   return h('div', { class: `setting${wide ? ' wide' : ''}` }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), desc ? h('div', { class: 'setting-desc' }, desc) : null), h('div', { class: 'setting-control' }, control));
 }
 
 
 const group = (title, ...rows) => h('div', { class: 'settings-block' }, title ? h('h3', { class: 'group-title' }, title) : null, h('div', { class: 'settings-group' }, rows));
+/** Gruppe mit Hinweis darunter (Text des Hinweises setzt, wer ihn braucht). */
+const groupWithFoot = (title, foot, ...rows) => h('div', { class: 'settings-block' }, title ? h('h3', { class: 'group-title' }, title) : null, h('div', { class: 'settings-group' }, rows), foot);
+
+/**
+ * Einstellung ohne Wirkung im gewaehlten Zusammenhang (Regel der Apple-App, Notizen/design-system.md): die Zeile bleibt sichtbar, ist ausgeschaltet
+ * (grau, nimmt nichts an, der Fokus springt ueber sie), und der Hinweis unter der Gruppe sagt in einem Satz warum. Was zu einer Plattform nicht gehoert,
+ * steht dagegen gar nicht da (wie die Trailer der Apple-App nur auf Apple TV und dem Mac).
+ */
+function setRowsEnabled(rows, on) {
+  for (const row of rows) {
+    if (!row) continue;
+    row.classList.toggle('is-off', !on);
+    row.setAttribute('aria-disabled', String(!on));
+    row.querySelectorAll('button, input, select, textarea').forEach((el) => (el.disabled = !on));
+  }
+}
 
 function menuSelect(options, value, onChange) {
   const label = () => options.find((o) => o.value === value)?.label ?? String(value);
@@ -79,11 +100,12 @@ const onOff = (labelOn, labelOff) => [
 ];
 
 // Gruppen der Bereichsliste auf dem Handy (kompakte Ansicht): [Titel, Bereiche]. Bereiche, die hier fehlen, landen in der letzten Gruppe.
+// In der Reihenfolge der Apple-App: Konto; Player (hier drei Bereiche), Erscheinungsbild, Startseite; Seerr, Mitteilungen, Info
 const MOBILE_GROUPS = [
-  ['set.list.account', ['account', 'seerr', 'notifications']],
+  ['set.list.account', ['account']],
+  ['set.list.playback', ['behavior', 'subtitles', 'network']],
   ['set.list.look', ['appearance', 'home']],
-  ['set.list.playback', ['subtitles', 'behavior', 'network']],
-  ['set.list.app', ['general', 'about']]
+  ['set.list.more', ['seerr', 'notifications', 'general', 'about']]
 ];
 
 /** Liste der Bereiche fuer das Handy: Zeilen mit Symbol, Name, kurzer Angabe (Benutzer, Version) und Pfeil, nach Themen gruppiert; ein Tipp oeffnet den Bereich. */
@@ -370,14 +392,32 @@ export function settingsView({ section, query: q }) {
     paintWindow();
     paintTop({ load: true });
 
+    // Unteroptionen des Banners stehen nur mit Banner da (wie "Folien" in der Apple-App: eine Unteroption direkt unter ihrem Schalter)
+    const heroRows = [
+      setting(t('set.heroAutoplay'), t('set.heroAutoplayDesc'), toggle(app().heroAutoplay, (v) => setAppearance({ heroAutoplay: v }), t('set.heroAutoplay'))),
+      setting(t('set.homeHeroSlides'), t('set.homeHeroSlidesDesc'), slider({ min: HomeRows.LIMITS.heroSlides[0], max: HomeRows.LIMITS.heroSlides[1], step: 1, value: cfg().heroSlides, onInput: (v) => setHome({ heroSlides: v }) }))
+    ];
+    const paintHero = () => heroRows.forEach((r) => (r.hidden = !cfg().hero));
+    paintHero();
+
     return h(
       'div',
       null,
       group(
         t('set.homeBannerGroup'),
-        setting(t('set.homeHero'), t('set.homeHeroDesc'), toggle(cfg().hero, (v) => setHome({ hero: v }), t('set.homeHero'))),
-        setting(t('set.heroAutoplay'), t('set.heroAutoplayDesc'), toggle(app().heroAutoplay, (v) => setAppearance({ heroAutoplay: v }), t('set.heroAutoplay'))),
-        setting(t('set.homeHeroSlides'), t('set.homeHeroSlidesDesc'), slider({ min: HomeRows.LIMITS.heroSlides[0], max: HomeRows.LIMITS.heroSlides[1], step: 1, value: cfg().heroSlides, onInput: (v) => setHome({ heroSlides: v }) }))
+        setting(
+          t('set.homeHero'),
+          t('set.homeHeroDesc'),
+          toggle(
+            cfg().hero,
+            (v) => {
+              setHome({ hero: v });
+              paintHero();
+            },
+            t('set.homeHero')
+          )
+        ),
+        ...heroRows
       ),
       h(
         'div',
@@ -524,11 +564,22 @@ export function settingsView({ section, query: q }) {
       return parts.join(' · ');
     };
     window.jc.audioOutput().then((o) => (detectedText.textContent = describeOutput(o))).catch(() => (detectedRow.hidden = true));
+    // "WASAPI exklusiv" wirkt nur mit Passthrough (src/main/audio-output.js: exclusive = passthrough && audioExclusive)
+    const outputFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const exclusiveRow = setting(t('set.exclusive'), t('set.exclusiveDesc'), toggle(pl().audioExclusive, (v) => setPlayer({ audioExclusive: v }), t('set.exclusive')));
+    const paintExclusive = () => {
+      const on = !!pl().audioPassthrough;
+      setRowsEnabled([exclusiveRow], on);
+      outputFoot.textContent = on ? '' : t('set.exclusiveUnused');
+      outputFoot.hidden = on;
+    };
+    paintExclusive();
     return h(
       'div',
       { class: 'settings-stack' },
-      group(
+      groupWithFoot(
         t('set.grp.output'),
+        outputFoot,
         setting(t('set.audioDevice'), t('set.audioDeviceDesc'), devBtn),
         detectedRow,
         setting(
@@ -545,8 +596,19 @@ export function settingsView({ section, query: q }) {
             (v) => setPlayer({ audioChannels: v })
           )
         ),
-        setting(t('set.passthrough'), t('set.passthroughDesc'), toggle(pl().audioPassthrough, (v) => setPlayer({ audioPassthrough: v }), t('set.passthrough'))),
-        setting(t('set.exclusive'), t('set.exclusiveDesc'), toggle(pl().audioExclusive, (v) => setPlayer({ audioExclusive: v }), t('set.exclusive')))
+        setting(
+          t('set.passthrough'),
+          t('set.passthroughDesc'),
+          toggle(
+            pl().audioPassthrough,
+            (v) => {
+              setPlayer({ audioPassthrough: v });
+              paintExclusive();
+            },
+            t('set.passthrough')
+          )
+        ),
+        exclusiveRow
       ),
       group(t('set.grp.sound'), setting(t('set.nightMode'), t('set.nightModeDesc'), toggle(pl().nightMode, (v) => setPlayer({ nightMode: v }), t('set.nightMode'))))
     );
@@ -584,6 +646,37 @@ export function settingsView({ section, query: q }) {
       colors.append(b);
     });
 
+    // Untertitel wie die Apple-App (Plan P23, E-P3): ein Hinweis je Modus; die Untertitelsprache wirkt nur bei "Nur erzwungene", "Immer" und "Smart"
+    // (JCMedia.subtitleModeNeedsLanguage, dieselbe Regel waehlt die Spur), sonst ist sie ausgeschaltet und der Hinweis sagt warum
+    const SUB_MODES = ['server', 'off', 'forced', 'always', 'smart'];
+    const subFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const subLangRow = setting(t('set.subLang'), t('set.subLangDesc'), menuSelect(langOptions(t('set.subLangUi')), pl().subtitleLanguage, (v) => setPlayer({ subtitleLanguage: v })));
+    const paintSubMode = () => {
+      const mode = SUB_MODES.includes(pl().subtitleMode) ? pl().subtitleMode : 'server';
+      const needs = window.JCMedia.subtitleModeNeedsLanguage(mode);
+      setRowsEnabled([subLangRow], needs);
+      subFoot.textContent = needs ? t(`set.subHint.${mode}`) : `${t(`set.subHint.${mode}`)} ${t(`set.subLangUnused.${mode}`)}`;
+    };
+    const subModeRow = setting(
+      t('set.subMode'),
+      null,
+      menuSelect(
+        [
+          { value: 'server', label: t('set.langServer') },
+          { value: 'off', label: t('set.subOff') },
+          { value: 'forced', label: t('set.subForced') },
+          { value: 'always', label: t('set.subAlways') },
+          { value: 'smart', label: t('set.subSmart') }
+        ],
+        pl().subtitleMode,
+        (v) => {
+          setPlayer({ subtitleMode: v });
+          paintSubMode();
+        }
+      )
+    );
+    paintSubMode();
+
     return h(
       'div',
       { class: 'settings-stack' },
@@ -593,24 +686,9 @@ export function settingsView({ section, query: q }) {
         // Nur Android (Plan P21, wie Einstellungen > Player > Ton der Apple-App); unter Windows entscheidet die Tonausgabe (Ton > Kanaele)
         state.platform === 'android'
           ? setting(t('set.keepSurround'), t('set.keepSurroundDesc'), toggle(pl().keepSurround === true, (v) => setPlayer({ keepSurround: v }), t('set.keepSurround')))
-          : null,
-        setting(
-          t('set.subMode'),
-          t('set.subModeDesc'),
-          menuSelect(
-            [
-              { value: 'server', label: t('set.langServer') },
-              { value: 'off', label: t('set.subOff') },
-              { value: 'forced', label: t('set.subForced') },
-              { value: 'always', label: t('set.subAlways') },
-              { value: 'smart', label: t('set.subSmart') }
-            ],
-            pl().subtitleMode,
-            (v) => setPlayer({ subtitleMode: v })
-          )
-        ),
-        setting(t('set.subLang'), t('set.subLangDesc'), menuSelect(langOptions(t('set.subLangUi')), pl().subtitleLanguage, (v) => setPlayer({ subtitleLanguage: v })))
+          : null
       ),
+      groupWithFoot(t('set.grp.subtitles'), subFoot, subModeRow, subLangRow),
       group(
         t('set.grp.style'),
         h('div', { class: 'setting wide' }, preview),
@@ -675,6 +753,64 @@ export function settingsView({ section, query: q }) {
     // Nur der Player des Desktop-Programms (mpv-Fenster): Vollbild beim Start, Tastatur und Mausrad, Pausenbildschirm, Verhalten im Hintergrund. Auf dem
     // Handy laeuft der Player immer im Vollbild, haelt im Hintergrund an und laesst den Bildschirm an (Plan P22, B2)
     const desktop = state.platform === 'desktop';
+    // Trailer und Pausenbildschirm: ohne ihren Schalter wirken die Zeilen darunter nicht (ausgeschaltet mit Satz, wie die Apple-App bei den Trailern)
+    const trailerFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const trailerRows = [
+      setting(t('set.trailerHome'), t('set.trailerHomeDesc'), toggle(state.settings.trailer?.home !== false, (v) => setTrailer({ home: v }), t('set.trailerHome'))),
+      setting(t('set.trailerMuted'), t('set.trailerMutedDesc'), toggle(state.settings.trailer?.muted !== false, (v) => setTrailer({ muted: v }), t('set.trailerMuted'))),
+      setting(t('set.trailerDelay'), t('set.trailerDelayDesc'), slider({ min: 0, max: 10, step: 1, value: state.settings.trailer?.delaySec ?? 0, format: (v) => `${v} s`, onInput: (v) => setTrailer({ delaySec: v }) })),
+      setting(t('set.trailerFocus'), t('set.trailerFocusDesc'), slider({ min: 0, max: 60, step: 5, value: state.settings.trailer?.focusSec ?? 10, format: (v) => (v ? `${v} s` : t('set.off')), onInput: (v) => setTrailer({ focusSec: v }) })),
+      setting(
+        t('set.trailerStyle'),
+        t('set.trailerStyleDesc'),
+        segmented(
+          [
+            { value: 'corner', label: t('set.trailerStyleCorner') },
+            { value: 'poster', label: t('set.trailerStylePoster') }
+          ],
+          state.settings.trailer?.focusStyle === 'poster' ? 'poster' : 'corner',
+          (v) => setTrailer({ focusStyle: v })
+        )
+      ),
+      setting(t('set.trailerVolume'), t('set.trailerVolumeDesc'), slider({ min: 5, max: 100, step: 5, value: state.settings.trailer?.volume ?? 10, format: (v) => `${v}%`, onInput: (v) => setTrailer({ volume: v }) })),
+      setting(
+        t('set.trailerQuality'),
+        t('set.trailerQualityDesc'),
+        segmented(
+          [
+            { value: '2160', label: t('set.trailerQ2160') },
+            { value: '1080', label: 'Full HD' },
+            { value: '720', label: '720p' }
+          ],
+          trailerTier(state.settings.trailer?.quality),
+          (v) => setTrailer({ quality: v })
+        )
+      )
+    ];
+    const paintTrailer = () => {
+      const on = !!state.settings.trailer?.autoplay;
+      setRowsEnabled(trailerRows, on);
+      trailerFoot.textContent = on ? '' : t('set.trailerUnused');
+      trailerFoot.hidden = on;
+    };
+    const pauseFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const pauseSecRow = setting(
+      t('set.pauseScreenSec'),
+      t('set.pauseScreenSecDesc'),
+      menuSelect(
+        [3, 6, 10, 20].map((v) => ({ value: v, label: `${v} s` })),
+        pl().pauseScreenSec,
+        (v) => setPlayer({ pauseScreenSec: v })
+      )
+    );
+    const paintPause = () => {
+      const on = pl().pauseScreen !== false;
+      setRowsEnabled([pauseSecRow], on);
+      pauseFoot.textContent = on ? '' : t('set.pauseScreenUnused');
+      pauseFoot.hidden = on;
+    };
+    paintTrailer();
+    paintPause();
     const panel = h(
       'div',
       { class: 'settings-stack' },
@@ -692,39 +828,22 @@ export function settingsView({ section, query: q }) {
         skipFoot
       ),
       group(t('set.grp.image'), setting(t('set.videoFormat'), t('set.videoFormatDesc'), menuSelect(formats, Rules.videoFormat(pl().videoFormat), (v) => setPlayer({ videoFormat: v })))),
-      group(
+      groupWithFoot(
         t('set.grp.trailer'),
-        setting(t('set.trailerAuto'), t('set.trailerAutoDesc'), toggle(!!state.settings.trailer?.autoplay, (v) => setTrailer({ autoplay: v }), t('set.trailerAuto'))),
-        setting(t('set.trailerHome'), t('set.trailerHomeDesc'), toggle(state.settings.trailer?.home !== false, (v) => setTrailer({ home: v }), t('set.trailerHome'))),
-        setting(t('set.trailerMuted'), t('set.trailerMutedDesc'), toggle(state.settings.trailer?.muted !== false, (v) => setTrailer({ muted: v }), t('set.trailerMuted'))),
-        setting(t('set.trailerDelay'), t('set.trailerDelayDesc'), slider({ min: 0, max: 10, step: 1, value: state.settings.trailer?.delaySec ?? 0, format: (v) => `${v} s`, onInput: (v) => setTrailer({ delaySec: v }) })),
-        setting(t('set.trailerFocus'), t('set.trailerFocusDesc'), slider({ min: 0, max: 60, step: 5, value: state.settings.trailer?.focusSec ?? 10, format: (v) => (v ? `${v} s` : t('set.off')), onInput: (v) => setTrailer({ focusSec: v }) })),
+        trailerFoot,
         setting(
-          t('set.trailerStyle'),
-          t('set.trailerStyleDesc'),
-          segmented(
-            [
-              { value: 'corner', label: t('set.trailerStyleCorner') },
-              { value: 'poster', label: t('set.trailerStylePoster') }
-            ],
-            state.settings.trailer?.focusStyle === 'poster' ? 'poster' : 'corner',
-            (v) => setTrailer({ focusStyle: v })
+          t('set.trailerAuto'),
+          t('set.trailerAutoDesc'),
+          toggle(
+            !!state.settings.trailer?.autoplay,
+            (v) => {
+              setTrailer({ autoplay: v });
+              paintTrailer();
+            },
+            t('set.trailerAuto')
           )
         ),
-        setting(t('set.trailerVolume'), t('set.trailerVolumeDesc'), slider({ min: 5, max: 100, step: 5, value: state.settings.trailer?.volume ?? 10, format: (v) => `${v}%`, onInput: (v) => setTrailer({ volume: v }) })),
-        setting(
-          t('set.trailerQuality'),
-          t('set.trailerQualityDesc'),
-          segmented(
-            [
-              { value: '2160', label: t('set.trailerQ2160') },
-              { value: '1080', label: 'Full HD' },
-              { value: '720', label: '720p' }
-            ],
-            trailerTier(state.settings.trailer?.quality),
-            (v) => setTrailer({ quality: v })
-          )
-        )
+        ...trailerRows
       ),
       !desktop ? null : group(
         t('set.grp.controls'),
@@ -744,19 +863,25 @@ export function settingsView({ section, query: q }) {
           )
         )
       ),
-      !desktop ? null : group(
-        t('set.grp.pause'),
-        setting(t('set.pauseScreen'), t('set.pauseScreenDesc'), toggle(pl().pauseScreen, (v) => setPlayer({ pauseScreen: v }), t('set.pauseScreen'))),
-        setting(
-          t('set.pauseScreenSec'),
-          t('set.pauseScreenSecDesc'),
-          menuSelect(
-            [3, 6, 10, 20].map((v) => ({ value: v, label: `${v} s` })),
-            pl().pauseScreenSec,
-            (v) => setPlayer({ pauseScreenSec: v })
-          )
-        )
-      ),
+      !desktop
+        ? null
+        : groupWithFoot(
+            t('set.grp.pause'),
+            pauseFoot,
+            setting(
+              t('set.pauseScreen'),
+              t('set.pauseScreenDesc'),
+              toggle(
+                pl().pauseScreen,
+                (v) => {
+                  setPlayer({ pauseScreen: v });
+                  paintPause();
+                },
+                t('set.pauseScreen')
+              )
+            ),
+            pauseSecRow
+          ),
       !desktop ? null : group(
         t('set.grp.system'),
         setting(t('set.pauseOnMinimize'), t('set.pauseOnMinimizeDesc'), toggle(pl().pauseOnMinimize, (v) => setPlayer({ pauseOnMinimize: v }), t('set.pauseOnMinimize'))),
@@ -806,14 +931,37 @@ export function settingsView({ section, query: q }) {
     check.addEventListener('click', () => paintLimits(true));
     paintLimits(false);
 
+    // Ohne Transcoding gibt es keine eigene Grenze (src/shared/bitrate.js planBitrate): die Bitratengrenze ist dann ausgeschaltet, mit Satz
+    const qualityFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const qualityRow = setting(t('set.quality'), t('set.qualityDesc'), menuSelect(bitrate, Number(pl().maxBitrateMbps) > 0 ? Number(pl().maxBitrateMbps) : 0, (v) => setPlayer({ maxBitrateMbps: v })));
+    const paintQuality = () => {
+      const on = pl().allowTranscode !== false;
+      setRowsEnabled([qualityRow], on);
+      qualityFoot.textContent = on ? '' : t('set.qualityUnused');
+      qualityFoot.hidden = on;
+    };
+    paintQuality();
+
     return h(
       'div',
       { class: 'settings-stack' },
       group(t('set.grp.limits'), limitRow),
-      group(
+      groupWithFoot(
         t('set.grp.quality'),
-        setting(t('set.quality'), t('set.qualityDesc'), menuSelect(bitrate, Number(pl().maxBitrateMbps) > 0 ? Number(pl().maxBitrateMbps) : 0, (v) => setPlayer({ maxBitrateMbps: v }))),
-        setting(t('set.allowTranscode'), t('set.allowTranscodeDesc'), toggle(pl().allowTranscode, (v) => setPlayer({ allowTranscode: v }), t('set.allowTranscode')))
+        qualityFoot,
+        qualityRow,
+        setting(
+          t('set.allowTranscode'),
+          t('set.allowTranscodeDesc'),
+          toggle(
+            pl().allowTranscode,
+            (v) => {
+              setPlayer({ allowTranscode: v });
+              paintQuality();
+            },
+            t('set.allowTranscode')
+          )
+        )
       ),
       // Puffer und eigene Zertifikate gelten nur fuer mpv im Desktop-Programm (Plan P22, B2)
       state.platform !== 'desktop'
@@ -877,14 +1025,39 @@ export function settingsView({ section, query: q }) {
     });
 
     const desktop = state.platform === 'desktop'; // Engine, Autostart, Fensterwahl und Selbst-Aktualisierung gibt es nur im Desktop-Programm
+    // "Minimiert starten" wirkt nur beim Start mit Windows (src/main/autostart.js): sonst ausgeschaltet, mit Satz
+    const appFoot = h('p', { class: 'group-foot', 'aria-live': 'polite' });
+    const minimizedRow = desktop ? setting(t('set.startMinimized'), t('set.startMinimizedDesc'), toggle(gen().startMinimized, (v) => setGeneral({ startMinimized: v }), t('set.startMinimized'))) : null;
+    const paintMinimized = () => {
+      if (!minimizedRow) return (appFoot.hidden = true);
+      const on = !!gen().autostart;
+      setRowsEnabled([minimizedRow], on);
+      appFoot.textContent = on ? '' : t('set.startMinimizedUnused');
+      appFoot.hidden = on;
+    };
+    paintMinimized();
     return h(
       'div',
       { class: 'settings-stack' },
       desktop ? group(t('set.grp.engine'), h('div', { class: 'setting wide' }, engine)) : null,
-      group(
+      groupWithFoot(
         t('set.grp.app'),
-        desktop ? setting(t('set.autostart'), state.autostartSupported ? t('set.autostartDesc') : t('set.autostartDev'), toggle(gen().autostart, (v) => setGeneral({ autostart: v }), t('set.autostart'))) : null,
-        desktop ? setting(t('set.startMinimized'), t('set.startMinimizedDesc'), toggle(gen().startMinimized, (v) => setGeneral({ startMinimized: v }), t('set.startMinimized'))) : null,
+        appFoot,
+        desktop
+          ? setting(
+              t('set.autostart'),
+              state.autostartSupported ? t('set.autostartDesc') : t('set.autostartDev'),
+              toggle(
+                gen().autostart,
+                (v) => {
+                  setGeneral({ autostart: v });
+                  paintMinimized();
+                },
+                t('set.autostart')
+              )
+            )
+          : null,
+        minimizedRow,
         desktop ? setting(t('set.rememberWindow'), t('set.rememberWindowDesc'), toggle(gen().rememberWindow, (v) => setGeneral({ rememberWindow: v }), t('set.rememberWindow'))) : null,
         setting(t('set.spoiler'), t('set.spoilerDesc'), toggle(gen().spoilerProtection, (v) => setGeneral({ spoilerProtection: v }), t('set.spoiler')))
       ),
@@ -1566,7 +1739,7 @@ export function settingsView({ section, query: q }) {
   const panels = { appearance: appearancePanel, home: homePanel, video: videoPanel, audio: audioPanel, subtitles: subtitlesPanel, behavior: behaviorPanel, network: networkPanel, general: generalPanel, seerr: seerrPanel, notifications: notificationsPanel, discord: discordPanel, account: accountPanel, about: aboutPanel };
   const sections = SECTIONS.filter(([id]) => state.platform === 'desktop' || !DESKTOP_ONLY.has(id));
   const known = (id) => !!panels[id] && sections.some(([sid]) => sid === id);
-  const active = known(section) ? section : 'appearance';
+  const active = known(section) ? section : sections[0][0]; // ohne Bereich in der Adresse der erste (Konto, wie die Apple-App)
   if (document.documentElement.dataset.compact === 'on') {
     // Handy: ohne Bereich in der Adresse eine Liste der Bereiche nach Themen, sonst der eine Bereich mit "Zurueck" (keine Chip-Zeile oben, siehe sectionList)
     if (known(section)) {

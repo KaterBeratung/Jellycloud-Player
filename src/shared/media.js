@@ -198,6 +198,15 @@
   }
 
   /**
+   * Wirkt die Untertitelsprache in diesem Modus? Nur bei "Nur erzwungene", "Immer" und "Smart"; bei "Wie auf dem Server" waehlt Jellyfin die Spur nach
+   * den Einstellungen des Kontos, bei "Aus" gibt es keine (wie MediaInfo.subtitleModeNeedsLanguage der Apple-App). Aus dieser Regel folgen die Wahl der
+   * Spur (pickStreams) und die Einstellungen (Zeile ausgeschaltet mit Satz). Ohne Angabe oder unbekannt: wie "Wie auf dem Server".
+   */
+  function subtitleModeNeedsLanguage(mode) {
+    return mode === 'forced' || mode === 'always' || mode === 'smart';
+  }
+
+  /**
    * Waehlt Audio- und Untertitelspur nach den Nutzereinstellungen (sonst die Vorgabe des Servers).
    * prefs: { audioLanguage, subtitleMode: server|off|forced|always|smart, subtitleLanguage }
    * outChannels: Kanaele der Tonausgabe (2 = Stereo). Bei Stereo wird, wenn es sie gibt, die Stereo-Spur derselben Sprache
@@ -227,7 +236,8 @@
     var serverSub = source && source.DefaultSubtitleStreamIndex;
     var sub = serverSub === undefined || serverSub === null ? -1 : serverSub;
     var mode = prefs.subtitleMode || 'server';
-    if (mode !== 'server') {
+    if (mode === 'off') sub = -1;
+    else if (subtitleModeNeedsLanguage(mode)) {
       var lang = prefs.subtitleLanguage && prefs.subtitleLanguage !== 'server' ? prefs.subtitleLanguage : uiLang || 'en';
       var inLang = subs.filter(function (s) { return langMatches(s, lang); });
       var forced = inLang.filter(function (s) { return s.IsForced; });
@@ -235,10 +245,9 @@
       var firstFull = full.length ? full[0].Index : forced.length ? forced[0].Index : -1;
       var firstForced = forced.length ? forced[0].Index : -1;
       var audioIsLang = !!chosen && langMatches(chosen, lang);
-      if (mode === 'off') sub = -1;
-      else if (mode === 'forced') sub = firstForced;
+      if (mode === 'forced') sub = firstForced;
       else if (mode === 'always') sub = firstFull;
-      else if (mode === 'smart') sub = audioIsLang ? firstForced : firstFull;
+      else sub = audioIsLang ? firstForced : firstFull; // smart
     }
     return { audioIndex: audio, subtitleIndex: sub };
   }
@@ -259,5 +268,5 @@
     return null;
   }
 
-  return { resolutionLabel: resolutionLabel, hdrLabel: hdrLabel, premiumAudio: premiumAudio, audioLabel: audioLabel, describeMedia: describeMedia, langMatches: langMatches, langCode: langCode, subtitleKind: subtitleKind, groupByLanguage: groupByLanguage, pickStreams: pickStreams, youtubeId: youtubeId, trailerVideoId: trailerVideoId, LANG_ALIASES: LANG_ALIASES };
+  return { resolutionLabel: resolutionLabel, hdrLabel: hdrLabel, premiumAudio: premiumAudio, audioLabel: audioLabel, describeMedia: describeMedia, langMatches: langMatches, langCode: langCode, subtitleKind: subtitleKind, groupByLanguage: groupByLanguage, subtitleModeNeedsLanguage: subtitleModeNeedsLanguage, pickStreams: pickStreams, youtubeId: youtubeId, trailerVideoId: trailerVideoId, LANG_ALIASES: LANG_ALIASES };
 });

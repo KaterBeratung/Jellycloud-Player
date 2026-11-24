@@ -363,6 +363,8 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .play-fab { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; background: var(--accent); color: var(--accent-ink); box-shadow: 0 10px 30px -6px rgb(var(--accent-rgb) / 0.8); opacity: 0; transform: scale(0.6); transition: opacity var(--t-med), transform var(--t-med) var(--ease), var(--press-tr); z-index: 3; }
 .play-fab .ico { margin-left: 2px; }
 .card:hover .play-fab, .ep:hover .play-fab { opacity: 1; transform: scale(1); }
+/* Mit der Tastatur erscheint der Knopf wie beim Zeigen, sobald die Karte oder er selbst den Fokus hat (vorher stand der Fokus auf einem unsichtbaren Knopf; Plan P23, B1) */
+:is(.card, .ep):is(:focus-visible, :has(:focus-visible)) .play-fab { opacity: 1; transform: scale(1); }
 .play-fab:hover { transform: scale(1.12) !important; }
 .corner { position: absolute; top: 8px; right: 8px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; display: grid; place-items: center; font: 800 12px var(--font); z-index: 2; box-shadow: 0 4px 12px rgb(0 0 0 / 0.4); }
 .corner.played { background: var(--accent); color: var(--accent-ink); width: 24px; padding: 0; }
@@ -389,6 +391,7 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .arrow.left { left: max(4px, calc(var(--pad) / 2 - 18px)); }
 .arrow.right { right: max(4px, calc(var(--pad) / 2 - 18px)); }
 .row-body:hover .arrow:not(.off) { opacity: 1; transform: scale(1); }
+.arrow.off { pointer-events: none; } /* am Ende der Reihe unsichtbar: dann nimmt der Pfeil auch keinen Klick an */
 .arrow:hover { background: var(--accent); color: var(--accent-ink); }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr)); gap: 30px 20px; padding: 6px var(--pad) 0; }
@@ -653,6 +656,8 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .group-foot { padding: 8px 8px 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
 /* Einstellung, die gerade nicht wirkt (z. B. "Automatisch springen" ohne Abschnitt auf "Automatisch"): ausgegraut, der Grund steht darunter */
 .setting.is-off .setting-label { color: var(--muted); }
+.setting.is-off .setting-control { opacity: 0.45; pointer-events: none; } /* wie die Apple-App: der Wert ist grau, die Zeile nimmt nichts an */
+.setting.is-off .btn:disabled { opacity: 1; } /* nicht doppelt blass: die Zeile ist schon gedaempft */
 .link-row:disabled { cursor: default; opacity: 0.45; }
 .link-row:disabled:hover { background: none; }
 /* Seerr (wie die Apple-App, SeerrSection): Stand der Verbindung mit Symbol und, wenn etwas nicht stimmt, einem Hinweis darunter */
@@ -730,7 +735,7 @@ html.covered #app > :not(.connect-overlay) { visibility: hidden; } /* die App da
 .connect-brand { display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center; }
 .connect-logo.brand-mark { width: 132px; height: 132px; animation: rise calc(500ms * var(--dur)) var(--ease) both, breathe 3.2s ease-in-out calc(500ms * var(--dur)) infinite alternate; }
 @keyframes breathe { to { scale: 1.035; } }
-html[data-anim='reduced'] .connect-logo.brand-mark { animation: rise calc(500ms * var(--dur)) var(--ease) both; }
+html[data-anim='reduced'] .connect-logo.brand-mark { animation: none; } /* kein Auftritt, kein Atmen (ConnectParts der Apple-App) */
 .connect-word { font: 700 20px var(--font-display); letter-spacing: 7px; text-indent: 7px; color: #fff; text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.5); white-space: nowrap; }
 .connect-sub { color: var(--muted); font-size: 15px; max-width: 40ch; }
 .rise { animation: rise calc(500ms * var(--dur)) var(--ease) calc(var(--i, 0) * 80ms * var(--dur)) both; }
@@ -1493,6 +1498,7 @@ html[data-compact='on'] .card:focus-visible .thumb { transform: none; box-shadow
 html[data-compact='on'] .card:hover .thumb::before,
 html[data-compact='on'] .card:hover .thumb::after { opacity: 0; }
 html[data-compact='on'] .card:hover .play-fab { opacity: 0; transform: scale(0.6); }
+html[data-compact='on'] .card .play-fab { visibility: hidden; } /* auf dem Handy nie zu sehen: dann auch nicht fuer den Fokus und TalkBack (die Karte oeffnet die Detailseite) */
 html[data-compact='on'] .person:hover .avatar { transform: none; }
 
 /* Detailseite: Poster oben, darunter Titel, Angaben und Knoepfe in voller Breite */
@@ -1565,3 +1571,15 @@ html[data-compact='on'] .about-card { padding: 18px 16px; }
 .slist-row > .ico:last-child { flex: none; color: var(--faint); }
 .settings-back { display: inline-flex; align-items: center; gap: 2px; margin: 0 var(--pad) 4px calc(var(--pad) - 6px); padding: 8px 10px 8px 4px; border-radius: 12px; color: var(--accent-fg, var(--accent)); font-weight: 650; }
 html[data-compact='on'] .settings .page-title { padding-top: 0; }
+
+/* ---------- Bewegung reduzieren (Systemeinstellung, motion.js; Plan P23, B1) ----------
+   Wie die Apple-App (Design/Motion.swift: "nur das Noetigste, kein Auftritt, kein Schimmern, kein Zoom"; HeroSlideView ohne Zoom, ConnectParts ohne
+   Atmen): Inhalte stehen sofort da, nichts schimmert, zoomt oder rueckt; Seiten, Fenster und Hinweise blenden nur ein und aus (Motion.fade). Was einen
+   Vorgang anzeigt (Ladekreis, Zeitbalken des Banners) und die Reaktion beim Druecken bleiben. Der Uebergang Poster -> Detail entfaellt schon im Router,
+   die Startanimation laeuft ruhig (splash.js). */
+@keyframes fade-in { from { opacity: 0; } }
+:root[data-anim='reduced'] :is(.card, .hero-slide.active .hero-content > *, .detail-poster, .detail-info > *, .ep, .person, .rise, .person-head, .person-bio, .notice-card) { animation: none; }
+:root[data-anim='reduced'] :is(.sk, .hero-slide.active .hero-bg img, .connect-col.shake) { animation: none; }
+:root[data-anim='reduced'] :is(.page-enter, .settings-panel, .detail-bd-img, .connect-card, .qc-outcome, .trailer-ctl, .mdl) { animation-name: fade-in; }
+:root[data-anim='reduced'] :is(.menu, .menu.open, .menu.closing, .toast, .toast.in) { transform: none; filter: none; }
+:root[data-anim='reduced'] :is(.tool, .update-note, .card .thumb, .card:hover .thumb, .card:focus-visible .thumb) { transform: none; }

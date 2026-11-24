@@ -105,3 +105,4 @@ module.exports = async (ctx) => {
   server.close();
   if (pass !== results.length) process.exitCode = 1;
 };
+module.exports.A11Y = A11Y; // auch fuer access-audit.js (alle Seiten und Bereiche der Einstellungen)

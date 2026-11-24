@@ -434,3 +434,11 @@ button { font: inherit; color: inherit; }
 .ep-m { color: rgb(255 255 255 / 0.62); font-size: 12.5px; }
 .ep-row.cur .ep-m { color: var(--accent-fg, var(--accent)); font-weight: 700; }
 @media (max-width: 560px) { .ep-th { width: 104px; } .ep-n { width: 20px; } }
+
+/* Bewegung reduzieren (Systemeinstellung, wie die Oberflaeche in app.css; Plan P23, B1): nichts rueckt oder waechst, Bedienung und Fenster blenden
+   nur ein und aus; die Rueckmeldung in der Mitte (Abspielen/Pause) blendet nur aus. Die Fuellung der Countdowns zaehlt unveraendert. */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pulse-fade { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+:root[data-anim='reduced'] :is(.skip, .info, .pause.in .pause-card > *) { animation-name: fade-in; }
+:root[data-anim='reduced'] .pulse.go { animation-name: pulse-fade; }
+:root[data-anim='reduced'] :is(.top, .bar, .pop, .pop.open, .ibtn:hover, .skip:hover, .pause-go:hover) { transform: none; filter: none; }

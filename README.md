@@ -20,7 +20,7 @@ PGS-/ASS-Untertitel.
   Bildschirm **Nächste Folge** mit Countdown (im Abspann läuft das Bild klein weiter), **Folgen und Staffeln der Serie** zum Wechseln, Tags wie die Apple-App, Tempo, *Qualität & Bildformat*, Audio-/Untertitel-Panel mit Verzögerung und Größe, Technik-Info). Untertitel
   weichen der Steuerleiste aus. Alle Panels passen ohne Scrollen (zweispaltig bzw. verdichtet).
 - **Anpassbar:** Designs wie in der Apple-App (Midnight, Graphite, AMOLED, Midnight Blue; nur dunkle), **Akzentfarbe für Buttons usw.** (Farbfelder,
-  Farbwähler, Hex-Code), Postergröße, Glas-Effekte, Sprache (DE/EN). Ecken (18 px) und Bewegung sind fest: Bewegung nimmt allein die Systemeinstellung *Bewegung reduzieren* (Windows: *Animationseffekte*) zurück (src/renderer/js/motion.js).
+  Farbwähler, Hex-Code), Postergröße, Glas-Effekte, Sprache (DE/EN). Ecken (18 px) und Bewegung sind fest: Bewegung nimmt allein die Systemeinstellung *Bewegung reduzieren* (Windows: *Animationseffekte*) zurück (src/renderer/js/motion.js), seit 1.2.22 wie die Apple-App ganz: kein Aufsteigen, Schimmern oder Zoom, nur Ein- und Ausblenden.
 - **Konto:** Anmeldung mit Benutzer/Passwort oder Quick Connect, mehrere Server, Token per Windows-DPAPI verschlüsselt.
   Seit 1.2.7 wie die Apple-App: Anmeldung mit Marke (Logo, Schriftzug), Kapselfeldern und dem Quick-Connect-Code in Ziffernkacheln; **Quick Connect für
   andere Geräte** (den Code eines anderen Geräts eingeben und bestätigen, ohne Passwort); Profile mit eigenem Namen, neuer Serveradresse (nur derselbe
@@ -155,7 +155,18 @@ Angeglichen an die Apple-App (Plan P8; Regeln in `src/shared/quick-connect.js` u
 
 ## Einstellungen
 
-Elf Bereiche, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbieten:
+**Reihenfolge wie die Apple-App (seit 1.2.22, Plan P23):** Konto; Wiedergabe, Sprache & Untertitel, Netzwerk (der „Player“ der Apple-App); Bild & HDR und Ton (nur
+Windows); Erscheinungsbild, Startseite; Anfragen (Seerr), Mitteilungen; Discord (nur Windows); Allgemein; Info. Ohne Bereich in der Adresse öffnet das Konto.
+Auf dem Handy eine Liste in vier Gruppen (Konto; Wiedergabe; Darstellung; Anfragen & App). Was eine Plattform nicht hat, steht dort nicht.
+
+**Einstellung ohne Wirkung im gewählten Zusammenhang** (Regel der Apple-App): die Zeile bleibt sichtbar, ist ausgegraut, nimmt nichts an, und unter der
+Gruppe steht in einem Satz warum (`setRowsEnabled` in `views/settings.js`). So bei der Untertitelsprache („Wie auf dem Server“, „Aus“; die Regel
+`JCMedia.subtitleModeNeedsLanguage` wählt auch die Spur, Fälle aus `TrackChoiceTests` in `test/track-choice.test.js`), *Automatisch springen*, den
+Trailer-Einstellungen ohne automatisches Abspielen, *Anzeigen nach* ohne Pausenbildschirm, der Bitratengrenze ohne Transcoding, *WASAPI exklusiv*
+ohne Passthrough und *Minimiert starten* ohne Autostart. Unter dem Untertitel-Modus steht ein Hinweis je Modus. Unteroptionen des Banners
+(*wechselt automatisch*, *Folien*) stehen nur mit Banner da. Geprüft: `tools/shots/settings-rules.js`.
+
+Bereiche im Einzelnen, orientiert an dem, was Infuse, VLC, Plex und mpv-Frontends anbieten:
 
 | Bereich | Auswahl |
 | --- | --- |
@@ -960,6 +971,8 @@ npx electron . --user-data-dir=$env:TEMP\jc-test --shots=tools/shots/player.js
 | `trailer-once.js` | Trailer nur einmal: keine Schleife in der Einbettung, nach dem Ende kein Neustart durch Scrollen oder Sichtbarkeitswechsel, Banner spielt eine Folie im selben Besuch nicht noch einmal, neuer Besuch spielt wieder; braucht Internet |
 | `home-back.js` | zurück auf die Startseite auf vielen Wegen (aus Detail, Bibliothek, Einstellungen, Suche, gescrollt, mit und ohne Trailer im Banner): Bild für Bild, ob Banner und Reihen an ihrem Platz sind |
 | `settings-live.js` | Einstellungen wirken ohne Neuladen (Banner, Trailer, Theme lässt die Seiten im Speicher; Tags ohne Schalter) |
+| `settings-rules.js` | **Einstellungen wie die Apple-App** (Plan P23, 23 Prüfungen): Reihenfolge der Bereiche, Konto zuerst; Hinweis je Untertitelmodus, Untertitelsprache nur, wo sie wirkt; ausgegraut mit Satz: *Automatisch springen*, Trailer, Pausenbildschirm, Bitratengrenze, *WASAPI exklusiv*, *Minimiert starten*; Unteroptionen des Banners nur mit Banner |
+| `access-audit.js` | **Bedienungshilfen** (Plan P23, 23 Prüfungen): Namen auf allen Seiten, in allen 13 Bereichen der Einstellungen und im Profilmenü; Tabulator nur auf Sichtbares mit sichtbarem Fokus (Startseite, Detailseite, Einstellungen); *Bewegung reduzieren*: nichts steigt auf, zoomt oder rückt (Startseite, Filme, Detailseite, Einstellungen, Menü, Hinweis), mit Gegenprobe bei voller Bewegung |
 | `glow-look.js` | Ambient Glow: Bereiche (Anmeldung ohne Aurora, Startseite, Filme, Serien, Suche, Einstellungen; keiner auf Detailseiten), Startseite oben erst ohne Banner, unten bis unter das Banner, keine Unschärfe und keine Animation, Einstellungen (Ein/Aus, Einzelfarbe, Verlauf gemerkt, Intensität, eigener Bereich, Bereich aus, zurücksetzen) wirken sofort und werden gespeichert; Aufnahmen `GL-*.png` |
 | `tags-look.js` | Tags wie in der Apple-App: Karten (höchstens zwei, unten links, Kurzformen), Banner (bis drei), Detailseite (Reihenfolge, gewählte Tonspur, Wiedergabe-Tag ruhiger, einzeilig), feste Farben in allen Designs und mit anderer Akzentfarbe, Schein als geteiltes Bild ohne Weichzeichner, nichts abgeschnitten; Aufnahmen `TG-*.png` |
 | `trailer-series.js` | Absinken bei Serien und Filmen in drei Fenstergrößen (Bilder vom Ruhezustand, aus der Mitte, vom Ende; misst Poster und Titel); braucht Internet |
@@ -1070,3 +1083,10 @@ Nicht geändert, aber gut zu wissen: Der Installer ist **nicht signiert** (die P
 - Der Updater ist gegen einen lokalen Webserver und einen Ordner geprüft, nicht mit dem echten Installer (stilles Ersetzen der installierten App) und nicht gegen eine Quelle im Internet. Ein Update-Ablauf mit echtem Installer sollte einmal von Hand
   ausprobiert werden, bevor man sich darauf verlässt. Ohne Signatur gibt es keine Herkunftsprüfung außer der Prüfsumme aus `latest.json`.
 - Prüfungen der Oberfläche (`tools/shots/audit-*.js`): Menüs und Dialoge passen in drei Fenstergrößen, Textkontrast in allen vier Themes (WCAG AA), Randfälle (sehr lange Titel und Namen, fehlende Bilder, viele Genres), Namen aller bedienbaren Elemente.
+- **Bedienungshilfen (seit 1.2.22, Plan P23, `tools/shots/access-audit.js`):** jedes bedienbare Element hat auf allen Seiten und in allen Bereichen der
+  Einstellungen einen Namen (auch die Schieberegler: sie heißen wie ihre Zeile); mit der Tabulatortaste erreicht man nur Sichtbares und sieht immer,
+  wo der Fokus steht (ausgeblendete Bannerfolien sind `inert`, die Pfeile der Reihen sind eine Hilfe nur für die Maus, der Abspielknopf einer Karte
+  erscheint mit dem Fokus). Bei *Bewegung reduzieren* wie die Apple-App nur das Nötigste: Inhalte stehen sofort da (kein Aufsteigen), nichts schimmert
+  oder zoomt (Banner, Hintergrundbild der Detailseite), Seiten, Fenster, Menüs und Hinweise blenden nur ein; der Ladekreis, der Zeitbalken des Banners, die
+  Marke des gewählten Reiters und die Reaktion beim Drücken bleiben. **Offen:** die Schrift folgt nicht der Textgröße des Systems (unter Windows
+  nicht umgesetzt, auf Android am Gerät zu prüfen); mit dem Bildschirmleser selbst (Sprachausgabe, TalkBack) nicht geprüft, nur die Namen.

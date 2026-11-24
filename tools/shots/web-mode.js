@@ -105,7 +105,7 @@ module.exports = async (ctx) => {
   check('Einstellungen: Erscheinungsbild', await page('#/settings/appearance', `!!document.querySelector('.settings') || !!document.querySelector('.settings-stack')`));
   const snavs = await ev(`[...document.querySelectorAll('.snav')].map((a) => a.getAttribute('href'))`);
   check('Einstellungen ohne Desktop-Bereiche (mpv-Bild, Audio-Ausgabe, Discord), Rest bleibt', snavs.includes('#/settings/appearance') && snavs.includes('#/settings/about') && snavs.includes('#/settings/network') && !snavs.some((h) => /\/(video|audio|discord)$/.test(h)), snavs.join(' '));
-  check('Desktop-Bereich per Adresse aufgerufen: faellt auf Erscheinungsbild zurueck', await page('#/settings/discord', `document.querySelector('.snav.on')?.getAttribute('href') === '#/settings/appearance'`));
+  check('Desktop-Bereich per Adresse aufgerufen: faellt auf den ersten Bereich (Konto, wie die Apple-App) zurueck', await page('#/settings/discord', `document.querySelector('.snav.on')?.getAttribute('href') === '#/settings/account'`));
   await page('#/settings/general', `!!document.querySelector('.settings-panel .setting')`);
   const gen = await ev(`document.querySelector('.settings-panel').innerText`);
   check('Allgemein ohne Autostart, Fensterwahl und Selbst-Aktualisierung', !/Mit Windows starten|Minimiert starten|Fenster merken|Updates/i.test(gen) && /Spoiler/i.test(gen), gen.replace(/\s+/g, ' ').slice(0, 120));

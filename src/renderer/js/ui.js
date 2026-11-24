@@ -254,8 +254,10 @@ export function infoBlock(title, groups) {
 export function row(title, items, { variant = 'poster', href = null, onPlay, sub = '', render = null } = {}) {
   const scroller = h('div', { class: 'scroller' });
   items.forEach((it, i) => scroller.append(render ? render(it, i) : card(it, { variant, index: i, onPlay })));
-  const left = h('button', { class: 'arrow left', type: 'button', 'aria-label': 'Zurück' }, icon('chevron-left', 22));
-  const right = h('button', { class: 'arrow right', type: 'button', 'aria-label': 'Weiter' }, icon('chevron-right', 22));
+  // Die Pfeile sind eine Hilfe fuer die Maus (sie erscheinen nur beim Zeigen auf die Reihe): mit der Tastatur und dem Bildschirmleser geht man
+  // die Karten selbst durch (der Fokus holt jede ins Bild); sonst stuende der Fokus auf einem unsichtbaren Knopf (Plan P23, B3)
+  const left = h('button', { class: 'arrow left', type: 'button', 'aria-label': t('row.prev'), tabindex: '-1', 'aria-hidden': 'true' }, icon('chevron-left', 22));
+  const right = h('button', { class: 'arrow right', type: 'button', 'aria-label': t('row.next'), tabindex: '-1', 'aria-hidden': 'true' }, icon('chevron-right', 22));
   const sec = h(
     'section',
     { class: 'row' },
@@ -573,11 +575,14 @@ export function segmented(options, value, onChange) {
     wrap.append(b);
     return b;
   });
+  // Erst die erste Lage ohne Uebergang, danach weich: vorher kam der Schieber beim Oeffnen jeder Seite von links herein, weil der Uebergang
+  // schon lief, bevor der Knopf eine Breite hatte (die Seite war noch nicht im Bild; Plan P23, gefunden mit access-audit.js)
   const place = () => {
     const on = btns.find((b) => b.classList.contains('on'));
-    if (!on) return;
+    if (!on || !on.offsetWidth) return;
     thumb.style.width = `${on.offsetWidth}px`;
     thumb.style.transform = `translateX(${on.offsetLeft}px)`;
+    if (!wrap.classList.contains('ready')) requestAnimationFrame(() => wrap.classList.add('ready'));
   };
   function select(v) {
     btns.forEach((b, i) => {
@@ -588,10 +593,7 @@ export function segmented(options, value, onChange) {
     place();
     onChange(v);
   }
-  requestAnimationFrame(() => {
-    place();
-    wrap.classList.add('ready');
-  });
+  requestAnimationFrame(place);
   new ResizeObserver(place).observe(wrap);
   return wrap;
 }

@@ -209,6 +209,8 @@ function createHero(entries, { autoplay, onActive, trailers = null }) {
     slides.forEach((s, k) => {
       s.classList.toggle('active', k === i);
       s.setAttribute('aria-hidden', k === i ? 'false' : 'true');
+      // Eine Folie, die ausblendet oder verdeckt ist, nimmt nichts mehr an (Fokus, Klick), auch waehrend sie noch sichtbar verblasst (Plan P23, B3)
+      s.inert = k !== i;
     });
     dotEls.forEach((d, k) => d.classList.toggle('on', k === i));
     onActive?.(slides[i]._hash);
