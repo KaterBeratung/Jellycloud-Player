@@ -60,6 +60,19 @@ module.exports = async (ctx) => {
   check('Startseite: Bereich Startseite; mit Banner im Blick oben kein Schein (das Banner bleibt, wie es ist)', home.scope === 'home' && !home.top && home.heroVisible, JSON.stringify(home));
   check('Startseite: unten reicht der Schein bis unter das Banner (mindestens 160 px)', home.bottom && Math.abs(home.bottomH - Math.round(expectBottom)) <= 2, `${home.bottomH} px, erwartet ${Math.round(expectBottom)} (Fenster ${h}, Banner bis ${heroBottom})`);
   await ctx.capture(path.join(out, 'GL-start.png'));
+  // Der untere Schein beginnt nie unter dem deckenden Banner (sonst steht an dessen Unterkante eine harte Kante), auch beim Scrollen nicht
+  const edge = (scroll) =>
+    ctx.run(`(async () => { const v = document.querySelector('#view'); v.scrollTop = ${scroll}; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const b = document.querySelector('#glow .glow-bottom').getBoundingClientRect(); const hb = document.querySelector('.home .hero').getBoundingClientRect().bottom; return { top: Math.round(b.top), hero: Math.round(hb), h: innerHeight, height: Math.round(b.height) }; })()`);
+  const e0 = await edge(0);
+  const e1 = await edge(120);
+  const e2 = await edge(heroBottom + 50);
+  check(
+    'Startseite: der untere Schein beginnt an der Unterkante des Banners (nie darunter), steigt beim Scrollen mit ihr auf und steht danach ganz',
+    e0.top >= e0.hero - 1 && e1.top >= e1.hero - 1 && (e0.top > e0.h - e0.height ? e1.top < e0.top : true) && Math.abs(e2.top - (e2.h - e2.height)) <= 1,
+    JSON.stringify({ e0, e1, e2 })
+  );
+  await ctx.run(`document.querySelector('#view').scrollTop = 0`);
+  await ctx.wait(300);
   await ctx.run(`document.querySelector('#view').scrollTop = ${heroBottom + 200}`);
   const scrolled = await waitFor(`(() => { const l = document.getElementById('glow'); return !l.classList.contains('hero-visible'); })()`, 3000);
   await ctx.wait(500);

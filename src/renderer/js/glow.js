@@ -58,10 +58,50 @@ function layout() {
   const hero = current?.dataset.glow === 'home' ? current.querySelector('.hero:not(.hero-empty)') : null;
   if (hero) {
     const scroller = current.closest('#view');
-    const restBottom = hero.getBoundingClientRect().bottom + (scroller?.scrollTop ?? 0);
+    const restBottom = heroBottomNow(hero) + (scroller?.scrollTop ?? 0);
     low = Math.min(reach, Glow.homeReach(h, restBottom, pageReach()));
   }
   bottom.style.height = `${low}px`;
+  bottomHeight = low;
+  watchHeroEdge(hero);
+}
+
+/**
+ * Startseite: der untere Schein beginnt nie unter dem Banner. Reicht der Platz unter ihm nicht fuer die Mindesthoehe (kleine Fenster) oder liegt
+ * seine Unterkante unter dem Fensterrand, rutscht der Schein so weit nach unten, dass er an der Unterkante bei null beginnt, und steigt beim Scrollen
+ * mit ihr auf. Vorher ragte er unter das deckende Banner, und an dessen Unterkante stand eine harte Kante (der Schein war dort schon hell; Plan P23,
+ * Durchsicht der Aufnahmen). Verschoben wird per transform, das braucht kein neues Layout.
+ */
+let bottomHeight = 0;
+let edgeHero = null;
+let edgeScroller = null;
+let edgeFrame = 0;
+/** Unterkante des Banners im Fenster, ohne die Verschiebung der Seite beim Einfahren (page-in: sie steht dann noch 14 px tiefer). */
+function heroBottomNow(hero) {
+  const shift = current ? new DOMMatrixReadOnly(getComputedStyle(current).transform === 'none' ? undefined : getComputedStyle(current).transform).m42 : 0;
+  return hero.getBoundingClientRect().bottom - shift;
+}
+function placeBottom() {
+  edgeFrame = 0;
+  if (!edgeHero?.isConnected) return (bottom.style.transform = '');
+  const free = window.innerHeight - heroBottomNow(edgeHero); // Platz unter dem Banner im Fenster
+  const shift = Math.max(0, Math.min(bottomHeight, Math.round(bottomHeight - free)));
+  bottom.style.transform = shift ? `translateY(${shift}px)` : '';
+}
+const onEdgeScroll = () => {
+  if (!edgeFrame) edgeFrame = requestAnimationFrame(placeBottom);
+};
+function watchHeroEdge(hero) {
+  if (edgeScroller && (edgeHero !== hero || !hero)) {
+    edgeScroller.removeEventListener('scroll', onEdgeScroll);
+    edgeScroller = null;
+  }
+  edgeHero = hero ?? null;
+  if (hero && !edgeScroller) {
+    edgeScroller = current.closest('#view');
+    edgeScroller?.addEventListener('scroll', onEdgeScroll, { passive: true });
+  }
+  placeBottom();
 }
 
 /** Startseite: der obere Schein zeigt sich erst ohne Banner oder wenn es ganz hinausgescrollt ist. */

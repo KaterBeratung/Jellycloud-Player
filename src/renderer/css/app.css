@@ -610,6 +610,10 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .setting-desc { color: var(--muted); font-size: 13px; margin-top: 2px; max-width: 52ch; }
 .setting-desc.path { font-family: Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
 .setting-control { flex: 0 1 auto; max-width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+/* Ein Schalter steht immer rechts neben seinem Text, auch auf dem Handy (wie in den Einstellungen von iOS); vorher rutschte er bei schmalem Platz
+   unter den Text, weil der Text 280 px fuer sich verlangte (Durchsicht nach P23) */
+.setting:has(> .setting-control > .switch:only-child) { flex-wrap: nowrap; }
+.setting:has(> .setting-control > .switch:only-child) > .setting-text { flex-basis: 0; }
 .setting.wide .setting-control { flex: 1; }
 .row-gap { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; width: 100%; }
@@ -1191,7 +1195,7 @@ html[data-compact='on'] .person-page { padding-top: calc(var(--topbar-h) + 12px)
 .season-pick.taken .setting-label { color: var(--muted); }
 .season-pick .switch:disabled { opacity: 0.45; cursor: default; }
 /* Stand bei Seerr auf dem Plakat: ein Tag oben links (wie die Tags der Bibliothek ein festes Farbpaar je Stand, keine eigene Palette) */
-.req-status { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; pointer-events: none; }
+.req-status { position: absolute; left: 8px; bottom: 13px; z-index: 2; display: flex; pointer-events: none; } /* unten links wie die Tags jeder Karte (PosterCard der Apple-App: ein Aufbau fuer alle Plakate) */
 .req-status[hidden] { display: none; }
 .req-actions { margin-top: 8px; }
 .req-actions[hidden] { display: none; }
@@ -1514,7 +1518,10 @@ html[data-compact='on'] .detail-actions .btn.primary { flex: 1 1 100%; }
 html[data-compact='on'] .detail-actions-row { gap: 10px; }
 html[data-compact='on'] .detail-actions-row .btn.primary { flex: 1 1 auto; min-width: 0; }
 html[data-compact='on'] .detail-actions-row .btn.primary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-compact='on'] .detail-options .opt { max-width: 100%; }
+/* Wie der Hauptknopf der Apple-App auf dem iPhone (PrimaryButtonStyle fullWidth: kein seitliches Polster): mehr Platz fuer "Fortsetzen ab 1:02:13" */
+html[data-compact='on'] .detail-actions-row .btn.primary { padding: 0 14px; gap: 6px; }
+html[data-compact='on'] .detail-options .opt { max-width: 100%; flex: 1 1 100%; } /* so breit wie die Knoepfe darueber, der Pfeil am rechten Rand */
+html[data-compact='on'] .detail-options .opt .val { flex: 1 1 auto; min-width: 0; }
 html[data-compact='on'] .detail-loading { flex-direction: column; gap: 20px; padding-top: clamp(84px, 20vh, 160px); }
 html[data-compact='on'] .sk-poster { width: min(42vw, 164px); }
 html[data-compact='on'] .ep { gap: 12px; padding: 10px; }
@@ -1530,6 +1537,10 @@ html[data-compact='on'] .settings-nav { flex-wrap: nowrap; align-self: stretch; 
 html[data-compact='on'] .snav { flex: none; padding: 9px 14px; }
 html[data-compact='on'] .snav:hover { transform: none; }
 html[data-compact='on'] .setting { padding: 14px 16px; }
+/* Schieberegler unter ihrem Text nutzen die ganze Breite der Zeile, der Wert steht am rechten Rand (vorher 220 px breit, der Wert mitten in der Zeile) */
+html[data-compact='on'] .setting:has(> .setting-control > .slider) > .setting-control { flex: 1 1 100%; }
+html[data-compact='on'] .setting-control > .slider { flex: 1 1 auto; min-width: 0; }
+html[data-compact='on'] .setting-control > .slider input[type='range'] { flex: 1 1 auto; width: auto; min-width: 0; }
 html[data-compact='on'] .home-row { padding: 10px 16px; }
 
 /* Anmeldung und Fenster */
