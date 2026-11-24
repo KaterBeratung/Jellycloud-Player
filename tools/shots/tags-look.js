@@ -110,6 +110,33 @@ module.exports = async (ctx) => {
   ctx.win.setContentSize(1280, 760);
   await ctx.wait(700);
 
+  // ---------- Schein ohne Luecke bei jeder Skalierung ----------
+  // Der Schein ist ein gedehntes Bild (border-image). Bei 100 % war der mittlere Streifen des Bildes 0 Bildpunkte hoch: links und rechts
+  // neben jedem Tag lag auf halber Hoehe eine dunkle Linie quer durch den Schein (Nutzerbild, kleine Tags im Player; bei echter Skalierung
+  // 100 % nachgemessen, die VM laeuft mit 175 % und zeigt es nicht). Der Zoom des Fensters loest das Zeichnen nicht genau so aus wie eine
+  // echte Skalierung, daher hier die Aufteilung selbst, je Pixeldichte und Groesse: Mittelstreifen mindestens 2 Bildpunkte hoch, die Raender
+  // werden in ihrer Bildgroesse gezeichnet (Breite = Bildpunkte / Dichte). Die Tags entstehen je Dichte frisch ueber mediaTag (das Banner
+  // wird beim Zoomen nicht neu gebaut).
+  const baseDpr = await ctx.run('devicePixelRatio');
+  const slices = [];
+  for (const want of [1, 1.25, 1.5, 2, baseDpr]) {
+    ctx.win.webContents.setZoomFactor(want / baseDpr);
+    await ctx.wait(300);
+    const [small, big] = await ctx.run(`import('./js/tags.js').then(({ mediaTag }) => ['compact', 'regular'].map((size) => mediaTag({ kind: 'uhd', text: '4K', short: '4K', highlighted: true }, { size, surface: 'dark' }).style.getPropertyValue('--glow')))`);
+    const dpr = await ctx.run('Math.max(1, Math.min(3, Math.round(devicePixelRatio * 4) / 4))');
+    for (const [name, glow] of [['klein', small], ['normal', big]]) {
+      const m = /url\("?(data:[^")]+)"?\)\s+(\d+)\s+(\d+)\s+fill\s*\/\s*([\d.]+)px\s+([\d.]+)px/.exec(glow);
+      if (!m) { slices.push(`${name} bei ${dpr}: nicht lesbar`); continue; }
+      const h = await ctx.run(`new Promise((ok) => { const i = new Image(); i.onload = () => ok(i.naturalHeight); i.onerror = () => ok(0); i.src = ${JSON.stringify(m[1])}; })`);
+      const middle = h - 2 * Number(m[2]);
+      const exact = Math.abs(Number(m[4]) - Number(m[2]) / dpr) < 0.01 && Math.abs(Number(m[5]) - Number(m[3]) / dpr) < 0.01;
+      if (middle < 2 || !exact) slices.push(`${name} bei ${dpr * 100} %: Bild ${h}, Rand ${m[2]}, Mitte ${middle}, Breiten ${m[4]}/${m[5]}`);
+    }
+  }
+  ctx.win.webContents.setZoomFactor(1);
+  await ctx.wait(300);
+  check('Schein: Mittelstreifen nie leer, Raender ohne Verzerrung (100, 125, 150, 200 % und VM, klein und normal)', slices.length === 0, slices.slice(0, 4).join('; '));
+
   // ---------- Designs und Akzentfarbe: die Tags bleiben gleich ----------
   const signature = async () => ctx.run(`[...document.querySelectorAll('.detail-tags .tag.hl')].map((t) => t.dataset.kind + ':' + getComputedStyle(t).color + ':' + t.style.getPropertyValue('--fa')).join('|')`);
   const base = await signature();

@@ -58,10 +58,15 @@ function glowImage(kind, sizeName, strength) {
   grad.addColorStop(1, rgba(p.glowEnd, strength));
   g.fillStyle = grad;
   g.fillRect(0, 0, w, hgt);
-  const capV = hgt / 2 - 0.5;
-  const capH = reach + height / 2;
+  // 4. Aufteilung fuer border-image in ganzen Bildpunkten: oben und unten feste Raender, dazwischen bleibt immer ein Streifen von mindestens
+  //    zwei Bildpunkten (frueher auf halbe Hoehe gerundet: bei 125 % oder 150 % war er leer, der Schein hatte links und rechts auf halber
+  //    Hoehe eine dunkle Luecke). Die Raender werden in genau ihrer Bildgroesse gezeichnet, nichts wird verzerrt.
+  const sliceV = Math.floor((canvas.height - 2) / 2);
+  const sliceH = Math.floor((reach + height / 2) * dpr);
+  const capV = sliceV / dpr;
+  const capH = sliceH / dpr;
   const value = {
-    image: `url(${canvas.toDataURL('image/png')}) ${Math.round(capV * dpr)} ${Math.round(capH * dpr)} fill / ${capV}px ${capH}px stretch`,
+    image: `url(${canvas.toDataURL('image/png')}) ${sliceV} ${sliceH} fill / ${capV}px ${capH}px stretch`,
     capV,
     capH,
     reach
