@@ -1658,7 +1658,9 @@ const server = http.createServer(async (req, res) => {
       audioIndex: b.AudioStreamIndex,
       subtitleIndex: b.SubtitleStreamIndex,
       enableDirectPlay: b.EnableDirectPlay,
-      maxAudioChannels: b.DeviceProfile?.TranscodingProfiles?.[0]?.MaxAudioChannels
+      maxAudioChannels: b.DeviceProfile?.TranscodingProfiles?.[0]?.MaxAudioChannels,
+      transcodingProfiles: b.DeviceProfile?.TranscodingProfiles,
+      codecProfiles: b.DeviceProfile?.CodecProfiles
     });
     return send(res, 200, { MediaSources: [src], PlaySessionId: 'mock-session' });
   }

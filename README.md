@@ -824,6 +824,12 @@ Adresse, die ein Player öffnet, anzeigt oder protokolliert.
 nicht gibt) und `limits.test.js` gegen den Testserver; Szenarien `limits.js`, `transcode-audio.js`, `android-host.js`. **Nicht geprüft:** ein echter Jellyfin mit Grenze,
 ein echter Reverse Proxy, ein echtes VPN, echtes Mobilfunknetz, Android am Gerät.
 
+**Geräteprofil auf Android (seit 1.2.26):** Bis 1.2.25 erlaubte das Profil beim Umwandeln nur H.264 und AAC. Schon AC3-Ton (den viele Handys
+nicht decodieren) ließ den Server darum eine HEVC-Datei komplett nach H.264 umrechnen, auch im Heimnetz. Jetzt fragt die App das Gerät, was es abspielt
+(`DeviceCodecs.java`: Decoder des Systems, Ton-Durchleitung an die Ausgabe), und `src/shared/android-profile.js` baut daraus das Profil: Direct Play für
+alles mit Decoder, beim Umwandeln HEVC zuerst und HEVC-Bild bzw. AC3/E-AC3-Ton unverändert; Grenzen nur für Bildgröße, 10 Bit und Dolby Vision Profil 5.
+Geprüft: `android-profile.test.js`, Szenario `android-host.js`. **Nicht geprüft:** ein echter Jellyfin (wie er das Profil auslegt) und ein Android-Gerät.
+
 ## Wiedergabe im selben Fenster
 
 Beim Abspielen öffnet sich **kein zusätzliches Fenster**. mpv füllt die Fläche des Hauptfensters, die Steuerung liegt als randloses,

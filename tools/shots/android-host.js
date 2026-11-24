@@ -66,7 +66,7 @@ module.exports = async (ctx) => {
       getPlatform: () => 'android',
       PluginHeaders: [
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
-        { name: 'JellycloudPlayer', methods: ['play', 'close', 'openExternal', 'audioOutput', 'screen'].map((name) => ({ name, rtype: 'promise' })) },
+        { name: 'JellycloudPlayer', methods: ['play', 'close', 'openExternal', 'audioOutput', 'screen', 'codecs'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'JellycloudSecureStore', methods: [{ name: 'load', rtype: 'promise' }, { name: 'save', rtype: 'promise' }] },
         { name: 'JellycloudNotifications', methods: ['status', 'request', 'openSettings', 'show', 'withdraw', 'withdrawProfile', 'takeTap'].map((name) => ({ name, rtype: 'promise' })) }
       ],
@@ -87,6 +87,11 @@ module.exports = async (ctx) => {
           return {};
         }
         if (plugin === 'JellycloudPlayer' && method === 'screen') return { hdr: window.__screenHdr ?? false };
+        // Decoder des Geraets (JellycloudPlayerPlugin.codecs, DeviceCodecs.java): __codecs = Antwort, 'fail' = Fehler der Bruecke, sonst ein Handy ohne AC3
+        if (plugin === 'JellycloudPlayer' && method === 'codecs') {
+          if (window.__codecs === 'fail') throw { message: 'Decoder nicht lesbar' };
+          return window.__codecs ?? { video: { h264: { maxWidth: 4096, maxHeight: 2304, tenBit: false, hardware: true }, hevc: { maxWidth: 4096, maxHeight: 2304, tenBit: true, hardware: true } }, audio: {}, passthrough: {}, dolbyVision: false };
+        }
         if (plugin === 'JellycloudSecureStore' && method === 'load') {
           if (window.__secureFail === 'load') throw { message: 'Keystore nicht verfuegbar' };
           return { value: secure[options.key] ?? null, unreadable: false };
@@ -209,7 +214,9 @@ module.exports = async (ctx) => {
   check('Server, Sitzung und Quelle gehen mit (fuer die Meldungen an Jellyfin)', o1.baseUrl === 'http://127.0.0.1:8097' && o1.playSessionId === 'mock-session' && !!o1.mediaSourceId && !!o1.deviceId && o1.itemId === movie.Id);
   const log1 = state.log.filter((l) => l.at === 'PlaybackInfo');
   const dp = log1[0]?.directPlayProfiles?.[0] ?? {};
-  check('Geraeteprofil: mp4/mkv, H.264/HEVC, Ton nur AAC, MP3, Opus, FLAC, Vorbis (kein AC3/DTS), Start 0', log1.length === 1 && /mkv/.test(dp.Container) && /hevc/.test(dp.VideoCodec) && /aac/.test(dp.AudioCodec) && !/ac3|dts|truehd/i.test(dp.AudioCodec) && log1[0].startTicks === 0, JSON.stringify({ n: log1.length, dp, start: log1[0]?.startTicks }));
+  check('Geraeteprofil: mp4/mkv, H.264/HEVC, Ton ohne AC3-Decoder nur AAC, MP3, Opus, FLAC, Vorbis (kein AC3/DTS), Start 0', log1.length === 1 && /mkv/.test(dp.Container) && /hevc/.test(dp.VideoCodec) && /aac/.test(dp.AudioCodec) && !/ac3|dts|truehd/i.test(dp.AudioCodec) && log1[0].startTicks === 0, JSON.stringify({ n: log1.length, dp, start: log1[0]?.startTicks }));
+  const tp1 = log1[0]?.transcodingProfiles?.[0] ?? {};
+  check('Umwandeln (1.2.26): HEVC zuerst, weil das Geraet HEVC kann (vorher nur H.264), Ton AAC/MP3', tp1.VideoCodec === 'hevc,h264' && tp1.AudioCodec === 'aac,mp3' && tp1.Container === 'ts', JSON.stringify(tp1));
   check(
     'Obergrenze an PlaybackInfo (Plan P21): im Heimnetz "keine Grenze" als Zahl (400 Mbit/s), im Profil ebenso; Lautsprecher: beim Umwandeln bis 6 Kanaele',
     log1[0]?.maxBitrate === 400_000_000 && log1[0]?.profileMaxBitrate === 400_000_000 && log1[0]?.maxAudioChannels === '6',
@@ -236,6 +243,26 @@ module.exports = async (ctx) => {
     JSON.stringify({ r3, methods: c3.map((c) => c.method), start2: c3[1]?.startMs, cont: c3.map((c) => c.continue), can: c3.map((c) => c.canTranscode) })
   );
   check('Zweite Anfrage an den Server verbietet Direct Play', log3.length === 2 && log3[0].enableDirectPlay === true && log3[1].enableDirectPlay === false, JSON.stringify(log3.map((l) => l.enableDirectPlay)));
+  const tp3 = log3[1]?.transcodingProfiles?.[0] ?? {};
+  check('Rueckfall nach Decoder-Fehler: nur H.264 und AAC (sonst kaeme dasselbe Bild unveraendert zurueck)', tp3.VideoCodec === 'h264' && tp3.AudioCodec === 'aac', JSON.stringify(tp3));
+
+  // ---------- Geraet mit AC3/E-AC3-Decoder, Geraet ohne Antwort ----------
+  state.log.length = 0;
+  await ev(`window.__codecs = { video: { h264: { maxWidth: 1920, maxHeight: 1088, hardware: true }, hevc: { maxWidth: 4096, maxHeight: 2304, tenBit: false, hardware: true } }, audio: { ac3: true, eac3: true }, passthrough: { dts: true }, dolbyVision: false }`);
+  await ev(`window.jc.play({ itemId: '${movie.Id}', resume: false })`);
+  const logAc3 = state.log.filter((l) => l.at === 'PlaybackInfo')[0] ?? {};
+  const hevcCp = (logAc3.codecProfiles ?? []).find((c) => c.Codec === 'hevc');
+  check(
+    'Mit AC3-Decoder und DTS-Durchleitung: AC3, E-AC3 und DTS unveraendert, beim Umwandeln AC3/E-AC3 behalten; HEVC ohne Main 10 nur 8 Bit',
+    /,ac3,eac3,dts$/.test(logAc3.directPlayProfiles?.[0]?.AudioCodec ?? '') && logAc3.transcodingProfiles?.[0]?.AudioCodec === 'aac,mp3,ac3,eac3' && hevcCp?.Conditions?.some((c) => c.Property === 'VideoBitDepth' && c.Value === '8'),
+    JSON.stringify({ dp: logAc3.directPlayProfiles?.[0]?.AudioCodec, tp: logAc3.transcodingProfiles?.[0]?.AudioCodec, hevc: hevcCp })
+  );
+  state.log.length = 0;
+  await ev(`window.__codecs = 'fail'`);
+  const rFail = await ev(`window.jc.play({ itemId: '${movie.Id}', resume: false }).then(() => 'ok', (e) => e.message)`);
+  const logFail = state.log.filter((l) => l.at === 'PlaybackInfo')[0] ?? {};
+  check('Bruecke ohne Antwort zu den Decodern: Wiedergabe laeuft mit der Annahme (H.264, HEVC; Umwandeln HEVC zuerst)', rFail === 'ok' && /hevc/.test(logFail.directPlayProfiles?.[0]?.VideoCodec ?? '') && logFail.transcodingProfiles?.[0]?.VideoCodec === 'hevc,h264', JSON.stringify({ rFail, tp: logFail.transcodingProfiles?.[0] }));
+  await ev(`window.__codecs = undefined`);
 
   // ---------- Fehler vom Server ----------
   await ev(`window.__calls.play.length = 0; window.__events.length = 0; window.__playResults.push({ positionMs: 0, durationMs: 0, ended: false, error: 'Der Server ist nicht erreichbar', errorKind: 'source' })`);
