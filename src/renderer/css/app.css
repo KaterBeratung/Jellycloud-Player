@@ -111,6 +111,16 @@
   --glass: rgba(12, 20, 38, 0.72);
   --glass2: rgba(255, 255, 255, 0.07);
 }
+/* "Kontrast erhöhen" des Systems (Windows: Kontrastdesigns bzw. prefers-contrast, Android: Text mit hohem Kontrast; wie BH5 der Apple-App, Build 94):
+   gedaempfte Schrift rueckt auf die Textfarbe zu, feine Kanten werden kraeftiger. Gilt fuer jedes Design (nach dessen Farben, daher color-mix). */
+@media (prefers-contrast: more) {
+  :root[data-theme] {
+    --muted: color-mix(in srgb, var(--text) 82%, var(--bg));
+    --faint: color-mix(in srgb, var(--text) 64%, var(--bg));
+    --line: rgba(255, 255, 255, 0.2);
+    --line2: rgba(255, 255, 255, 0.32);
+  }
+}
 /* Bewegung nur nach der Systemeinstellung "Bewegung reduzieren" (motion.js setzt data-anim): kuerzer und ruhiger, nie ganz aus (wie in der Apple-App) */
 :root[data-anim='reduced'] {
   --dur: 0.45;
@@ -434,7 +444,9 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .hero-bg { position: absolute; inset: 0; }
 .hero-bg img { object-position: center 24%; transform-origin: 72% 38%; }
 .hero-slide.active .hero-bg img { animation: kenburns 18s ease-out both; }
-@keyframes kenburns { from { transform: scale(1.02); } to { transform: scale(1.13) translate3d(-1.2%, -0.8%, 0); } }
+/* Das Bild zoomt langsam heraus (Apple-App Build 95, DriftingPicture: "man sieht mehr vom Bild"): es steht vergroessert und geht fast auf seine Groesse;
+   die letzten 2 % bleiben, damit an keinem Rand eine Kante der Bildflaeche zu sehen ist (Haarlinie am Banner) */
+@keyframes kenburns { from { transform: scale(1.1) translate3d(-1%, -0.7%, 0); } to { transform: scale(1.02); } }
 .hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(5 6 10 / 0.9) 0%, rgb(5 6 10 / 0.62) 36%, rgb(5 6 10 / 0.12) 68%, transparent 100%), linear-gradient(0deg, var(--bg) 1%, color-mix(in srgb, var(--bg) 60%, transparent) 14%, transparent 42%); }
 .hero-content { position: absolute; left: var(--pad); bottom: 112px; width: min(660px, 58%); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
 .hero-slide.active .hero-content > * { animation: rise calc(760ms * var(--dur)) var(--ease) both; animation-delay: calc(var(--k, 0) * 80ms + 160ms); }
@@ -508,8 +520,10 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .detail-info { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding-top: 6px; }
 .detail-info > * { animation: rise calc(700ms * var(--dur)) var(--ease) backwards; } /* backwards: nach dem Einblenden gilt wieder der normale Stil (sonst hielte die Animation Deckkraft und Position fest) */
 .detail-info > :nth-child(2) { animation-delay: 70ms; } .detail-info > :nth-child(3) { animation-delay: 120ms; } .detail-info > :nth-child(4) { animation-delay: 170ms; } .detail-info > :nth-child(5) { animation-delay: 220ms; } .detail-info > :nth-child(6) { animation-delay: 270ms; } .detail-info > :nth-child(n + 7) { animation-delay: 320ms; }
-.crumb { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-weight: 650; transition: color var(--t-fast); }
-.crumb:hover { color: var(--accent-fg, var(--accent)); }
+/* Name der Serie vorn in der Angabenzeile einer Folge: heller und kraeftiger als die Angaben, fuehrt zur Serie; sehr lange Namen kuerzen sich */
+.detail-meta .meta-series { min-width: 0; max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 650; border-radius: 4px; transition: color var(--t-fast); }
+.detail-meta .meta-series:hover { color: var(--accent-fg, var(--accent)); }
+.detail-meta .meta-series:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .detail-title { font: 800 clamp(30px, 3.6vw, 52px)/1.05 var(--font-display); letter-spacing: -0.03em; text-wrap: balance; }
 .detail-logo { max-width: min(520px, 100%); max-height: 170px; object-fit: contain; object-position: left bottom; filter: drop-shadow(0 6px 24px rgb(0 0 0 / 0.5)); }
 .tagline { color: var(--muted); font-style: italic; font-size: 15px; }
@@ -528,6 +542,14 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .opt .val { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overview { max-width: 74ch; font-size: 15px; line-height: 1.65; color: color-mix(in srgb, var(--text) 88%, transparent); }
 .overview.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+/* Handlung mit HTML (rich-text.js): Absaetze mit kleinem Abstand, Listen eingerueckt, Links unterstrichen (wie die Apple-App, R-3); gekuerzt nach
+   vier Zeilen ueber alle Absaetze */
+.overview.rich > p + p, .overview.rich > p + ul, .overview.rich > p + ol, .overview.rich > ul + p, .overview.rich > ol + p { margin-top: 0.55em; }
+.overview.rich ul, .overview.rich ol { margin: 0.35em 0 0; padding-left: 1.3em; }
+.overview.rich li + li { margin-top: 0.15em; }
+.overview.rich strong { font-weight: 650; color: var(--text); }
+.overview .rich-link { color: var(--text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, var(--text) 45%, transparent); }
+.overview .rich-link:hover { text-decoration-color: currentColor; }
 .detail-genres { max-width: 74ch; color: var(--muted); font-size: 13px; font-weight: 600; }
 .detail-loading { display: flex; gap: 40px; padding: clamp(130px, 28vh, 300px) var(--pad) 0; }
 .sk-poster { width: 240px; aspect-ratio: 2 / 3; border-radius: var(--radius); }
@@ -541,10 +563,13 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .tab { flex: none; height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass2); color: var(--muted); font-weight: 650; cursor: pointer; transition: all var(--t-fast) var(--ease), var(--press-tr); }
 .tab:hover { color: var(--text); border-color: var(--line2); transform: translateY(-1px); }
 .tab.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 8px 22px -8px rgb(var(--accent-rgb) / 0.7); }
-.episodes { display: flex; flex-direction: column; padding: 8px calc(var(--pad) - 14px) 0; max-width: 1180px; }
-.ep { display: flex; gap: 20px; padding: 14px; margin: 0 0 2px; border-radius: calc(var(--radius) * 1.1); cursor: default; animation: rise calc(520ms * var(--dur)) var(--ease) both; animation-delay: calc(var(--i, 0) * 36ms); transition: background var(--t-fast); }
-.ep:hover, .ep:focus-visible { background: var(--glass2); }
-.ep.current { background: rgb(var(--accent-rgb) / 0.1); box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.4); }
+/* Jede Folge auf einer gemeinsamen Karte (Apple-App Build 95, EpisodeRow): deckende Flaeche des Designs, feine Kante, kein Glas (viele Zeilen in einer
+   scrollenden Liste); die Rundung umschliesst die des Bildes im Abstand des Innenrands. Bild spielt ab, der Titel oeffnet die Seite der Folge. */
+.episodes { display: flex; flex-direction: column; gap: 10px; padding: 8px var(--pad) 0; max-width: calc(1180px - 2 * 14px + 2 * var(--pad)); }
+.ep { display: flex; gap: 20px; padding: 12px; margin: 0; border-radius: calc(var(--radius) * 0.8 + 12px); background: var(--surface2); box-shadow: 0 0 0 1px var(--line); cursor: default; animation: rise calc(520ms * var(--dur)) var(--ease) both; animation-delay: calc(var(--i, 0) * 36ms); transition: background var(--t-fast), box-shadow var(--t-fast); }
+.ep:hover { background: color-mix(in srgb, var(--surface2) 90%, var(--text)); }
+.ep:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
+.ep.current { background: color-mix(in srgb, var(--surface2) 86%, rgb(var(--accent-rgb))); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.45); }
 .ep-thumb { position: relative; flex: none; width: clamp(200px, 20vw, 300px); aspect-ratio: 16 / 9; border-radius: calc(var(--radius) * 0.8); overflow: hidden; background: var(--surface); cursor: pointer; box-shadow: 0 0 0 1px var(--line); }
 .ep-thumb .imgbox { position: absolute; inset: 0; }
 .ep-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
@@ -839,6 +864,8 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .menu.closing { filter: blur(4px); }
 .menu.multi { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 10), auto); grid-auto-columns: minmax(210px, 1fr); column-gap: 4px; max-height: none !important; overflow: visible; }
 .menu-head { padding: 8px 14px 6px; color: var(--lg-muted); letter-spacing: 0.1em; }
+.menu-head.note { padding: 4px 14px 2px; font-size: 13px; font-weight: 550; line-height: 1.35; text-transform: none; letter-spacing: 0; max-width: 320px; }
+.menu-head.note:first-child { padding-top: 10px; }
 .menu-item { gap: 10px; padding: 10px 16px 10px 10px; border-radius: 19px; color: var(--lg-text); transition: background var(--t-fast), box-shadow var(--t-fast), var(--press-tr); }
 .menu-item:hover, .menu-item:focus-visible { background: var(--lg-hover); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28); }
 .menu-item .check { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.2); color: var(--accent-ink); }
@@ -1194,6 +1221,12 @@ html[data-compact='on'] .person-page { padding-top: calc(var(--topbar-h) + 12px)
 .season-chooser .settings-group { max-height: min(52vh, 460px); overflow-y: auto; }
 .season-pick.taken .setting-label { color: var(--muted); }
 .season-pick .switch:disabled { opacity: 0.45; cursor: default; }
+/* Anfrage aendern (request-editor.js): Beschriftung links, Auswahl rechts wie in den Einstellungen; lange Namen kuerzen sich im Knopf */
+.request-editor .setting { flex-wrap: nowrap; }
+.request-editor .setting-text { flex: 1 1 0; min-width: 0; }
+.request-editor .setting-control { flex: 0 1 auto; min-width: 0; }
+.request-editor .select { max-width: 240px; }
+.request-editor .select > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Stand bei Seerr auf dem Plakat: ein Tag oben links (wie die Tags der Bibliothek ein festes Farbpaar je Stand, keine eigene Palette) */
 .req-status { position: absolute; left: 8px; bottom: 13px; z-index: 2; display: flex; pointer-events: none; } /* unten links wie die Tags jeder Karte (PosterCard der Apple-App: ein Aufbau fuer alle Plakate) */
 .req-status[hidden] { display: none; }
@@ -1346,6 +1379,8 @@ html[data-compact='on'] :is(.t10-aura, .t10-glow, .t10-halo) { opacity: 1; }
    ========================================================================== */
 #splash { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; overflow: hidden; color: #fff; cursor: default; user-select: none; background: radial-gradient(ellipse 70% 60% at 50% 46%, #11131f 0%, #09090e 60%, #050507 100%); animation: sp-bg-out calc(720ms * var(--dur)) ease-in calc(1980ms * var(--dur)) forwards; }
 #splash.skip { animation: sp-skip 260ms ease-out forwards !important; }
+/* Vorlauf (splash.js): das erste Bild steht, bis die Oberflaeche bereit ist (hoechstens 1,5 s) */
+#splash.hold, #splash.hold * { animation-play-state: paused !important; }
 @keyframes sp-bg-in { from { opacity: 0; } }
 @keyframes sp-bg-out { to { opacity: 0; } }
 @keyframes sp-skip { from { opacity: var(--sp-op, 1); } to { opacity: 0; } }
@@ -1408,6 +1443,31 @@ html.splash-calm.splash-reveal #app { animation-name: sp-app-fade; }
 .notice-meta { display: flex; align-items: center; gap: 8px; padding-top: 2px; color: var(--muted); font-size: 12px; }
 .notices-foot { max-width: 760px; margin: 14px var(--pad) 0; padding: 0 16px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
+/* ---------- Gemeldete Probleme (issues.js, wie IssuesView/IssueView der Apple-App): Zeilen wie die Mitteilungen, die Meldung als Gespraech ---------- */
+.notices-head .settings-back { margin: 0 0 6px var(--pad); }
+.notices-head .settings-back + .page-title { padding-top: 0; }
+/* Seite einer Meldung: der Verlauf fuellt die Hoehe, das Antwortfeld steht unten (auch bei kurzem Verlauf) */
+.issue-page { display: flex; flex-direction: column; }
+.issue-page .notices-head { min-height: 56px; }
+.issues-filter { max-width: 760px; margin: 0 var(--pad) 14px; }
+a.notice-card { color: inherit; text-decoration: none; }
+.notice-poster-host { flex: none; }
+.issue-head { max-width: 760px; margin: 0 var(--pad) 18px; }
+.issue-head .notice-card { animation: none; }
+.issue-thread { flex: 1 0 auto; display: flex; flex-direction: column; gap: 12px; max-width: 760px; margin: 0 var(--pad); padding-bottom: 24px; }
+.issue-msg { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: min(560px, 82%); }
+.issue-msg.own { align-self: flex-end; align-items: flex-end; }
+.issue-bubble { padding: 10px 14px; border-radius: 18px 18px 18px 6px; background: var(--surface2); box-shadow: 0 0 0 1px var(--line); font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.issue-msg.own .issue-bubble { border-radius: 18px 18px 6px 18px; background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.issue-msg-meta { padding: 0 6px; color: var(--muted); font-size: 12px; }
+.issue-note { align-self: center; padding: 4px 12px; color: var(--muted); font-size: 12.5px; }
+/* Antwortfeld fest unten wie eine Eingabezeile einer Nachrichten-App: Glaskapsel ueber dem Verlauf */
+.issue-reply { position: sticky; bottom: 18px; z-index: 4; display: flex; align-items: flex-end; gap: 8px; max-width: 760px; margin: 0 var(--pad); padding: 6px 6px 6px 16px; border-radius: 26px; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), 0 18px 40px -16px rgb(0 0 0 / 0.75); }
+.issue-reply[hidden] { display: none; }
+.issue-reply-field { flex: 1 1 auto; min-height: 40px; max-height: 160px; padding: 9px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--text); font: inherit; font-size: 14.5px; line-height: 1.45; resize: none; }
+.issue-reply-field:focus { outline: none; box-shadow: none; }
+.issue-send { flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; }
+
 /* ---------- Auf diesem Geraet fortsetzen (Plan P19, wie HandoffOffer der Apple-App; handoff.js) ----------
    Ein Bedienelement ueber dem Inhalt, kein Teil der Seite: Glas-Kapsel unten mittig (hoechstens 460 breit, mindestens 56 hoch), schiebt nichts; solange sie
    zu sehen ist, bekommt das Ende der Startseite 76 px Platz. Links das Symbol des Geraets im Kreis (40), zwei Zeilen, rechts Abspielen im Akzentkreis (36),
@@ -1415,6 +1475,19 @@ html.splash-calm.splash-reveal #app { animation-name: sp-app-fade; }
    am Rand gibt es so nicht, siehe Glas-Knoepfe). */
 .handoff { position: fixed; z-index: 55; left: 50%; bottom: 24px; width: min(460px, calc(100% - 2 * var(--pad))); border-radius: 999px; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), inset 0 -1px 0 rgb(255 255 255 / 0.06), 0 18px 40px -16px rgb(0 0 0 / 0.75); opacity: 0; transform: translate(-50%, 10px) scale(0.92); transform-origin: 50% 100%; transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); }
 .handoff.in { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* Hinweis "Seerr verbinden" (seerr-tip.js, wie der Hinweis des Systems der Apple-App): Glaskarte unter der Kopfleiste, rechts unter dem Profil */
+.seerr-tip { position: absolute; z-index: 6; top: calc(var(--topbar-h) + 8px); right: var(--pad); width: min(360px, calc(100% - 2 * var(--pad))); display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px 14px 14px; border-radius: 22px; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), 0 18px 40px -16px rgb(0 0 0 / 0.75); color: var(--text); animation: tip-in var(--t-med) var(--ease) both; transition: opacity 200ms var(--ease), transform 200ms var(--ease); }
+.seerr-tip.out { opacity: 0; transform: translateY(-6px) scale(0.97); }
+@keyframes tip-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
+.seerr-tip-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
+.seerr-tip-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.seerr-tip-text strong { font-size: 15px; font-weight: 650; line-height: 1.3; }
+.seerr-tip-text span { font-size: 13.5px; line-height: 1.4; color: var(--muted); }
+.seerr-tip-text .btn { margin-top: 8px; }
+.seerr-tip-close { flex: none; display: grid; place-items: center; width: 28px; height: 28px; margin: -4px -2px 0 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.seerr-tip-close:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+:root[data-anim='reduced'] .seerr-tip { animation-name: fade-in; }
+:root[data-anim='reduced'] .seerr-tip.out { transform: none; }
 .handoff[hidden] { display: none; }
 :root[data-anim='reduced'] .handoff { transform: translate(-50%, 0); } /* Bewegung reduzieren: nur einblenden */
 .handoff-btn { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 10px 8px 8px; border: 0; border-radius: inherit; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-fast), var(--press-tr); }
@@ -1524,7 +1597,7 @@ html[data-compact='on'] .detail-options .opt { max-width: 100%; flex: 1 1 100%; 
 html[data-compact='on'] .detail-options .opt .val { flex: 1 1 auto; min-width: 0; }
 html[data-compact='on'] .detail-loading { flex-direction: column; gap: 20px; padding-top: clamp(84px, 20vh, 160px); }
 html[data-compact='on'] .sk-poster { width: min(42vw, 164px); }
-html[data-compact='on'] .ep { gap: 12px; padding: 10px; }
+html[data-compact='on'] .ep { gap: 12px; padding: 10px; border-radius: calc(var(--radius) * 0.8 + 10px); }
 html[data-compact='on'] .ep-thumb { width: clamp(112px, 34vw, 150px); }
 html[data-compact='on'] .ep-title { font-size: 15px; }
 html[data-compact='on'] .ep-ov { -webkit-line-clamp: 2; font-size: 13px; }

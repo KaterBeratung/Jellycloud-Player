@@ -291,6 +291,7 @@ export function settingsView({ section, query: q }) {
     const libs = () => state.views.filter((v) => ['movies', 'tvshows'].includes(v.CollectionType));
     const labelOf = (id) => {
       if (id.startsWith('latest:')) return t('home.latestIn', { name: state.views.find((v) => v.Id === id.slice(7))?.Name ?? '…' });
+      if (HomeRows.DISCOVER_ROWS.includes(id) || id === HomeRows.MY_REQUESTS || id === HomeRows.WATCHLIST) return t('set.rowSeerr', { name: t(`home.${id}`) });
       return { continue: t('home.continue'), nextUp: t('home.nextUp'), favorites: t('home.favorites'), trending: t('set.rowTrending'), top10Movies: t('top10.movies'), top10Series: t('top10.series') }[id] ?? id;
     };
     const presentIds = () => HomeRows.defaultOrder(libs().map((v) => v.Id));
@@ -1280,39 +1281,76 @@ export function settingsView({ section, query: q }) {
     user.value = state.seerr?.userName || activeServer()?.userName || '';
     const pass = h('input', { class: 'field', type: 'password', placeholder: t('seerr.password'), autocomplete: 'current-password', 'aria-label': t('seerr.password') });
     const err = h('p', { class: 'form-error left', role: 'alert' });
-    const submit = h('button', { class: 'btn primary', type: 'button' }, h('span'));
-    const ready = () => !busy && !!(state.seerr || url.value.trim()) && !!user.value.trim() && !!pass.value;
+    const quickErr = h('p', { class: 'form-error left', role: 'alert' });
+    // Zwei Wege wie die Apple-App (SeerrSection, Build 94): Hauptknopf "Ohne Passwort verbinden" (Quick Connect mit der Sitzung des Profils), darunter
+    // "Oder mit Passwort" mit Konto, Passwort und einem Glasknopf
+    const quick = h('button', { class: 'btn primary', type: 'button', 'data-action': 'seerr-quick' }, h('span'));
+    const submit = h('button', { class: 'btn', type: 'button', 'data-action': 'seerr-password' }, h('span'));
+    const address = () => (state.seerr ? state.seerr.url : url.value.trim());
+    const ready = () => !busy && !!address() && !!user.value.trim() && !!pass.value;
     const paintSubmit = () => {
-      submit.firstChild.textContent = t(state.seerr ? 'seerr.signInAgain' : 'seerr.connect');
+      submit.firstChild.textContent = t(state.seerr ? 'seerr.signInAgainPassword' : 'seerr.connectPassword');
       submit.disabled = !ready();
-      submit.classList.toggle('loading', busy);
+      submit.classList.toggle('loading', busy === 'password');
+      quick.firstChild.textContent = t(state.seerr ? 'seerr.signInAgainQuick' : 'seerr.connectQuick');
+      quick.disabled = !!busy || !address();
+      quick.classList.toggle('loading', busy === 'quick');
     };
     for (const f of [url, user, pass]) {
       f.addEventListener('input', paintSubmit);
-      f.addEventListener('keydown', (e) => e.key === 'Enter' && connect());
+      f.addEventListener('keydown', (e) => e.key === 'Enter' && (f === url ? (pass.value ? connect() : user.focus()) : f === user ? pass.focus() : connect()));
     }
     submit.addEventListener('click', () => connect());
+    quick.addEventListener('click', () => connect('quick'));
 
-    /** Verbinden bzw. erneut anmelden (dann mit der Adresse des eingerichteten Seerr); ein zweiter Klick waehrenddessen bleibt ohne Wirkung. */
-    async function connect() {
-      if (!ready()) return;
-      busy = true;
+    /**
+     * Verbinden bzw. erneut anmelden (dann mit der Adresse des eingerichteten Seerr), mit Passwort oder ohne (Quick Connect); ein zweiter Klick
+     * waehrenddessen bleibt ohne Wirkung. Danach fragt die App einmal, ob die Mitteilungen des Systems an sein sollen (offerSystemNotices).
+     */
+    async function connect(way = 'password') {
+      if (busy || (way === 'password' ? !ready() : !address())) return;
+      busy = way;
       err.textContent = '';
+      quickErr.textContent = '';
       paintSubmit();
       try {
-        const next = await window.jc.seerrConnect({ url: state.seerr ? state.seerr.url : url.value, username: user.value.trim(), password: pass.value });
+        const next = way === 'quick' ? await window.jc.seerrConnectQuick({ url: address() }) : await window.jc.seerrConnect({ url: address(), username: user.value.trim(), password: pass.value });
         state.seerr = next.seerr;
         state.seerrAddress = next.seerrAddress;
         invalidate(); // Seiten im Speicher (Startseite) zeigen noch den alten Stand
         document.dispatchEvent(new CustomEvent('seerr-changed'));
         toast(t('seerr.connected'));
         runSeerrCheck(); // Stand und Rechte des neuen Benutzers
+        offerSystemNotices();
       } catch (e) {
-        err.textContent = e.message;
+        (way === 'quick' ? quickErr : err).textContent = e.message;
       } finally {
         busy = false;
         pass.value = '';
         paint(true);
+      }
+    }
+
+    /**
+     * Nach dem Verbinden einmal fragen, ob die Mitteilungen des Systems an sein sollen (wie SystemNotificationOffer der Apple-App, Build 94): nur wenn
+     * das System sie anbietet, sie fuer dieses Profil aus sind, die Erlaubnis nicht verweigert ist und noch nie gefragt wurde. "Aktivieren" schaltet
+     * denselben Schalter wie Einstellungen > Mitteilungen; fragt das System dann nach der Erlaubnis und der Nutzer lehnt ab, steht er wieder auf aus.
+     */
+    async function offerSystemNotices() {
+      try {
+        const [d, sys] = await Promise.all([window.jc.notifications(), window.jc.notificationSystemStatus ? window.jc.notificationSystemStatus() : null]);
+        const p = d?.preferences;
+        if (!d?.active || !p || d.offered || !sys?.supported || sys.permission === 'denied' || p.system) return;
+        applyNotices(await window.jc.notificationPrefs({ offered: true }));
+        const yes = await confirmDialog({ title: t('seerr.offer.title'), text: t('seerr.offer.text'), confirmLabel: t('seerr.offer.yes'), cancelLabel: t('seerr.offer.no') });
+        if (!yes) return;
+        applyNotices(await window.jc.notificationPrefs({ enabled: true, system: true }));
+        if (sys.permission === 'prompt' && window.jc.notificationSystemRequest) {
+          const after = await window.jc.notificationSystemRequest();
+          if (after?.permission === 'denied') applyNotices(await window.jc.notificationPrefs({ system: false }));
+        }
+      } catch {
+        // Die Frage ist ein Angebot: scheitert etwas, bleibt alles, wie es war (Einstellungen > Mitteilungen)
       }
     }
 
@@ -1343,6 +1381,8 @@ export function settingsView({ section, query: q }) {
       return h('div', { class: 'status-row', 'data-state': s, role: 'status' }, h('div', { class: 'status-head' }, mark, h('span', null, t(`seerr.st.${s}`))), h('p', { class: 'status-hint' }, hint ?? ''));
     };
     const signInRows = () => [setting(t('seerr.account'), null, user), setting(t('seerr.password'), null, pass), h('div', { class: 'setting save-row' }, err, submit)];
+    const quickRow = () => h('div', { class: 'setting save-row' }, quickErr, quick);
+    const passwordBlock = (head) => h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, head), h('div', { class: 'settings-group' }, ...signInRows()), foot(t('seerr.foot')));
 
     let shown = null;
     /** Baut die Seite nach dem Stand neu; ein unveraenderter Stand laesst sie stehen (Eingaben und Fokus bleiben). */
@@ -1352,10 +1392,13 @@ export function settingsView({ section, query: q }) {
       const key = `${s}|${info?.reason ?? ''}|${info?.detail ?? ''}`;
       if (!force && key === shown) return;
       shown = key;
-      const focused = [url, user, pass].find((f) => f === document.activeElement);
+      const focused = [url, user, pass, quick, submit].find((f) => f === document.activeElement);
       paintSubmit();
       if (!state.seerr) {
-        box.replaceChildren(h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, setting(t('seerr.address'), null, url), ...signInRows()), foot(t('seerr.foot'))));
+        box.replaceChildren(
+          h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, setting(t('seerr.address'), null, url), quickRow()), foot(t('seerr.quickFoot'))),
+          passwordBlock(t('seerr.orPassword'))
+        );
       } else {
         const z = state.seerr;
         const recheck = linkRow({ ico: 'refresh', label: t('seerr.recheck'), chevron: false, onclick: () => runSeerrCheck() });
@@ -1364,7 +1407,10 @@ export function settingsView({ section, query: q }) {
         const expired = s === 'unauthorized';
         const blocks = [h('div', { class: 'settings-block' }, h('div', { class: 'settings-group' }, statusRow(s, info), infoRow(t('seerr.address'), z.url, { small: true }), infoRow(t('seerr.signIn'), t('seerr.signInValue', { user: z.userName })), expired ? null : recheck, out), expired ? null : foot(t('seerr.foot')))];
         // Sitzung abgelaufen: hier neu anmelden, aufgebaut wie beim ersten Verbinden (Konto, Passwort, Hauptknopf); Jellyfin laeuft davon unberuehrt weiter
-        if (expired) blocks.push(h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, t('seerr.expiredHead')), h('div', { class: 'settings-group' }, ...signInRows()), foot(t('seerr.foot'))));
+        if (expired) {
+          blocks.push(h('div', { class: 'settings-block' }, h('h3', { class: 'group-title' }, t('seerr.expiredHead')), h('div', { class: 'settings-group' }, quickRow()), foot(t('seerr.quickFoot'))));
+          blocks.push(passwordBlock(t('seerr.orPassword')));
+        }
         box.replaceChildren(...blocks);
       }
       focused?.focus();

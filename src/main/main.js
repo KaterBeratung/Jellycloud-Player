@@ -324,6 +324,21 @@ function registerIpc() {
 
   // ---------- Seerr (Anfragen) ----------
   ipcMain.handle('seerr:connect', wrap((p) => backend.seerrConnect(p)));
+  ipcMain.handle('seerr:connectQuick', wrap((p) => backend.seerrConnectQuick(p)));
+  ipcMain.handle('seerr:issues', wrap((p) => backend.seerrIssues(p)));
+  ipcMain.handle('seerr:issueGet', wrap((id) => backend.seerrIssueGet(id)));
+  ipcMain.handle('seerr:issueComment', wrap((p) => backend.seerrIssueComment(p)));
+  ipcMain.handle('seerr:issueResolve', wrap((p) => backend.seerrIssueResolve(p)));
+  ipcMain.handle('seerr:issueDelete', wrap((id) => backend.seerrIssueDelete(id)));
+  ipcMain.handle('seerr:requestUpdate', wrap((p) => backend.seerrRequestUpdate(p)));
+  ipcMain.handle('seerr:markAvailable', wrap((p) => backend.seerrMarkAvailable(p)));
+  ipcMain.handle('seerr:services', wrap((m) => backend.seerrServices(m)));
+  ipcMain.handle('seerr:serviceChoices', wrap((p) => backend.seerrServiceChoices(p)));
+  ipcMain.handle('seerr:requesters', wrap(() => backend.seerrRequesters()));
+  ipcMain.handle('seerr:discover', wrap((p) => backend.seerrDiscover(p)));
+  ipcMain.handle('seerr:genres', wrap((t) => backend.seerrGenres(t)));
+  ipcMain.handle('seerr:watchlist', wrap(() => backend.seerrWatchlist()));
+  ipcMain.handle('seerr:setWatchlist', wrap((p) => backend.seerrSetWatchlist(p)));
   ipcMain.handle('seerr:disconnect', wrap(() => backend.seerrDisconnect()));
   ipcMain.handle('seerr:check', wrap(() => backend.seerrCheck()));
   ipcMain.handle('seerr:search', wrap((query, page) => backend.seerrSearch(query, page)));

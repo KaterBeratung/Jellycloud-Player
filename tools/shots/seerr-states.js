@@ -67,7 +67,7 @@ module.exports = async (ctx) => {
   await type('.settings-panel input[inputmode=url]', `127.0.0.1:${PORT}`);
   await type('.settings-panel input[type=password]', 'demo');
   state.log.length = 0;
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.25: Hauptknopf ist "Ohne Passwort verbinden"
   check('Verbunden: Stand "Verbunden" mit gruenem Haken, Adresse, "Jellyfin-Konto (demo)", "Erneut pruefen", "Trennen"', await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'connected'`, 6000) && /Jellyfin-Konto \(demo\)/.test(await panelText()) && (await panelText()).includes(SEERR_URL) && /Erneut prüfen/.test(await panelText()) && /Trennen/.test(await panelText()), await panelText());
   check('...kein Rest einer leeren Stelle im Text (etwa "null")', !/\bnull\b|undefined/.test(await panelText()), await panelText());
   check('Die Anmeldung fragt Seerr nach dem Konto (/auth/me), ohne Sprache; das Passwort steht nicht mehr im Feld', state.log.some((l) => l.at === 'seerr:GET /auth/me' && !l.language) && (await ctx.run(`!document.querySelector('.settings-panel input[type=password]')`)));
@@ -116,12 +116,12 @@ module.exports = async (ctx) => {
   await ctx.capture(path.join(out, 'SS-03-abgelaufen.png'));
   await ctx.run(`document.querySelector('.requests .ps-action .btn').click()`);
   await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'unauthorized'`, 6000);
-  const expired = await ctx.run(`(() => { const p = document.querySelector('.settings-panel'); return { text: p.innerText, account: p.querySelector('input[autocomplete=username]')?.value, btn: [...p.querySelectorAll('.btn.primary')].map((b) => ({ t: b.innerText, off: b.disabled })), recheck: [...p.querySelectorAll('.link-row')].some((r) => /Erneut prüfen/.test(r.innerText)) }; })()`);
-  check('Einstellungen: "Anmeldung nicht mehr gueltig", Abschnitt "Anmeldung abgelaufen" mit Konto (vorbelegt) und Passwort, ohne "Erneut pruefen"', /Anmeldung nicht mehr gültig/.test(expired.text) && /Anmeldung abgelaufen/i.test(expired.text) && expired.account === 'demo' && expired.btn.length === 1 && expired.btn[0].t === 'Erneut anmelden' && expired.btn[0].off && !expired.recheck, JSON.stringify(expired));
+  const expired = await ctx.run(`(() => { const p = document.querySelector('.settings-panel'); return { text: p.innerText, account: p.querySelector('input[autocomplete=username]')?.value, btn: [...p.querySelectorAll('[data-action="seerr-password"]')].map((b) => ({ t: b.innerText, off: b.disabled })), quick: p.querySelector('[data-action="seerr-quick"]')?.innerText, recheck: [...p.querySelectorAll('.link-row')].some((r) => /Erneut prüfen/.test(r.innerText)) }; })()`);
+  check('Einstellungen: "Anmeldung nicht mehr gueltig", Abschnitt "Anmeldung abgelaufen" mit Konto (vorbelegt) und Passwort, ohne "Erneut pruefen"', /Anmeldung nicht mehr gültig/.test(expired.text) && /Anmeldung abgelaufen/i.test(expired.text) && expired.account === 'demo' && expired.btn.length === 1 && expired.btn[0].t === 'Mit Passwort anmelden' && expired.btn[0].off && expired.quick === 'Ohne Passwort anmelden' && !expired.recheck, JSON.stringify(expired));
   check('...Jellyfin bleibt angemeldet', await ctx.run(`!document.querySelector('.login')`));
   await ctx.capture(path.join(out, 'SS-04-erneut-anmelden.png'));
   await type('.settings-panel input[type=password]', 'demo');
-  await clickText('.settings-panel .btn.primary', 'Erneut anmelden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort anmelden');
   check('Erneut angemeldet mit dem Passwort: verbunden', await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'connected'`, 6000), await panelText());
 
   // ---------- Fremde Sitzung ----------
@@ -142,7 +142,7 @@ module.exports = async (ctx) => {
   check('Einstellungen nennen den Grund (anderes Konto gemeldet)', /ein anderes Konto gemeldet/.test(await panelText()), await panelText());
   SEERR.identity = null;
   await type('.settings-panel input[type=password]', 'demo');
-  await clickText('.settings-panel .btn.primary', 'Erneut anmelden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort anmelden');
   check('Erneut angemeldet: verbunden', await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'connected'`, 6000));
 
   // ---------- Trennen mit Rueckfrage ----------
@@ -164,7 +164,7 @@ module.exports = async (ctx) => {
   check('...die Adresse ist aus der letzten Verbindung vorbelegt, das Konto mit dem des Profils', await ctx.run(`document.querySelector('.settings-panel input[inputmode=url]').value === ${JSON.stringify(SEERR_URL)} && document.querySelector('.settings-panel input[autocomplete=username]').value === 'demo'`));
   await type('.settings-panel input[autocomplete=username]', 'demo2');
   await type('.settings-panel input[type=password]', 'demo');
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.25: Hauptknopf ist "Ohne Passwort verbinden"
   check('Mit einem anderen Jellyfin-Konto angemeldet: verbunden, die Einstellungen nennen dieses Konto', await waitFor(`document.querySelector('.settings-panel .status-row')?.dataset.state === 'connected'`, 6000) && /Jellyfin-Konto \(demo2\)/.test(await panelText()), await panelText());
   const b = await seerrNow();
   check('...eine spaetere Pruefung laesst es verbunden (keine fremde Sitzung), Seerr-Benutzer "Demo Zwei"', b.state === 'connected' && b.user?.displayName === 'Demo Zwei' && b.user?.id === 2, JSON.stringify(b));

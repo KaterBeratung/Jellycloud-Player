@@ -360,7 +360,7 @@ test('Abmelden, Profil entfernen und Trennen melden die Seerr-Sitzung bei Seerr 
 
 test('Sprache: Titel, Suche und Personen mit language=<Kurzform> der App; Anmeldung, Rechte und Anfragen ohne', async () => {
   assert.deepEqual([seerrLanguage('de-DE'), seerrLanguage('en'), seerrLanguage('pt_BR'), seerrLanguage(''), seerrLanguage('?')], ['de', 'en', 'pt', '', '']);
-  assert.deepEqual(CONTENT_PATHS, ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/']);
+  assert.deepEqual(CONTENT_PATHS, ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/', '/genres/']);
   const { backend, net, config } = make({ language: 'de-AT' });
   await login(backend, 'anna');
   await connect(backend, 'anna');

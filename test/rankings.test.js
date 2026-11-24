@@ -66,19 +66,19 @@ test('Die Beschriftung nennt Zeitraum, Mediathek und Quelle', () => {
 
 test('Die Top-10-Reihen gehoeren zu den Reihen der Startseite und lassen sich ordnen und ausblenden', () => {
   const order = HR.defaultOrder(['lib']);
-  assert.deepEqual(order, ['continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:lib', 'favorites', 'trending']);
+  assert.deepEqual(order, ['continue', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'latest:lib', 'favorites', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries']);
   assert.ok(!HR.arrangeRows(order, [], ['top10Series']).includes('top10Series'));
   const moved = HR.moveRow(HR.arrangeAll(order, []), 'top10Movies', 3);
-  assert.equal(HR.arrangeRows(order, moved, []).indexOf('top10Movies'), 5);
+  assert.equal(HR.arrangeRows(order, moved, []).indexOf('top10Movies'), 7);
 });
 
 test('Wer seine Reihen schon geordnet hat, findet neue Reihen an ihrem vorgesehenen Platz, nicht am Ende', () => {
   const present = HR.defaultOrder(['a', 'b']);
-  assert.deepEqual(HR.arrangeAll(present, ['continue', 'nextUp', 'latest:a', 'latest:b', 'favorites', 'trending']), ['continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'trending']);
+  assert.deepEqual(HR.arrangeAll(present, ['continue', 'nextUp', 'latest:a', 'latest:b', 'favorites', 'trending']), ['continue', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries']);
   const custom = ['latest:b', 'nextUp', 'continue', 'trending', 'latest:a', 'favorites'];
-  assert.deepEqual(HR.arrangeAll(present, custom), ['latest:b', 'nextUp', 'top10Movies', 'top10Series', 'continue', 'trending', 'latest:a', 'favorites']);
+  assert.deepEqual(HR.arrangeAll(present, custom), ['latest:b', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'continue', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries', 'latest:a', 'favorites']);
   assert.deepEqual(HR.arrangeAll(present, []), present);
-  assert.deepEqual(HR.arrangeAll(HR.defaultOrder(['a', 'c', 'b']), HR.arrangeAll(present, custom)), ['latest:b', 'nextUp', 'top10Movies', 'top10Series', 'continue', 'trending', 'latest:a', 'latest:c', 'favorites']);
+  assert.deepEqual(HR.arrangeAll(HR.defaultOrder(['a', 'c', 'b']), HR.arrangeAll(present, custom)), ['latest:b', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'continue', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries', 'latest:a', 'latest:c', 'favorites']);
   assert.deepEqual(HR.arrangeAll(['continue', 'favorites'], ['favorites']), ['continue', 'favorites']);
 });
 

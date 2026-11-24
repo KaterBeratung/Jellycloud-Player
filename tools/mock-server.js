@@ -703,7 +703,12 @@ function seerrRequestDto(r) {
     media: { id: r.media.id, tmdbId: r.mediaId, mediaType: r.mediaType, status: seerrMediaStatus(r.mediaType, r.mediaId) ?? 1, status4k: 1 },
     seasons: (Array.isArray(r.seasons) ? r.seasons : []).map((n) => ({ seasonNumber: n, status: r.readySeasons.includes(n) ? 5 : r.status })),
     modifiedBy: r.modifiedBy ? { id: r.modifiedBy, displayName: seerrUserName(r.modifiedBy) } : null,
-    requestedBy: { id: r.requestedBy, displayName: seerrUserName(r.requestedBy) }
+    requestedBy: { id: r.requestedBy, displayName: seerrUserName(r.requestedBy) },
+    serverId: r.serverId ?? null,
+    profileId: r.profileId ?? null,
+    rootFolder: r.rootFolder ?? null,
+    languageProfileId: r.mediaType === 'tv' ? 1 : null,
+    tags: r.tags ?? []
   };
 }
 /** Neue Anfrage im Testserver (POST /request und /__debug/requests); Zeitstempel steigen je Anfrage um eine Minute. */
@@ -739,6 +744,13 @@ function resetSeerr() {
   SEERR.statuses = new Map(SEERR_INITIAL.statuses);
   SEERR.media.clear();
   SEERR.mode = 'ok';
+  SEERR.qc = 'ok';
+  SEERR.watchlist = [];
+  SEERR.discoverLog = [];
+  SEERR.discoverError = false;
+  SEERR.discoverExtra = 0;
+  SEERR.lastRequestEdit = null;
+  SEERR.markedAvailable = [];
   SEERR.expired = false;
   SEERR.permissions = null;
   SEERR.identity = null;
@@ -758,6 +770,10 @@ function seerrDebug(p, q) {
     if (want === 'expired') SEERR.sid = `mock-seerr-sid-${Date.now().toString(36)}`; // alle bisherigen Sitzungen ungueltig, erst eine neue Anmeldung gilt
     SEERR.mode = want === 'down' ? 'down' : 'ok';
     return [200, { mode: SEERR.mode }];
+  }
+  if (p === '/__debug/qc') {
+    SEERR.qc = ['ok', 'unsupported', 'denied', 'foreign'].includes(q.get('set')) ? q.get('set') : 'ok';
+    return [200, { qc: SEERR.qc, initiates: SEERR.counters.qcInitiates ?? 0 }];
   }
   if (p === '/__debug/permissions') {
     SEERR.permissions = int('set');
@@ -779,7 +795,8 @@ function seerrDebug(p, q) {
     const k = Math.max(0, Math.min(n, int('open') ?? 0));
     const first = SEERR.requests.length;
     const by = int('by') ?? 1; // Anfragender: 1 demo, 2 demo2, 3 ein anderer Benutzer ("ben")
-    for (let i = 0; i < n; i++) addSeerrRequest({ mediaType: 'movie', mediaId: 90001 + first + i, status: i < k ? 1 : 5, requestedBy: by });
+    const tv = q.get('type') === 'tv'; // Serienanfragen (Staffel 1 angefragt; die Seite der Serie nennt drei Staffeln)
+    for (let i = 0; i < n; i++) addSeerrRequest({ mediaType: tv ? 'tv' : 'movie', mediaId: 90001 + first + i, seasons: tv ? [1] : null, status: i < k ? 1 : int('status') ?? 5, requestedBy: by });
     return [200, { requests: SEERR.requests.length }];
   }
   if (p === '/__debug/season') {
@@ -824,6 +841,27 @@ async function handleSeerr(req, res, p, q, method) {
     }
     return json(401, { message: 'Invalid credentials' });
   }
+  // Seerr ohne Passwort (ab 3.4): initiate holt Code und Geheimnis beim Jellyfin (hier derselbe Testserver: der Code muss dort bestaetigt
+  // werden), authenticate liefert die Sitzung des Kontos, das bestaetigt hat. SEERR.qc: 'ok' | 'unsupported' (404) | 'denied' (403) | 'foreign'
+  // (Sitzung eines anderen Kontos); POST /__debug/qc?set=... (Seerr-Port)
+  if (sub === '/auth/jellyfin/quickconnect/initiate' && method === 'POST') {
+    SEERR.counters.qcInitiates = (SEERR.counters.qcInitiates ?? 0) + 1;
+    if (SEERR.qc === 'unsupported') return json(404, { message: 'Not Found' });
+    if (state.qc.disabled) return json(500, { message: 'Quick Connect is disabled' });
+    state.qcPolls = 0;
+    state.qc.started = Date.now();
+    state.qc.authorized = false;
+    state.qc.authorizedBy = null;
+    return json(200, { code: '482913', secret: 'abcdef0123456789abcdef0123456789' });
+  }
+  if (sub === '/auth/jellyfin/quickconnect/authenticate' && method === 'POST') {
+    const b = await readBody(req);
+    if (SEERR.qc === 'unsupported') return json(404, { message: 'Not Found' });
+    if (SEERR.qc === 'denied') return json(403, { message: 'Access denied' });
+    if (b.secret !== 'abcdef0123456789abcdef0123456789' || !state.qc.authorized) return json(401, { message: 'Quick Connect not authorized' });
+    const second = SEERR.qc === 'foreign';
+    return json(200, seerrMe(second ? 'demo2' : 'demo'), { 'set-cookie': `connect.sid=${SEERR.sid}${second ? '-zwei' : ''}; Path=/; HttpOnly` });
+  }
   if (SEERR.expired) return json(401, { message: 'Unauthorized' });
   const viaKey = req.headers['x-api-key'] === SEERR.apiKey;
   const authed = viaKey || sessionOk;
@@ -863,6 +901,43 @@ async function handleSeerr(req, res, p, q, method) {
     const results = SEERR.trending.slice((page - 1) * per, page * per).map(withMediaInfo);
     return json(200, { page, totalPages: Math.ceil(SEERR.trending.length / per), totalResults: SEERR.trending.length, results });
   }
+  // Entdecken (Build 94 der Apple-App): beliebte und kommende Filme und Serien aus dem Katalog, 20 je Seite; genre (nur beliebte): 28 Action = gerade,
+  // 18 Drama = ungerade TMDB-Nummern. SEERR.discoverLog haelt Pfad, Seite und Genre jeder Abfrage fest
+  const disc = /^\/discover\/(movies|tv)(\/upcoming)?$/.exec(sub);
+  if (disc && method === 'GET') {
+    const type = disc[1] === 'movies' ? 'movie' : 'tv';
+    const page = Math.max(1, Number(q.get('page')) || 1);
+    const genre = Number(q.get('genre')) || null;
+    (SEERR.discoverLog ??= []).push({ path: sub, page, genre });
+    if (SEERR.discoverError) return json(500, { message: 'Mock: Entdecken nicht verfuegbar' });
+    let full = [...SEERR.catalog, ...SEERR.trending].filter((r, i, all) => r.mediaType === type && all.findIndex((x) => x.mediaType === r.mediaType && x.id === r.id) === i);
+    for (let n = 1; n <= (SEERR.discoverExtra ?? 0); n++) full.push({ id: 70000 + n, mediaType: type, [type === 'movie' ? 'title' : 'name']: `Entdeckt ${n}`, [type === 'movie' ? 'releaseDate' : 'firstAirDate']: '2024-01-01', posterPath: null });
+    if (disc[2]) full = full.reverse();
+    if (genre && !disc[2]) full = full.filter((r) => r.id % 2 === (genre === 28 ? 0 : 1));
+    const results = full.slice((page - 1) * 20, page * 20).map(withMediaInfo);
+    return json(200, { page, totalPages: Math.max(1, Math.ceil(full.length / 20)), totalResults: full.length, results });
+  }
+  const gm = /^\/genres\/(movie|tv)$/.exec(sub);
+  if (gm && method === 'GET') return json(200, [{ id: 28, name: 'Action' }, { id: 18, name: 'Drama' }, { id: 0, name: '' }]);
+  // Merkliste: Eintraege { tmdbId, mediaType, title }; GET /discover/watchlist (id = Nummer des Eintrags), POST /watchlist (409 schon gemerkt),
+  // DELETE /watchlist/<tmdbId>?mediaType= (404 nicht gemerkt)
+  SEERR.watchlist ??= [];
+  if (sub === '/discover/watchlist' && method === 'GET') {
+    return json(200, { page: 1, totalPages: 1, totalResults: SEERR.watchlist.length, results: SEERR.watchlist.map((w, i) => ({ id: 500 + i, ...w })) });
+  }
+  if (sub === '/watchlist' && method === 'POST') {
+    const b = await readBody(req);
+    if (SEERR.watchlist.some((w) => w.tmdbId === b.tmdbId && w.mediaType === b.mediaType)) return json(409, { message: 'Already in watchlist' });
+    SEERR.watchlist.unshift({ tmdbId: Number(b.tmdbId), mediaType: b.mediaType, title: String(b.title ?? '') });
+    return json(201, { tmdbId: b.tmdbId, mediaType: b.mediaType });
+  }
+  const wm = /^\/watchlist\/(\d+)$/.exec(sub);
+  if (wm && method === 'DELETE') {
+    const i = SEERR.watchlist.findIndex((w) => w.tmdbId === Number(wm[1]) && w.mediaType === q.get('mediaType'));
+    if (i < 0) return json(404, { message: 'Not in watchlist' });
+    SEERR.watchlist.splice(i, 1);
+    return json(204, null);
+  }
   if ((um = /^\/person\/(\d+)(\/combined_credits)?$/.exec(sub)) && method === 'GET') {
     const person = SEERR.people.get(Number(um[1]));
     if (!person) return json(404, { message: 'Unable to retrieve person.' });
@@ -873,7 +948,7 @@ async function handleSeerr(req, res, p, q, method) {
   const dm = /^\/(movie|tv)\/(\d+)$/.exec(sub);
   if (dm && method === 'GET') {
     // Titel der Anfragen, die /__debug/requests anlegt (TMDB 90001 und folgende): ein erfundener Eintrag mit Namen und Jahr
-    const made = Number(dm[2]) >= 90001 && Number(dm[2]) <= 99999 ? { id: Number(dm[2]), mediaType: dm[1], [dm[1] === 'movie' ? 'title' : 'name']: `Anfrage ${dm[2]}`, [dm[1] === 'movie' ? 'releaseDate' : 'firstAirDate']: '2025-05-01', overview: 'Ein Titel aus den gestellten Anfragen.' } : null;
+    const made = Number(dm[2]) >= 90001 && Number(dm[2]) <= 99999 ? { id: Number(dm[2]), mediaType: dm[1], [dm[1] === 'movie' ? 'title' : 'name']: `Anfrage ${dm[2]}`, [dm[1] === 'movie' ? 'releaseDate' : 'firstAirDate']: '2025-05-01', overview: 'Ein Titel aus den gestellten Anfragen.', ...(dm[1] === 'tv' ? { seasons: [1, 2, 3].map((n) => ({ seasonNumber: n, name: `Staffel ${n}`, episodeCount: 8 })) } : {}) } : null;
     const entry = SEERR.catalog.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]) ?? SEERR.trending.find((r) => r.mediaType === dm[1] && String(r.id) === dm[2]) ?? made;
     if (!entry) return json(404, { message: 'Not found' });
     if (entry.id === 9999) return json(500, { message: 'Mock: Details nicht verfuegbar' });
@@ -890,7 +965,8 @@ async function handleSeerr(req, res, p, q, method) {
         requests: live.map((r) => ({ id: r.id, status: r.status, is4k: false, seasons: (Array.isArray(r.seasons) ? r.seasons : []).map((n) => ({ seasonNumber: n, status: r.readySeasons.includes(n) ? 5 : r.status })) }))
       };
     }
-    return json(200, { ...entry, ...(SEERR.details[key] ?? {}), ...(mediaInfo ? { mediaInfo } : {}) });
+    const onUserWatchlist = SEERR.noWatchlistField ? {} : { onUserWatchlist: (SEERR.watchlist ?? []).some((w) => w.mediaType === entry.mediaType && w.tmdbId === entry.id) };
+    return json(200, { ...entry, ...(SEERR.details[key] ?? {}), ...(mediaInfo ? { mediaInfo } : {}), ...onUserWatchlist });
   }
   // Weitere Titel einer Seite: empfohlene und aehnliche (erste Seite), die Filme einer Filmreihe, die Bewertung von IMDb
   const rm = /^\/(movie|tv)\/(\d+)\/(recommendations|similar)$/.exec(sub);
@@ -915,6 +991,63 @@ async function handleSeerr(req, res, p, q, method) {
     const created = { id: SEERR.issues.length + 1, issueType: b.issueType, status: 1, problemSeason: b.problemSeason ?? 0, problemEpisode: b.problemEpisode ?? 0, message: b.message, media: { id: b.mediaId } };
     SEERR.issues.push(created);
     return json(201, created);
+  }
+  // Gemeldete Probleme ansehen und verwalten (Apple-App Build 94; server/routes/issue.ts): Rechte 1048576 verwalten, 2097152 ansehen, 4194304 melden
+  // (ohne verwalten/ansehen nur die eigenen). Eine Meldung: der erste Kommentar ist ihre Beschreibung. SEERR.issues nimmt auch gestellte Meldungen auf
+  // (createdBy, comments, createdAt, updatedAt).
+  const issueRights = () => {
+    const p = seerrPermissions();
+    const admin = (p & 2) !== 0;
+    return { manage: admin || (p & 1048576) !== 0, view: admin || (p & 2097152) !== 0, create: admin || (p & 4194304) !== 0 };
+  };
+  const issueDto = (x) => {
+    const key = [...SEERR.mediaIds].find(([, v]) => v === x.media.id)?.[0] ?? 'movie:0';
+    const by = x.createdBy ?? 1;
+    const comments = x.comments ?? [{ id: x.id * 100, message: x.message, user: by, createdAt: x.createdAt ?? '2026-11-20T10:00:00.000Z' }];
+    return {
+      id: x.id, issueType: x.issueType, status: x.status, problemSeason: x.problemSeason ?? 0, problemEpisode: x.problemEpisode ?? 0,
+      createdAt: x.createdAt ?? '2026-11-20T10:00:00.000Z', updatedAt: x.updatedAt ?? x.createdAt ?? '2026-11-20T10:00:00.000Z',
+      createdBy: { id: by, displayName: seerrUserName(by) },
+      media: { id: x.media.id, mediaType: key.split(':')[0], tmdbId: Number(key.split(':')[1]) },
+      comments: comments.map((c) => ({ id: c.id, message: c.message, createdAt: c.createdAt, user: { id: c.user, displayName: seerrUserName(c.user) } }))
+    };
+  };
+  const me = () => seerrUserId(sessionUser);
+  if (sub === '/issue' && method === 'GET') {
+    const rights = issueRights();
+    if (!rights.manage && !rights.view && !rights.create) return json(403, { message: 'Forbidden' });
+    const want = q.get('filter') === 'resolved' ? 2 : 1;
+    const list = SEERR.issues.filter((x) => (x.status === 2 ? 2 : 1) === want && (rights.manage || rights.view || (x.createdBy ?? 1) === me())).map(issueDto).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const take = Number(q.get('take')) || 20;
+    return json(200, { pageInfo: { results: list.length }, results: list.slice(0, take) });
+  }
+  if ((um = /^\/issue\/(\d+)(?:\/(comment|resolved|open))?$/.exec(sub))) {
+    const x = SEERR.issues.find((i) => i.id === Number(um[1]) && !i.deleted);
+    if (!x) return json(404, { message: 'Issue not found.' });
+    const rights = issueRights();
+    const own = (x.createdBy ?? 1) === me();
+    const now = new Date(Date.UTC(2026, 10, 20, 12, 0) + (SEERR.issueClock = (SEERR.issueClock ?? 0) + 60000)).toISOString();
+    if (!um[2] && method === 'GET') return rights.manage || rights.view || own ? json(200, issueDto(x)) : json(403, { message: 'Forbidden' });
+    if (um[2] === 'comment' && method === 'POST') {
+      if (!rights.manage && !(rights.create && own)) return json(403, { message: 'Forbidden' });
+      const b = await readBody(req);
+      x.comments = issueDto(x).comments.map((c) => ({ id: c.id, message: c.message, user: c.user.id, createdAt: c.createdAt }));
+      x.comments.push({ id: x.id * 100 + x.comments.length, message: String(b.message ?? ''), user: me(), createdAt: now });
+      x.updatedAt = now;
+      return json(200, issueDto(x));
+    }
+    if ((um[2] === 'resolved' || um[2] === 'open') && method === 'POST') {
+      if (!rights.manage && !(rights.create && own)) return json(403, { message: 'Forbidden' });
+      x.status = um[2] === 'resolved' ? 2 : 1;
+      x.updatedAt = new Date(Date.parse(now) + 30000).toISOString();
+      return json(200, issueDto(x));
+    }
+    if (!um[2] && method === 'DELETE') {
+      if (!rights.manage && !(rights.create && own && issueDto(x).comments.length <= 1)) return json(403, { message: 'Forbidden' });
+      x.deleted = true;
+      res.writeHead(204);
+      return res.end();
+    }
   }
   if (sub === '/request' && method === 'POST') {
     const b = await readBody(req);
@@ -973,6 +1106,49 @@ async function handleSeerr(req, res, p, q, method) {
     // Wer entschieden hat (modifiedBy): der Benutzer der Sitzung (1) oder, im Test, ein anderer Verwalter aus der Kopfzeile X-Mock-Actor
     if (um[2] !== 'retry') r.modifiedBy = /^\d+$/.test(req.headers['x-mock-actor'] ?? '') ? Number(req.headers['x-mock-actor']) : seerrUserId(sessionUser);
     return json(200, seerrRequestDto(r));
+  }
+  // Anfrage aendern (Apple-App Build 94/95; server/routes/request.ts): nur ausstehende (sonst 409); Verwalter, oder der Anfragende (Staffeln) bzw. mit
+  // erweiterten Anfragen (8192, Ziel). SEERR.lastRequestEdit haelt den ganzen Koerper fest
+  if ((um = /^\/request\/(\d+)$/.exec(sub)) && method === 'PUT') {
+    const r = SEERR.requests[Number(um[1]) - 1];
+    if (!r || r.deleted) return json(404, { message: 'Request not found.' });
+    const b = await readBody(req);
+    const perms = seerrPermissions();
+    const manage = (perms & (2 | 16)) !== 0;
+    const own = r.requestedBy === seerrUserId(sessionUser);
+    if (!manage && !own) return json(403, { message: 'You do not have permission to modify this request.' });
+    if (r.status !== 1) return json(409, { message: 'Only pending requests can be modified.' });
+    if (r.mediaType === 'tv' && (!Array.isArray(b.seasons) || !b.seasons.length)) return json(400, { message: 'Seasons required.' });
+    SEERR.lastRequestEdit = { id: r.id, body: b };
+    if (Array.isArray(b.seasons)) r.seasons = b.seasons.map(Number);
+    for (const k of ['serverId', 'profileId', 'rootFolder']) if (k in b) r[k] = b[k];
+    if (Number.isInteger(b.userId)) r.requestedBy = b.userId;
+    touchSeerrRequest(r);
+    return json(200, seerrRequestDto(r));
+  }
+  // Zielserver, Profile und Ordner (server/routes/service.ts), Benutzer (GET /user)
+  if ((um = /^\/service\/(radarr|sonarr)(?:\/(\d+))?$/.exec(sub)) && method === 'GET') {
+    const list = um[1] === 'radarr'
+      ? [{ id: 0, name: 'Radarr', is4k: false, isDefault: true, activeProfileId: 4, activeDirectory: '/filme' }, { id: 1, name: 'Radarr Kinder', is4k: false, isDefault: false, activeProfileId: 6, activeDirectory: '/kinder' }, { id: 2, name: 'Radarr 4K', is4k: true, isDefault: true, activeProfileId: 4, activeDirectory: '/uhd' }]
+      : [{ id: 0, name: 'Sonarr', is4k: false, isDefault: true, activeProfileId: 4, activeDirectory: '/serien' }];
+    if (um[2] === undefined) return json(200, list);
+    const s = list.find((x) => x.id === Number(um[2]));
+    if (!s) return json(404, { message: 'Not found' });
+    return json(200, { server: s, profiles: [{ id: 4, name: 'HD-1080p' }, { id: 6, name: 'Ultra-HD' }], rootFolders: [{ id: 1, path: s.activeDirectory }, { id: 2, path: `${s.activeDirectory}-alt` }] });
+  }
+  if (sub === '/user' && method === 'GET') {
+    if ((seerrPermissions() & (2 | 8)) === 0) return json(403, { message: 'Forbidden' });
+    return json(200, { pageInfo: { results: 3 }, results: [{ id: 1, displayName: 'Demo' }, { id: 2, displayName: 'Demo Zwei' }, { id: 3, displayName: 'ben' }] });
+  }
+  // Als verfuegbar markieren (server/routes/media.ts, POST /media/<Seerr-Nummer>/available; Recht "Anfragen verwalten")
+  if ((um = /^\/media\/(\d+)\/available$/.exec(sub)) && method === 'POST') {
+    if ((seerrPermissions() & (2 | 16)) === 0) return json(403, { message: 'Forbidden' });
+    const r = SEERR.requests.find((x) => x.media.id === Number(um[1]) && !x.deleted);
+    const key = r ? `${r.mediaType}:${r.mediaId}` : [...SEERR.mediaIds].find(([, v]) => v === Number(um[1]))?.[0];
+    if (!key) return json(404, { message: 'Media not found' });
+    SEERR.media.set(key, 5);
+    (SEERR.markedAvailable ??= []).push(Number(um[1]));
+    return json(200, { id: Number(um[1]), status: 5 });
   }
   return json(404, { message: `Mock-Seerr: ${method} ${sub} nicht implementiert` });
 }

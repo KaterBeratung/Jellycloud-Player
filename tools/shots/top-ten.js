@@ -106,7 +106,7 @@ module.exports = async (ctx) => {
   check('Top 10 Filme: nur Titel der Mediathek, in der Reihenfolge der Trends dieser Woche', JSON.stringify(movies) === JSON.stringify(['Echoes of Tomorrow', 'Iron Meridian', 'Midnight Cartographers', 'Solar Winds', 'Velocity', 'Hollow Crown', 'Paper Moons']), JSON.stringify(movies));
   check('Top 10 Serien: weniger als zehn, wenn es nicht mehr gibt (keine Ersatzinhalte)', JSON.stringify(series) === JSON.stringify(['Starfall Station', 'Harbor Lights']), JSON.stringify(series));
   const titles1 = await rowTitles();
-  check('Reihenfolge wie die Apple-App: Top 10 nach "Als Naechstes", vor den Neuzugaengen; "Filme im Trend" ganz unten', titles1.indexOf('Top 10 Filme') === titles1.indexOf('Als Nächstes') + 1 && titles1.indexOf('Top 10 Serien') === titles1.indexOf('Top 10 Filme') + 1 && titles1.at(-1) === 'Filme im Trend', JSON.stringify(titles1));
+  check('Reihenfolge wie die Apple-App: Top 10 nach "Als Naechstes", vor den Neuzugaengen; "Filme im Trend" vor den Entdecken-Reihen (seit 1.2.25) ganz unten', titles1.indexOf('Top 10 Filme') === titles1.indexOf('Als Nächstes') + 1 && titles1.indexOf('Top 10 Serien') === titles1.indexOf('Top 10 Filme') + 1 && titles1.indexOf('Filme im Trend') === titles1.indexOf('Beliebte Filme') - 1 && titles1.at(-1) === 'Demnächst: Serien', JSON.stringify(titles1));
   check('Unter dem Titel: Zeitraum, Mediathek, Quelle', (await ctx.run(`document.querySelector('.home .top10-row[data-kind=movies] .row-head .sub').textContent`)) === 'Im Trend diese Woche · aus deiner Mediathek · Quelle Seerr');
   const geo = await ctx.run(`(() => {
     const c = document.querySelector('.home .top10-row[data-kind=movies] .t10-card');

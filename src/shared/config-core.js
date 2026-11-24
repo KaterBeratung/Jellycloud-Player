@@ -278,6 +278,7 @@ class ConfigCore {
       }
       play.videoFormat = PlayerRules.videoFormat(play.videoFormat);
       if (typeof raw.seerrAddress === 'string' && raw.seerrAddress) this.data.seerrAddress = raw.seerrAddress.slice(0, 300);
+      if (raw.noticesOffered === true) this.data.noticesOffered = true;
       // Seerr bis Version 9: eine Verbindung fuer das ganze Geraet. Sie geht an das aktive Profil, wenn der Benutzername passt (Jellyfin-Konto); sonst wird
       // nur die Adresse vorbelegt. Verbindungen mit API-Schluessel verfallen (Entscheidung E12): einmal mit dem Jellyfin-Konto neu anmelden.
       if (ver < 10 && raw.seerr && typeof raw.seerr === 'object' && typeof raw.seerr.url === 'string' && raw.seerr.url) {
@@ -340,6 +341,20 @@ class ConfigCore {
 
   saveWindowState(state) {
     this.data.window = { x: state.x, y: state.y, width: state.width, height: state.height, maximized: !!state.maximized };
+    this._save();
+  }
+
+  /**
+   * Die einmalige Frage nach dem Verbinden von Seerr ("Mitteilungen aktivieren?", wie SystemNotificationOffer der Apple-App) ist auf diesem Geraet
+   * schon gestellt: sie kommt nie wieder, auch nicht nach Trennen, fuer ein anderes Profil oder nach "Einstellungen zuruecksetzen".
+   */
+  get noticesOffered() {
+    return this.data.noticesOffered === true;
+  }
+
+  markNoticesOffered() {
+    if (this.data.noticesOffered === true) return;
+    this.data.noticesOffered = true;
     this._save();
   }
 

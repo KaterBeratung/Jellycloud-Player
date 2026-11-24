@@ -77,7 +77,7 @@ module.exports = async (ctx) => {
   check('Waehrend sie laeuft, ist die Oberflaeche unsichtbar (is-splash, Deckkraft 0)', first.cls.includes('is-splash') && first.opacity === '0', JSON.stringify(first));
   check('Die Animation liegt ueber allem: ein Klick in die Mitte trifft den Vorspann, nicht die Seite', await ctx.run(`document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('#splash') !== null`));
   check('Aufbau: Wolken-Umriss, Dreieck, Glanz, Lichtblitz, Ring, zehn Buchstaben', await ctx.run(`(() => { const s = document.getElementById('splash'); return !!s.querySelector('svg.sp-mark .sp-draw') && !!s.querySelector('svg.sp-mark .sp-play') && !!s.querySelector('svg.sp-glow') && !!s.querySelector('.sp-streak') && !!s.querySelector('.sp-ring') && s.querySelectorAll('.sp-word span').length === 10 && [...s.querySelectorAll('.sp-word span')].map((x) => x.textContent).join('') === 'Jellycloud'; })()`));
-  const probe = `(() => { const s = document.getElementById('splash'); if (!s) return null; const q = (sel) => s.querySelector(sel); return { dash: parseFloat(getComputedStyle(q('.sp-draw')).strokeDashoffset), play: parseFloat(getComputedStyle(q('.sp-play')).opacity), letters: [...s.querySelectorAll('.sp-word span')].map((x) => parseFloat(getComputedStyle(x).opacity)), zoom: getComputedStyle(q('.sp-zoom')).transform, bg: parseFloat(getComputedStyle(s).opacity), app: parseFloat(getComputedStyle(document.getElementById('app')).opacity) }; })()`;
+  const probe = `(() => { const s = document.getElementById('splash'); if (!s) return null; const q = (sel) => s.querySelector(sel); return { dash: parseFloat(getComputedStyle(q('.sp-draw')).strokeDashoffset), play: parseFloat(getComputedStyle(q('.sp-play')).opacity), letters: [...s.querySelectorAll('.sp-word span')].map((x) => parseFloat(getComputedStyle(x).opacity)), zoom: getComputedStyle(q('.sp-zoom')).transform, bg: parseFloat(getComputedStyle(s).opacity), app: parseFloat(getComputedStyle(document.getElementById('app')).opacity), hold: s.classList.contains('hold') }; })()`;
   // Bilder und Messwerte ueber den Ablauf (Zeit ab dem ersten Auftauchen)
   const samples = [];
   const base = r1.at;
@@ -92,7 +92,10 @@ module.exports = async (ctx) => {
     if (!p) break;
   }
   const near = (ms) => samples.reduce((a, b) => (Math.abs(b.t - ms) < Math.abs(a.t - ms) ? b : a)).p;
-  const early = near(450);
+  // Vorlauf (Apple-App Build 95): das erste Bild steht, bis die Startseite bereit ist, hoechstens 1,5 s; danach laeuft die Animation
+  const held = samples.filter((x) => x.p?.hold).map((x) => x.t);
+  check('Vorlauf: das erste Bild steht hoechstens 1,5 s (bis die Startseite steht), dann laeuft die Animation', (held.length === 0 || Math.max(...held) <= 1650) && samples.some((x) => x.p && !x.p.hold), `gehalten bis ${held.length ? Math.max(...held) : 0} ms`);
+  const early = near(450 + (held.length ? Math.max(...held) : 0));
   check('Zu Beginn zeichnet sich der Umriss (Strichversatz zwischen Anfang und Ende)', early && early.dash > 0.02 && early.dash < 1.02, JSON.stringify(early?.dash));
   const mid = near(1350);
   const full = near(2250);

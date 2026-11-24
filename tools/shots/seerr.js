@@ -57,17 +57,21 @@ module.exports = async (ctx) => {
   const visibleFields = () => ctx.run(`[...document.querySelectorAll('.settings-panel input.field')].filter((i) => !i.closest('[hidden]')).map((i) => i.type)`);
   check('Nur das Jellyfin-Konto: Adresse, Konto, Passwort; keine Wahl der Anmeldung, kein API-Schluessel', JSON.stringify(await visibleFields()) === JSON.stringify(['text', 'text', 'password']) && (await ctx.run(`!document.querySelector('.settings-panel .segmented') && !/API/.test(document.querySelector('.settings-panel').innerText)`)), JSON.stringify(await visibleFields()));
   check('Hinweis: die Verbindung gilt nur fuer dieses Profil', await ctx.run(`/nur für dieses Profil/.test(document.querySelector('.settings-panel').innerText)`));
-  check('"Verbinden" ist gesperrt, bis Adresse und Passwort dastehen', await ctx.run(`[...document.querySelectorAll('.settings-panel .btn.primary')].find((b) => /Verbinden/.test(b.innerText))?.disabled === true`));
+  check('"Mit Passwort verbinden" ist gesperrt, bis Adresse und Passwort dastehen', await ctx.run(`document.querySelector('.settings-panel [data-action="seerr-password"]')?.disabled === true`));
   await ctx.capture(path.join(out, 'S-01-seerr-settings.png'));
   await type(ADDR, '127.0.0.1:8097');
   await type('.settings-panel input[type=password]', 'falsch');
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
-  check('Falsches Passwort: Fehlermeldung, nicht verbunden', await waitFor(`/abgelehnt/.test(document.querySelector('.settings-panel .form-error')?.textContent ?? '')`, 6000), await ctx.run(`document.querySelector('.settings-panel .form-error')?.textContent`));
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.25: Hauptknopf ist "Ohne Passwort verbinden"
+  const pwError = `document.querySelector('.settings-panel [data-action="seerr-password"]')?.closest('.setting')?.querySelector('.form-error')?.textContent ?? ''`; // die Meldung des Wegs mit Passwort (seit 1.2.25 zwei Wege)
+  check('Falsches Passwort: Fehlermeldung, nicht verbunden', await waitFor(`/abgelehnt/.test(${pwError})`, 6000), await ctx.run(pwError));
   check('...und die Jellyfin-Anmeldung bleibt davon unberuehrt, das Passwort bleibt nicht stehen', await ctx.run(`!document.querySelector('.login') && document.querySelector('.settings-panel input[type=password]').value === ''`));
   await type('.settings-panel input[type=password]', 'demo');
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.25: Hauptknopf ist "Ohne Passwort verbinden"
   const connectedRow = `document.querySelector('.settings-panel .status-row[data-state=connected]') && /Verbunden/.test(document.querySelector('.settings-panel .status-row').innerText) && /http:\\/\\/127\\.0\\.0\\.1:8097/.test(document.querySelector('.settings-panel').innerText) && /Jellyfin-Konto \\(demo\\)/.test(document.querySelector('.settings-panel').innerText)`;
   check('Verbunden: Stand "Verbunden", Adresse und Anmeldung "Jellyfin-Konto (demo)"', await waitFor(`!!(${connectedRow})`, 6000), await ctx.run(`document.querySelector('.settings-panel')?.innerText`));
+  // Seit 1.2.25 fragt die App nach dem ersten Verbinden einmal nach den Mitteilungen des Systems (seerr-quick.js prueft das): hier "Nicht jetzt"
+  if (await waitFor(`!!document.querySelector('.mdl-scrim .mdl-actions')`, 2000)) await ctx.run(`[...document.querySelectorAll('.mdl-scrim .mdl-actions button')].find((b) => b.textContent === 'Nicht jetzt')?.click()`);
+  await ctx.wait(300);
   const saved = ctx.config.getSeerr();
   check('Zugangsdaten gespeichert (entschluesselt: Session-Cookie) samt Jellyfin-Kennung von Seerr, ohne Modus', saved?.secret === 'mock-seerr-sid' && typeof saved?.jellyfinUserId === 'string' && saved.jellyfinUserId.length > 0 && !('mode' in saved), JSON.stringify({ user: saved?.userName, jf: saved?.jellyfinUserId }));
   const file = JSON.parse(raw());
@@ -192,7 +196,7 @@ module.exports = async (ctx) => {
   check('Nach dem Trennen keine Seerr-Gruppe mehr', await ctx.run(`!document.querySelector('.seerr-group, .req-card')`));
   await go('#/settings/seerr');
   await type('.settings-panel input[type=password]', 'demo');
-  await clickText('.settings-panel .btn.primary', 'Verbinden');
+  await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.25: Hauptknopf ist "Ohne Passwort verbinden"
   check('Erneut verbunden, ohne die Adresse noch einmal einzugeben', await waitFor(`!!(${connectedRow})`, 5000));
   state.log.length = 0;
   await search('thrones');

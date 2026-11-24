@@ -17,11 +17,12 @@ const MEDIA_STATUS = SeerrState.SEERR_MEDIA;
 const ISSUE_TYPES = { VIDEO: 1, AUDIO: 2, SUBTITLES: 3, OTHER: 4 };
 
 class SeerrError extends Error {
-  constructor(message, { status = 0, body = null } = {}) {
+  constructor(message, { status = 0, body = null, code = '' } = {}) {
     super(message);
     this.name = 'SeerrError';
     this.status = status;
     this.body = body;
+    if (code) this.code = code;
   }
 }
 
@@ -119,6 +120,59 @@ async function loginWithJellyfin(baseUrl, username, password, fetchImpl = global
   const cookie = sessionCookieFrom(res);
   if (!cookie) throw new SeerrError('Seerr hat keine Sitzung geliefert');
   return { cookie, user: await res.json().catch(() => ({})) };
+}
+
+/**
+ * Seerr ohne Passwort (wie SeerrQuickConnect der Apple-App, Build 94; Seerr ab 3.4, nur mit Jellyfin, server/routes/auth.ts):
+ * 1. initiate: Seerr holt bei seinem Jellyfin einen Quick-Connect-Code und ein Geheimnis;
+ * 2. die App bestaetigt den Code bei Jellyfin mit der Sitzung des Profils (ohne Passwort);
+ * 3. authenticate mit dem Geheimnis liefert die Sitzung bei Seerr.
+ * Sicherheit: bestaetigt wird nur ueber https oder im Heimnetz, genau der eben angeforderte Code, einmal; danach muss die Sitzung dem
+ * Jellyfin-Konto des Profils gehoeren (backend.seerrConnectQuick). Code und Geheimnis werden nie protokolliert oder gespeichert.
+ */
+const QC_PROBLEMS = {
+  notAllowed: 'Ohne Passwort geht es nur über eine https-Adresse oder im Heimnetz. Melde dich hier mit Konto und Passwort an.',
+  unsupported: 'Dieser Seerr-Server bietet Quick Connect nicht an. Melde dich mit Konto und Passwort an.',
+  unavailable: 'Quick Connect ist am Jellyfin-Server gerade nicht möglich. Melde dich mit Konto und Passwort an.',
+  denied: 'Seerr lässt dieses Konto nicht zu. Der Verwalter muss es bei Seerr freigeben.',
+  invalidAnswer: 'Seerr hat keine gültige Antwort geliefert. Melde dich mit Konto und Passwort an.',
+  foreignAccount: 'Seerr hat ein anderes Konto angemeldet als das dieses Profils. Die Anmeldung wurde verworfen.'
+};
+const qcProblem = (kind) => new SeerrError(QC_PROBLEMS[kind], { code: `QC_${kind}` });
+/** Ein Code, wie Jellyfin ihn vergibt: nur Ziffern (sechs; aeltere Server kuerzer oder laenger). */
+const validQuickCode = (c) => typeof c === 'string' && /^[0-9]{4,12}$/.test(c);
+/** Das Geheimnis, wie Seerr es selbst prueft: 8 bis 128 Hexadezimalziffern. */
+const validQuickSecret = (s) => typeof s === 'string' && /^[0-9a-fA-F]{8,128}$/.test(s);
+/** Automatisch bestaetigt wird nur ueber eine verschluesselte Adresse oder im Heimnetz. */
+const quickConnectAllowed = (seerrUrl, onHomeNetwork) => /^https:/i.test(String(seerrUrl ?? '')) || onHomeNetwork === true;
+
+async function quickConnectCall(baseUrl, step, body, fetchImpl) {
+  try {
+    return await fetchWithTimeout(
+      fetchImpl,
+      `${baseUrl}/api/v1/auth/jellyfin/quickconnect/${step}`,
+      { method: 'POST', headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) },
+      20000
+    );
+  } catch (e) {
+    throw new SeerrError(e?.name === 'AbortError' ? 'Zeitueberschreitung bei der Anmeldung' : `Netzwerkfehler: ${e?.message ?? e}`);
+  }
+}
+/** Schritt 1: Code und Geheimnis von Seerr. */
+async function quickConnectInitiate(baseUrl, fetchImpl = globalThis.fetch) {
+  const res = await quickConnectCall(baseUrl, 'initiate', null, fetchImpl);
+  if (!res.ok) throw qcProblem([403, 404, 405].includes(res.status) ? 'unsupported' : 'unavailable');
+  const o = await res.json().catch(() => null);
+  if (!o || !validQuickCode(o.code) || !validQuickSecret(o.secret)) throw qcProblem('invalidAnswer');
+  return { code: o.code, secret: o.secret };
+}
+/** Schritt 3: nach der Bestaetigung bei Jellyfin die Sitzung (Wert des Cookies connect.sid). */
+async function quickConnectAuthenticate(baseUrl, secret, fetchImpl = globalThis.fetch) {
+  const res = await quickConnectCall(baseUrl, 'authenticate', { secret }, fetchImpl);
+  if (!res.ok) throw qcProblem(res.status === 403 ? 'denied' : res.status === 404 || res.status === 405 ? 'unsupported' : 'unavailable');
+  const cookie = sessionCookieFrom(res);
+  if (!cookie) throw new SeerrError('Seerr hat keine Sitzung geliefert');
+  return cookie;
 }
 
 const yearOf = (d) => (typeof d === 'string' && /^\d{4}/.test(d) ? Number(d.slice(0, 4)) : null);
@@ -320,7 +374,11 @@ function normalizeDetails(mediaType, d) {
     seriesStatus: movie ? '' : text(d.status, 60),
     facts: factsOf(d, movie, title),
     collection: movie && Number.isInteger(+d.collection?.id) && text(d.collection?.name, 200) ? { id: Number(d.collection.id), name: text(d.collection.name, 200) } : null,
-    trailerKey: trailerKeyOf(d.relatedVideos) // fuer den Trailer im Hintergrund (Startseite, Seite des Titels)
+    trailerKey: trailerKeyOf(d.relatedVideos), // fuer den Trailer im Hintergrund (Startseite, Seite des Titels)
+    // Merkliste (Build 94): nennt Seerr das Feld nicht (aeltere Fassung), null, dann bietet die Seite das Merken nicht an
+    onWatchlist: typeof d.onUserWatchlist === 'boolean' ? d.onUserWatchlist : null,
+    // Seerrs eigene Nummer des Titels (Als verfuegbar markieren: /media/<n>/available); null ohne Eintrag bei Seerr
+    seerrMediaId: intOf(d.mediaInfo?.id)
   };
 }
 
@@ -464,7 +522,48 @@ function normalizeRequest(r) {
     readySeasons: asked.filter((s) => Number(s.status) === SeerrState.SEERR_REQUEST.COMPLETED).length,
     requesterId: Number.isInteger(+by.id) ? Number(by.id) : 0,
     requesterName: text(by.displayName || by.jellyfinUsername || by.username, 120),
-    modifierId: Number.isInteger(+r.modifiedBy?.id) ? Number(r.modifiedBy.id) : null
+    modifierId: Number.isInteger(+r.modifiedBy?.id) ? Number(r.modifiedBy.id) : null,
+    // Einzelheiten (Apple-App Build 94): wer zuletzt entschieden hat, wann zuletzt geaendert
+    modifierName: text(r.modifiedBy?.displayName || r.modifiedBy?.jellyfinUsername || r.modifiedBy?.username, 120),
+    updated: typeof r.updatedAt === 'string' && !Number.isNaN(Date.parse(r.updatedAt)) ? r.updatedAt : null,
+    // Seerrs eigene Nummer des Titels (Als verfuegbar markieren) und das Ziel der Anfrage (Anfrage aendern, Build 95); Sprachprofil und Tags
+    // aendert die App nicht, schickt sie beim Aendern aber unveraendert mit (Seerr setzt bei Filmen sonst Fehlendes zurueck)
+    seerrMediaId: intOf(m.id),
+    serverId: intOf(r.serverId),
+    profileId: intOf(r.profileId),
+    rootFolder: text(r.rootFolder, 500) || null,
+    languageProfileId: intOf(r.languageProfileId),
+    tags: Array.isArray(r.tags) ? r.tags.map(Number).filter((n) => Number.isInteger(n)).slice(0, 100) : []
+  };
+}
+
+/**
+ * Eine gemeldete Meldung (SeerrIssue der Apple-App; entity/Issue.ts von Seerr): Stand 1 offen, 2 geloest; Art 1 Video, 2 Ton, 3 Untertitel, 4 Sonstiges.
+ * Die Beschreibung ist der erste Kommentar, die Antworten folgen (nach Nummer geordnet). Unvollstaendiges ergibt null.
+ */
+function normalizeIssue(r) {
+  if (!r || typeof r !== 'object' || !Number.isInteger(+r.id) || +r.id <= 0) return null;
+  const m = r.media && typeof r.media === 'object' ? r.media : null;
+  if (!m || !Number.isInteger(+m.tmdbId) || (m.mediaType !== 'movie' && m.mediaType !== 'tv')) return null;
+  const name = (u) => text(u?.displayName || u?.jellyfinUsername || u?.username, 120);
+  const date = (v) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null);
+  const comments = (Array.isArray(r.comments) ? r.comments : [])
+    .filter((c) => Number.isInteger(+c?.id) && typeof c?.message === 'string')
+    .map((c) => ({ id: Number(c.id), message: text(c.message, 4000), author: name(c.user), authorId: intOf(c.user?.id) ?? 0, created: date(c.createdAt) }))
+    .sort((a, b) => a.id - b.id);
+  return {
+    id: Number(r.id),
+    type: intOf(r.issueType),
+    open: Number(r.status) !== 2,
+    season: intOf(r.problemSeason) ?? 0,
+    episode: intOf(r.problemEpisode) ?? 0,
+    created: date(r.createdAt),
+    updated: date(r.updatedAt),
+    creatorId: intOf(r.createdBy?.id) ?? 0,
+    creatorName: name(r.createdBy),
+    mediaType: m.mediaType,
+    tmdbId: Number(m.tmdbId),
+    comments
   };
 }
 
@@ -478,7 +577,7 @@ const REQUEST_ACTIONS = Object.freeze({
 });
 
 /** Abfragen, deren Texte von der Sprache abhaengen (Titel, Handlung, Personen); Anmeldung, Anfragen und Rechte nicht (wie die Apple-App). */
-const CONTENT_PATHS = ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/'];
+const CONTENT_PATHS = ['/search', '/discover/', '/movie/', '/tv/', '/person/', '/collection/', '/genres/'];
 
 /** Kurzform einer Sprache fuer Seerr ("de-DE" -> "de"); Unbrauchbares ergibt '' (dann nimmt Seerr die Anzeigesprache des Seerr-Kontos). */
 function seerrLanguage(value) {
@@ -721,6 +820,14 @@ class SeerrClient {
     if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Person');
     const p = normalizePerson(Number(id), await this.request('GET', `/person/${Number(id)}`));
     if (!p) throw new SeerrError('Unerwartete Antwort von Seerr');
+    // Leere Biografie in der Sprache der App (TMDB hat keine Uebersetzung): die englische, wie die Apple-App (Build 95, SeerrPerson.needsFallback).
+    // Ein Fehler dabei aendert nichts am Rest der Seite.
+    const lang = seerrLanguage(typeof this.language === 'function' ? this.language() : this.language);
+    if (!p.biography && lang && lang !== 'en') {
+      const en = await this.request('GET', `/person/${Number(id)}`, { query: { language: 'en' } }).catch(() => null);
+      const fallback = normalizePerson(Number(id), en)?.biography;
+      if (fallback) p.biography = fallback;
+    }
     return p;
   }
 
@@ -754,7 +861,145 @@ class SeerrClient {
     const r = await this.request('POST', '/request', { body });
     return { id: r?.id ?? null, requestStatus: Number(r?.status) || null, mediaStatus: Number(r?.media?.status) || null };
   }
+
+  // ---------- Anfragen verwalten (Apple-App Build 94/95; server/routes/request.ts, media.ts, service.ts, user von Seerr) ----------
+
+  /** Aendert eine ausstehende Anfrage (PUT /request/<n>): body ist der ganze Stand (JCSeerrRequests.editBody) bzw. { mediaType: 'tv', seasons }. */
+  async updateRequest(id, body) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Anfrage');
+    if (!body || (body.mediaType !== 'movie' && body.mediaType !== 'tv')) throw new SeerrError('Unbekannter Medientyp');
+    if (body.mediaType === 'tv' && (!Array.isArray(body.seasons) || !body.seasons.length)) throw new SeerrError('Keine Staffel gewaehlt');
+    await this.request('PUT', `/request/${Number(id)}`, { body });
+  }
+
+  /** Zielserver fuer Filme (Radarr) bzw. Serien (Sonarr): GET /service/radarr|sonarr. */
+  async services(movie) {
+    const r = await this.request('GET', `/service/${movie ? 'radarr' : 'sonarr'}`);
+    return (Array.isArray(r) ? r : [])
+      .filter((s) => Number.isInteger(+s?.id))
+      .map((s) => ({ id: Number(s.id), name: text(s.name, 120) || `Server ${s.id}`, is4k: s.is4k === true, isDefault: s.isDefault === true, activeProfileId: intOf(s.activeProfileId), activeDirectory: text(s.activeDirectory, 500) || null }));
+  }
+
+  /** Qualitaetsprofile und Stammordner eines Zielservers: GET /service/radarr|sonarr/<n>. */
+  async serviceChoices(movie, serverId) {
+    if (!Number.isInteger(+serverId) || +serverId < 0) throw new SeerrError('Ungueltiger Server');
+    const r = await this.request('GET', `/service/${movie ? 'radarr' : 'sonarr'}/${Number(serverId)}`);
+    return {
+      profiles: (Array.isArray(r?.profiles) ? r.profiles : []).filter((p) => Number.isInteger(+p?.id)).map((p) => ({ id: Number(p.id), name: text(p.name, 120) || `Profil ${p.id}` })),
+      folders: (Array.isArray(r?.rootFolders) ? r.rootFolders : []).map((f) => text(f?.path, 500)).filter(Boolean)
+    };
+  }
+
+  /** Die Benutzer von Seerr nach Namen (fuer "Anfragen als"): GET /user?take=1000&sort=displayname. */
+  async requesters() {
+    const r = await this.request('GET', '/user', { query: { take: 1000, sort: 'displayname' } });
+    return (Array.isArray(r?.results) ? r.results : [])
+      .filter((u) => Number.isInteger(+u?.id))
+      .map((u) => ({ id: Number(u.id), name: text(u.displayName || u.jellyfinUsername || u.username || u.email, 120) || `Benutzer ${u.id}` }));
+  }
+
+  /** Setzt den Stand eines Titels bei Seerr auf "verfuegbar" (POST /media/<Seerr-Nummer>/available; Recht "Anfragen verwalten"). */
+  async markAvailable(seerrMediaId, { is4k = false } = {}) {
+    if (!Number.isInteger(+seerrMediaId) || +seerrMediaId <= 0) throw new SeerrError('Ungueltiger Titel');
+    await this.request('POST', `/media/${Number(seerrMediaId)}/available`, { body: { is4k: is4k === true } });
+  }
+
+  // ---------- Gemeldete Probleme (Apple-App Build 94; server/routes/issue.ts) ----------
+
+  /** Die zuletzt geaenderten Meldungen (offen oder geloest), mit der Zahl, die Seerr nennt. */
+  async issues({ open = true, take = 50 } = {}) {
+    const r = await this.request('GET', '/issue', { query: { take: Math.max(1, Math.min(200, Number(take) || 50)), skip: 0, sort: 'modified', filter: open ? 'open' : 'resolved' } });
+    const list = (Array.isArray(r?.results) ? r.results : []).map(normalizeIssue).filter(Boolean);
+    const total = Number(r?.pageInfo?.results);
+    return { issues: list, total: Number.isInteger(total) ? total : list.length };
+  }
+  async issue(id) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Meldung');
+    return normalizeIssue(await this.request('GET', `/issue/${Number(id)}`));
+  }
+  async commentIssue(id, message) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Meldung');
+    const m = String(message ?? '').trim().slice(0, 2000);
+    if (!m) throw new SeerrError('Leerer Kommentar');
+    await this.request('POST', `/issue/${Number(id)}/comment`, { body: { message: m } });
+  }
+  async setIssueResolved(id, resolved) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Meldung');
+    await this.request('POST', `/issue/${Number(id)}/${resolved ? 'resolved' : 'open'}`);
+  }
+  async deleteIssue(id) {
+    if (!Number.isInteger(+id) || +id <= 0) throw new SeerrError('Ungueltige Meldung');
+    await this.request('DELETE', `/issue/${Number(id)}`);
+  }
+
+  // ---------- Entdecken und Merkliste (wie SeerrDiscover und SeerrWatchlist der Apple-App, Build 94; am Quelltext von Seerr belegt) ----------
+
+  /**
+   * Eine Seite einer Entdecken-Liste (GET /discover/movies, /discover/tv, /discover/movies/upcoming, /discover/tv/upcoming; genre nur bei den
+   * beliebten): nur die Art der Liste, ohne gesperrte, jeder Titel einmal. hasMore: Seerr hat weitere Seiten.
+   */
+  async discover(path, { page = 1, genre = null } = {}) {
+    const kinds = { '/discover/movies': 'movie', '/discover/tv': 'tv', '/discover/movies/upcoming': 'movie', '/discover/tv/upcoming': 'tv' };
+    const mediaType = kinds[path];
+    if (!mediaType) throw new SeerrError('Unbekannte Liste');
+    const p = Math.max(1, Math.min(500, Math.trunc(Number(page)) || 1));
+    const g = Number.isInteger(+genre) && +genre > 0 && !path.endsWith('/upcoming') ? Number(genre) : null;
+    const r = await this.request('GET', path, { query: { page: p, ...(g ? { genre: g } : {}) } });
+    const seen = new Set();
+    const titles = [];
+    for (const raw of Array.isArray(r?.results) ? r.results : []) {
+      const n = normalizeResult({ ...raw, mediaType: raw?.mediaType ?? mediaType });
+      if (!n || n.mediaType !== mediaType || SeerrState.isBlocklisted(n.status) || seen.has(n.id)) continue;
+      seen.add(n.id);
+      titles.push(n);
+    }
+    const totalPages = Number(r?.totalPages);
+    return { titles, page: p, hasMore: Number.isFinite(totalPages) ? p < totalPages : titles.length > 0 };
+  }
+
+  /** Genres einer Art (GET /genres/movie, /genres/tv): Eintraege ohne Nummer oder Namen fallen weg, nach Namen geordnet. */
+  async genres(mediaType) {
+    if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
+    const r = await this.request('GET', `/genres/${mediaType}`);
+    return (Array.isArray(r) ? r : [])
+      .map((g) => ({ id: Number(g?.id), name: text(g?.name, 80).trim() }))
+      .filter((g) => Number.isInteger(g.id) && g.id > 0 && g.name)
+      .sort((a, b) => a.name.localeCompare(b.name, seerrLanguage(typeof this.language === 'function' ? this.language() : this.language) || undefined, { sensitivity: 'base' }));
+  }
+
+  /**
+   * Die juengsten gemerkten Titel (GET /discover/watchlist, erste Seite; dort ist id die Nummer des Eintrags, tmdbId die des Titels) mit Plakat und
+   * Stand, in der Reihenfolge von Seerr; jeder Titel einmal, hoechstens limit. Ein Titel, der sich nicht laden laesst, faellt weg.
+   */
+  async watchlist({ limit = 20 } = {}) {
+    const r = await this.request('GET', '/discover/watchlist', { query: { page: 1 } });
+    const seen = new Set();
+    const entries = [];
+    for (const e of Array.isArray(r?.results) ? r.results : []) {
+      const type = e?.mediaType;
+      const id = Number(e?.tmdbId);
+      if ((type !== 'movie' && type !== 'tv') || !Number.isInteger(id) || id <= 0 || seen.has(`${type}:${id}`)) continue;
+      seen.add(`${type}:${id}`);
+      entries.push({ type, id });
+      if (entries.length >= limit) break;
+    }
+    const titles = await Promise.all(entries.map((e) => this.media(e.type, e.id).catch(() => null)));
+    return titles.filter(Boolean);
+  }
+
+  /** Merkt einen Titel (POST /watchlist) oder nimmt ihn von der Merkliste (DELETE /watchlist/<tmdbId>); schon gemerkt (409) bzw. nicht gemerkt (404) ist der gewuenschte Stand. */
+  async setWatchlisted(on, { mediaType, tmdbId, title = '' }) {
+    if (mediaType !== 'movie' && mediaType !== 'tv') throw new SeerrError('Unbekannter Medientyp');
+    if (!Number.isInteger(+tmdbId) || +tmdbId <= 0) throw new SeerrError('Ungueltige Titel-ID');
+    try {
+      if (on) await this.request('POST', '/watchlist', { body: { tmdbId: Number(tmdbId), mediaType, title: text(title, 300) } });
+      else await this.request('DELETE', `/watchlist/${Number(tmdbId)}`, { query: { mediaType } });
+    } catch (e) {
+      if (!(e instanceof SeerrError && e.status === (on ? 409 : 404))) throw e;
+    }
+    return on;
+  }
 }
 
-return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, normalizeQuota, normalizePerson, buildFilmography, crewRole, seerrLanguage, tmdbImageUrl };
+return { MEDIA_STATUS, ISSUE_TYPES, CONTENT_PATHS, REQUEST_ACTIONS, SeerrError, SeerrClient, normalizeSeerrUrl, candidateSeerrUrls, probeSeerr, loginWithJellyfin, quickConnectInitiate, quickConnectAuthenticate, quickConnectAllowed, validQuickCode, validQuickSecret, QC_PROBLEMS, sessionCookieFrom, normalizeResult, normalizeDetails, normalizeUser, normalizeRequest, normalizeIssue, normalizeQuota, normalizePerson, buildFilmography, crewRole, seerrLanguage, tmdbImageUrl };
 });

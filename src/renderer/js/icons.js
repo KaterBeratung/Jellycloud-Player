@@ -19,6 +19,9 @@ const paths = {
   music: `<g ${S}><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></g>`,
   heart: `<path ${S} d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/>`,
   'heart-fill': `<path ${F} d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/>`,
+  // Merkliste (SF Symbols bookmark / bookmark.fill)
+  bookmark: `<path ${S} d="M7 4.5h10a1 1 0 0 1 1 1v14.2l-6-3.9-6 3.9V5.5a1 1 0 0 1 1-1z"/>`,
+  'bookmark-fill': `<path ${F} d="M7 4.5h10a1 1 0 0 1 1 1v14.2l-6-3.9-6 3.9V5.5a1 1 0 0 1 1-1z"/>`,
   check: `<path ${S} d="m5 12.5 4.6 4.6L19.5 7"/>`,
   'check-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12.4 2.8 2.8L16.2 9.6"/></g>`,
   // ausgefuellter Kreis mit Haken (aktives Profil, bestaetigtes Geraet)

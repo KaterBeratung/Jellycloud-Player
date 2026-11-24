@@ -244,6 +244,57 @@ test('Seerr je Profil: nur mit dem Jellyfin-Konto, ohne Profil keine Verbindung,
   await assert.rejects(() => b.seerrSearch('x', 1), /nicht verbunden/);
 });
 
+test('Seerr ohne Passwort (Quick Connect): nur https oder Heimnetz, genau ein Code, die Sitzung muss dem Konto des Profils gehoeren', async () => {
+  const qc = { authorized: [], initiates: 0, as: 'anna', status: 200 };
+  const net = seerrFetch({ expired: false, identity: { anna: 'u-anna', bert: 'u-bert' } });
+  const fetch = async (url, init = {}) => {
+    const u = new URL(url);
+    if (u.pathname === '/QuickConnect/Authorize') {
+      qc.authorized.push({ code: u.searchParams.get('code'), userId: u.searchParams.get('userId') });
+      return json(200, true);
+    }
+    if (u.pathname === '/api/v1/auth/jellyfin/quickconnect/initiate') {
+      qc.initiates++;
+      return qc.status === 200 ? json(200, { code: '654321', secret: 'deadbeef00112233' }) : json(qc.status, {});
+    }
+    if (u.pathname === '/api/v1/auth/jellyfin/quickconnect/authenticate') {
+      assert.equal(JSON.parse(init.body).secret, 'deadbeef00112233', 'das Geheimnis aus Schritt 1');
+      if (!qc.authorized.length) return json(401, {});
+      const r = json(200, { id: 7 });
+      r.headers = { get: (k) => (k.toLowerCase() === 'set-cookie' ? `connect.sid=SID-${qc.as}; Path=/` : k.toLowerCase() === 'content-type' ? 'application/json' : null) };
+      return r;
+    }
+    return net.fetch(url, init);
+  };
+  const mem = memoryConfig();
+  const b = createBackend({ config: mem.config, fetch, appVersion: () => '1', locale: () => 'de' });
+  await assert.rejects(() => b.seerrConnectQuick({ url: 'https://seerr.example.com' }), /Zuerst bei Jellyfin anmelden/);
+  await b.login({ url: 'https://jf.example.com', username: 'anna', password: 'geheim' });
+  // Oeffentliche http-Adresse, Jellyfin nicht im Heimnetz: kein Code wird angefordert, der Weg mit Passwort bleibt
+  await assert.rejects(() => b.seerrConnectQuick({ url: 'http://seerr.example.com' }), (e) => e.code === 'QC_notAllowed');
+  assert.equal(qc.initiates, 0, 'ohne https oder Heimnetz kein Code');
+  // https: verbunden, genau ein Code, bestaetigt mit dem Konto des Profils
+  const s = await b.seerrConnectQuick({ url: 'https://seerr.example.com' });
+  assert.deepEqual(s.seerr, { url: 'https://seerr.example.com', userName: 'anna' });
+  assert.equal(qc.initiates, 1);
+  assert.deepEqual(qc.authorized, [{ code: '654321', userId: 'u-anna' }], 'genau der eben angeforderte Code, einmal, fuer das Konto des Profils');
+  assert.ok(!mem.store.text.includes('654321') && !mem.store.text.includes('deadbeef'), 'Code und Geheimnis werden nicht gespeichert');
+  // Private Seerr-Adresse (Heimnetz) geht auch ueber http
+  await b.seerrDisconnect();
+  await b.seerrConnectQuick({ url: 'http://192.168.1.20:5055' });
+  assert.equal(b.publicState().seerr.url, 'http://192.168.1.20:5055');
+  // Fremdes Konto: Sitzung verworfen und abgemeldet, nichts gespeichert
+  await b.seerrDisconnect();
+  qc.as = 'bert';
+  await assert.rejects(() => b.seerrConnectQuick({ url: 'https://seerr.example.com' }), (e) => e.code === 'QC_foreignAccount');
+  assert.equal(b.publicState().seerr, null, 'eine fremde Sitzung verbindet nicht');
+  assert.ok(net.log.some((l) => l.path === '/api/v1/auth/logout' && l.cookie === 'connect.sid=SID-bert'), 'und wird bei Seerr abgemeldet');
+  // Seerr ohne diesen Weg (aelter als 3.4): Hinweis auf den Weg mit Passwort
+  qc.as = 'anna';
+  qc.status = 404;
+  await assert.rejects(() => b.seerrConnectQuick({ url: 'https://seerr.example.com' }), (e) => e.code === 'QC_unsupported' && /Konto und Passwort/.test(e.message));
+});
+
 test('Seerr: wird waehrend der Anmeldung das Profil gewechselt, bekommt keines die Sitzung (kein Seerr beim falschen Profil)', async () => {
   let release;
   const state = { expired: false, hold: new Promise((r) => (release = r)) };

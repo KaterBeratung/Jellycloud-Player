@@ -103,7 +103,8 @@ test('Aufgaben im Stab in der Sprache der Oberflaeche; Unbekanntes bleibt, wie S
 });
 
 test('Texte in der Sprache des Geraets: Personen und Suche mit language, Anmeldung und Anfragen ohne', async () => {
-  const { client, seen } = stub((u) => (u.pathname.endsWith('/auth/me') ? { id: 1, permissions: 32 } : { id: 11, name: 'x', results: [], cast: [], crew: [] }));
+  // Mit Biografie: ohne sie fragte die Seite noch einmal auf Englisch (Ersatz, Apple-App Build 95; eigener Test in seerr-discover.test.js)
+  const { client, seen } = stub((u) => (u.pathname.endsWith('/auth/me') ? { id: 1, permissions: 32 } : { id: 11, name: 'x', biography: 'Text', results: [], cast: [], crew: [] }));
   await client.person(11);
   await client.filmography(11);
   await client.search('orbit');

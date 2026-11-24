@@ -128,7 +128,8 @@ module.exports = async (ctx) => {
   list = await cards();
   check('Verwalten, offen: eigene und fremde wartende, fremde mit "von ben"', list.length === 4 && list.filter((c) => /von ben$/.test(c.l2)).length === 2 && list.filter((c) => /von Demo$/.test(c.l2)).length === 2, JSON.stringify(list.map((c) => c.l2)));
   menu = await openActions('Anfrage 90007');
-  check('Fremde wartende: Genehmigen, Ablehnen (rot), abgesetzt Entfernen (rot)', JSON.stringify(menu) === JSON.stringify([{ t: 'Genehmigen', danger: false }, { t: 'Ablehnen', danger: true }, { t: 'Anfrage entfernen', danger: true }]) && (await ctx.run(`document.querySelectorAll('.menu .menu-sep').length === 1`)), JSON.stringify(menu));
+  // Seit 1.2.24 (Apple-App Build 94/95): Einzelheiten als Kopf (abgesetzt) und "Anfrage ändern" fuer ausstehende
+  check('Fremde wartende: Genehmigen, Ablehnen (rot), Anfrage ändern, abgesetzt Entfernen (rot)', JSON.stringify(menu) === JSON.stringify([{ t: 'Genehmigen', danger: false }, { t: 'Ablehnen', danger: true }, { t: 'Anfrage ändern', danger: false }, { t: 'Anfrage entfernen', danger: true }]) && (await ctx.run(`document.querySelectorAll('.menu .menu-sep').length === 2 && /^Angefragt von ben/.test(document.querySelector('.menu .menu-head.note')?.textContent ?? '')`)), JSON.stringify(menu));
   await ctx.capture(path.join(out, 'RQ-02-verwalten-menue.png'));
   await pickMenu('Genehmigen');
   check('Genehmigen ohne Rueckfrage: der Stand wird "In Bearbeitung", die Anfrage bleibt offen', (await waitFor(`${cardByTitle('Anfrage 90007')}?.querySelector('.req-status .tag')?.textContent === 'In Bearbeitung'`, 5000)) && !(await ctx.run(`!!document.querySelector('.mdl')`)));

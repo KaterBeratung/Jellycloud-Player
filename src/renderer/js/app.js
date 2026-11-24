@@ -13,6 +13,8 @@ import { homeView } from './views/home.js';
 import { libraryView } from './views/library.js';
 import { detailView } from './views/detail.js';
 import { seerrTitleView } from './views/seerr-title.js';
+import { discoverView } from './views/discover.js';
+import { issuesView, issueView } from './views/issues.js';
 import { personView } from './views/person.js';
 import { searchView, focusSearchField, openSearch, lastSearchQuery } from './views/search.js';
 import { settingsView } from './views/settings.js';
@@ -20,7 +22,8 @@ import { adminView } from './views/admin.js';
 import { loginView } from './views/login.js';
 import { installNoDrag } from './no-drag.js';
 import { installCompact } from './compact.js';
-import { playSplash, splashActive, afterSplash } from './splash.js';
+import { playSplash, splashActive, afterSplash, splashReady } from './splash.js';
+document.addEventListener('home-ready', splashReady); // die Startseite steht: die Startanimation laeuft ohne Ladearbeit (splash.js, Vorlauf)
 import { installMotion } from './motion.js';
 import { runConnectionCheck } from './connection.js';
 import { installNotices, notices, readNotices, noticesReady, setSystemOpener } from './notices.js';
@@ -56,6 +59,9 @@ route(/^\/requests$/, () => requestsView(), { nav: 'requests' });
 route(/^\/library\/(?<id>[0-9a-fA-F-]+)$/, (p) => libraryView(p), { cache: true }); // von der Startseite geoeffnet ("Neu in ...")
 route(/^\/item\/(?<id>[0-9a-fA-F-]+)$/, (p) => detailView(p));
 route(/^\/seerr\/(?<type>movie|tv)\/(?<id>\d{1,9})$/, (p) => seerrTitleView(p)); // Seite eines Seerr-Titels (seerr-open.js oeffnet sie)
+route(/^\/discover\/(?<type>movie|tv)$/, (p) => discoverView(p)); // ganze Liste "Beliebte Filme/Serien" mit Genre-Wahl (Titel der Reihe auf der Startseite)
+route(/^\/issues$/, () => issuesView(), { nav: 'requests' }); // Gemeldete Probleme (unter Anfragen)
+route(/^\/issues\/(?<id>\d{1,9})$/, (p) => issueView(p), { nav: 'requests' });
 route(/^\/person\/tmdb\/(?<tmdb>\d{1,9})$/, (p) => personView(p)); // Seite einer Person aus der Besetzung eines Seerr-Titels (Nummer bei TMDB)
 route(/^\/person\/(?<id>[0-9a-fA-F-]{8,40})$/, (p) => personView(p)); // Seite einer Person der Mediathek
 route(/^\/search$/, (p) => searchView(p), { nav: 'search' });
@@ -69,6 +75,7 @@ function localeFromSettings() {
 }
 
 function showLogin({ cancellable = false, message = '' } = {}) {
+  splashReady();
   currentLogin?.destroy?.();
   currentLogin = null;
   closeMenu();
@@ -348,13 +355,15 @@ async function boot() {
     announcedUpdate = true;
     afterSplash(() => toast(t('upd.done', { v: state.appVersion }))); // unter der Startanimation sah man ihn nicht
   }
-  if (!/^#\/(home|movies|shows|requests|library|item|seerr|person|search|notifications|settings|admin)/.test(location.hash)) location.hash = '#/home';
+  if (!/^#\/(home|movies|shows|requests|library|item|seerr|discover|issues|person|search|notifications|settings|admin)/.test(location.hash)) location.hash = '#/home';
   if (!state.isAdmin && /^#\/admin/.test(location.hash)) location.hash = '#/home';
   if (routerStarted) await refresh();
   else {
     routerStarted = true;
     await start();
   }
+  // Startanimation: die Startseite meldet sich selbst, sobald sie steht ('home-ready'); jede andere Seite gilt jetzt als bereit
+  if (!/^#\/home/.test(location.hash)) splashReady();
   noticesReady(); // eine Mitteilung des Systems, die die App gestartet hat (oder waehrend des Aufbaus angetippt wurde), oeffnet jetzt ihren Titel
   // Ein Update, das schon vor der Anmeldung oder dem Aufbau gefunden wurde, meldet sich jetzt (der Punkt am Zahnrad ist ohnehin da)
   afterSplash(() => setTimeout(announceUpdate, 1500));
@@ -365,6 +374,7 @@ async function boot() {
  * ein Weg zu einem anderen gemerkten Profil oder Server.
  */
 function showStartFailure(e) {
+  splashReady();
   currentLogin?.destroy?.();
   currentLogin = null;
   closeMenu();

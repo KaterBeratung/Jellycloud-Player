@@ -34,22 +34,22 @@ test('homeConfig: Grenzen, Typen, doppelte und fremde Eintraege werden bereinigt
   assert.equal(HR.homeConfig({ order: many }).order.length, 100, 'Liste ist begrenzt');
 });
 
-test('defaultOrder wie in der Apple-App: Weiterschauen und Als Naechstes ganz oben, dann die Top 10, dann Neu in ... je Bibliothek, Favoriten, Filme im Trend', () => {
-  assert.deepEqual(HR.defaultOrder(['a', 'b']), ['continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'trending']);
-  assert.deepEqual(HR.defaultOrder([]), ['continue', 'nextUp', 'top10Movies', 'top10Series', 'favorites', 'trending']);
+test('defaultOrder wie in der Apple-App (Build 94): Weiterschauen und Als Naechstes ganz oben, dann Meine Anfragen und Merkliste, dann die Top 10, dann Neu in ... je Bibliothek, Favoriten, Filme im Trend, Entdecken', () => {
+  assert.deepEqual(HR.defaultOrder(['a', 'b']), ['continue', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries']);
+  assert.deepEqual(HR.defaultOrder([]), ['continue', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'favorites', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries']);
   assert.deepEqual(HR.defaultOrder(undefined), HR.defaultOrder([]));
   assert.deepEqual(HR.TOP_ROWS, ['continue', 'nextUp'], 'die naechste Folge gehoert direkt unter Weiterschauen');
   assert.deepEqual(HR.RANKING_ROWS, ['top10Movies', 'top10Series']);
-  assert.deepEqual([...HR.SEERR_ROWS].sort(), ['top10Movies', 'top10Series', 'trending'], 'nur diese gibt es allein mit Seerr');
-  assert.equal(new Set(HR.defaultOrder(['a', 'b'])).size, 8, 'keine Reihe doppelt');
+  assert.deepEqual([...HR.SEERR_ROWS].sort(), ['myRequests', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries', 'seerrWatchlist', 'top10Movies', 'top10Series', 'trending'], 'nur diese gibt es allein mit Seerr');
+  assert.equal(new Set(HR.defaultOrder(['a', 'b'])).size, 14, 'keine Reihe doppelt');
 });
 
 test('arrangeRows: eigene Reihenfolge zuerst; eine Reihe, die darin fehlt, steht hinter ihrem Vorgaenger der Standardfolge; Ausgeblendetes fehlt', () => {
   const present = HR.defaultOrder(['a', 'b']);
   assert.deepEqual(HR.arrangeRows(present, [], []), present, 'ohne Wuensche bleibt es die Standardreihenfolge');
   // Favoriten nach oben geschoben: alles andere bleibt in seiner Folge, hinter dem jeweiligen Vorgaenger
-  assert.deepEqual(HR.arrangeRows(present, ['favorites', 'continue'], []), ['favorites', 'trending', 'continue', 'nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b']);
-  assert.deepEqual(HR.arrangeRows(present, [], ['continue', 'trending']), ['nextUp', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites']);
+  assert.deepEqual(HR.arrangeRows(present, ['favorites', 'continue'], []), ['favorites', 'trending', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries', 'continue', 'nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'latest:a', 'latest:b']);
+  assert.deepEqual(HR.arrangeRows(present, [], ['continue', 'trending']), ['nextUp', 'myRequests', 'seerrWatchlist', 'top10Movies', 'top10Series', 'latest:a', 'latest:b', 'favorites', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries']);
   assert.deepEqual(HR.arrangeRows([], ['continue'], []), [], 'nichts vorhanden');
   assert.deepEqual(HR.arrangeRows(present, ['continue', 'continue'], []).filter((x) => x === 'continue').length, 1, 'doppelte Eintraege erzeugen keine doppelte Reihe');
   assert.equal(HR.arrangeRows(present, [], present).length, 0, 'alles ausgeblendet');

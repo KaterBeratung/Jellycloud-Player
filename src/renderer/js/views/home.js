@@ -10,6 +10,8 @@ import { refreshGlow } from '../glow.js';
 import { createTrailer } from '../trailer.js';
 import { requestCard } from './request-card.js';
 import { topTenRow } from './top-ten.js';
+import { SEERR_HOME_ROWS, seerrRowSlot, fillSeerrRow } from './seerr-rows.js';
+import { seerrConnectTip } from './seerr-tip.js';
 import { seerrState } from '../connection.js';
 import { handoffOffer } from '../handoff.js';
 
@@ -267,6 +269,9 @@ export function homeView() {
   const heroHost = h('div', { class: 'hero-host' });
   const rows = h('div', { class: 'rows' });
   el.append(heroHost, rows);
+  // Hinweis "Seerr verbinden" (Apple-App Build 94): je Profil einmal, nur ohne Seerr (seerr-tip.js)
+  const tip = seerrConnectTip();
+  if (tip) el.append(tip);
   const heroOn = HomeRows.homeConfig(state.settings.home).hero; // ohne Banner gibt es auch keinen Platzhalter dafuer
   /** Platzhalter, bis die Startseite steht (beim ersten Aufbau und nach "Erneut versuchen") */
   const placeholders = () => {
@@ -454,8 +459,10 @@ export function homeView() {
     const contentRows = builders.size;
     let trendSlot = null;
     const topSlots = {};
+    const seerrSlots = new Map(); // Meine Anfragen, Merkliste, Entdecken (seerr-rows.js)
     if (state.seerr) {
       offer('trending', () => (trendSlot = h('div', { class: 'trend-slot', hidden: true })));
+      for (const id of SEERR_HOME_ROWS) offer(id, () => seerrSlots.set(id, seerrRowSlot(id)).get(id));
       // Top 10 nur mit Titeln der Mediathek: ist sie leer, gibt es nichts zu ordnen. Platzhalter nur beim ersten Laden und nur, wenn Seerr nicht
       // gerade als nicht erreichbar oder abgemeldet bekannt ist
       if (contentRows) {
@@ -483,13 +490,28 @@ export function homeView() {
       if (hero) rows.prepend(status);
       else showPageStatus(el, status);
     }
+    // Die Startseite steht (Banner und Reihen; die Reihen von Seerr kommen nach): die Startanimation darf laufen (splash.js, Vorlauf). Nach zwei Bildtakten,
+    // damit das erste Zeichnen der Seite nicht in die Animation faellt
+    if (!soft) requestAnimationFrame(() => requestAnimationFrame(() => document.dispatchEvent(new CustomEvent('home-ready'))));
     if (trendSlot) fillTrending(trendSlot);
     if (Object.keys(topSlots).length) fillTopTen(topSlots);
+    // Ausgeblendete Reihen bekommen keinen Platz und fragen Seerr nicht ab
+    for (const [id, slot] of seerrSlots) {
+      if (!slot.isConnected) continue;
+      fillSeerrRow(slot, id, {
+        alive: () => !destroyed && mine === loadSeq && slot.isConnected,
+        place: (s, sec) => {
+          takePlace(s, sec);
+          syncEmpty();
+        }
+      });
+    }
   }
 
   /** Startseite laden; scheitert es, steht der Fehler fuer die ganze Seite da (ohne Banner und Platzhalter), "Erneut versuchen" baut sie neu auf. */
   function start() {
     return load().catch((e) => {
+      document.dispatchEvent(new CustomEvent('home-ready')); // auch ein Fehler ist ein fertiger Stand: die Startanimation wartet nicht laenger
       if (destroyed) return;
       hero?.destroy();
       hero = null;

@@ -284,6 +284,12 @@ den Server, dann das Ende der eigenen Umsetzung), genau einmal; Anhalten, Spring
   `PlayAction.label`), `test/detail-facts.test.js` (Informationsblock); 17 Gegenproben. Szenario `item-menu.js` (Port 8986, echte Mausklicks), angepasst
   `subtitles.js`, `trailer.js`, `seerr-issue.js`, `compact-audit.js`. Nur gegen den Mock-Server geprüft; langes Drücken auf einem echten Android-Gerät
   ist nicht geprüft (im Test ein nachgebildetes Ereignis).
+- **Seit 1.2.25 (Apple-App Build 93 bis 95):** Handlungen mit HTML erscheinen formatiert (Absätze, Listen, fett, kursiv, Links nur http/https, im Browser
+  des Systems; `rich-text.js` liest sie in ein inertes Dokument und übernimmt nur Erlaubtes), in der Folgenliste als Vorschau ohne Leerzeilen. Jede Folge
+  steht auf einer gemeinsamen Karte (Bild und Text, deckende Fläche). Auf der Seite einer Folge führt der Name der Serie vorn in der Angabenzeile zur Serie
+  (statt der Brotkrume über dem Titel). Das Bild im Banner zoomt langsam heraus statt hinein. „Kontrast erhöhen“ des Systems (`prefers-contrast: more`)
+  macht gedämpfte Schrift und Kanten kräftiger. Die Startanimation hält ihr erstes Bild, bis die Startseite steht (höchstens 1,5 s), und läuft dann ohne
+  Ladearbeit (`splash.js`, Vorlauf). Szenario `rich-text.js`; `access-audit.js` und `startup-anim.js` ergänzt.
 
 ## Trailer
 
@@ -462,6 +468,26 @@ seitenweise), in der Reihenfolge der Trends, höchstens zehn, ohne Ersatzinhalte
 
 Technisch: `src/main/seerr.js`, API `/api/v1` (`auth/jellyfin`, `search`, `request`, `issue`, `discover/trending`, `movie/{id}`, `tv/{id}`); die Detailantwort wird auf feste Typen und Längen reduziert (`normalizeDetails`), Bildpfade gelten nur in der Form, die das App-Protokoll annimmt. Alle Anfragen laufen mit `credentials: omit`, damit Chromiums Cookie-Speicher das Seerr-Cookie nicht heimlich
 mitschickt (sonst würde eine falsche Anmeldung durch ein altes Cookie akzeptiert und ein Profil sähe das Seerr eines anderen). Getestet gegen einen Mock-Seerr, **nicht** gegen einen echten Seerr-Server.
+
+### Neu aus Build 94/95 der Apple-App (seit 1.2.25)
+
+- **Seerr ohne Passwort** (`backend.seerrConnectQuick`, `seerr.js` `quickConnect*`): Seerr holt einen Quick-Connect-Code, die App bestätigt ihn mit der Sitzung des
+  Profils bei Jellyfin, Seerr liefert die Sitzung (Seerr 3.4 oder neuer). Nur über https oder im Heimnetz (private Seerr-Adresse oder Heimnetz-Prüfung der
+  Bitratensteuerung), genau ein Code, sofort; die Sitzung muss dem Jellyfin-Konto des Profils gehören, sonst wird sie verworfen. Code und Geheimnis werden
+  nie gespeichert. Einstellungen › Anfragen: oben „Ohne Passwort verbinden“, darunter „Oder mit Passwort“. Danach fragt die App einmal je Gerät
+  „Mitteilungen aktivieren?“ (`config.noticesOffered`). Auf der Startseite steht ohne Seerr einmal je Profil der Hinweis „Seerr verbinden“ (`seerr-tip.js`).
+- **Startseite:** „Meine Anfragen“ (die zehn jüngsten mit Stand), „Merkliste“, „Beliebte Filme/Serien“ und „Demnächst: Filme/Serien“ (`seerr-rows.js`,
+  `home-rows.js` `DISCOVER`); ausgeblendete Reihen fragen Seerr nicht. Der Titel der beliebten Reihen führt zur ganzen Liste mit Genre-Wahl
+  (`#/discover/movie|tv`, `discover.js`).
+- **Seite eines Seerr-Titels:** „Merken/Gemerkt“ (nur wenn Seerr `onUserWatchlist` nennt) und „Mediathek“ zur Detailseite, wenn der Titel schon da ist.
+- **Anfragen verwalten** (Menü einer Anfrage, Regeln in `seerr-requests.js`): Einzelheiten als Kopf (wer, wann, wer entschieden hat), „Staffeln ändern“
+  (ausstehende Serie; eigene oder Verwalter), „Anfrage ändern“ (Zielserver, Profil, Ordner, „Anfragen als“; `request-editor.js`, der ganze Stand geht an
+  `PUT /request/<n>`), „Als verfügbar markieren“ (`POST /media/<n>/available`, mit Rückfrage).
+- **Gemeldete Probleme** (`#/issues`, `issues.js`, Knopf im Reiter Anfragen mit einem der Rechte): Liste Offen/Gelöst wie die Mitteilungen, die Meldung als
+  Gespräch mit Antwortfeld, „Als gelöst markieren“/„Wieder öffnen“, löschen mit Rückfrage; Rechte wie Seerr.
+- **Personen:** fehlt die Biografie in der Sprache der App, kommt die englische.
+- Szenarien `seerr-quick.js`, `seerr-home-rows.js`, `requests-manage.js`, `issues-manage.js`; Unit-Tests `seerr-discover.test.js` und Ergänzungen in
+  `backend.test.js`, `seerr-requests.test.js`. Nur gegen den Testserver geprüft, **nicht** gegen einen echten Seerr.
 
 ## Mitteilungen
 

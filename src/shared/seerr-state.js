@@ -190,7 +190,19 @@
    * Rechte eines Seerr-Benutzers, wie Seerr sie meldet (/auth/me, permissions als Bitfeld; server/lib/permissions.ts). Administrator gilt
    * fuer alles. Die Oberflaeche zeigt nur, was erlaubt ist; entscheiden tut immer Seerr (eine abgelehnte Aktion erscheint als Fehler).
    */
-  const PERMISSIONS = Object.freeze({ ADMIN: 2, MANAGE_REQUESTS: 16, REQUEST: 32, REQUEST_VIEW: 16384, REQUEST_MOVIE: 262144, REQUEST_TV: 524288 });
+  const PERMISSIONS = Object.freeze({
+    ADMIN: 2,
+    MANAGE_USERS: 8,
+    MANAGE_REQUESTS: 16,
+    REQUEST: 32,
+    REQUEST_ADVANCED: 8192,
+    REQUEST_VIEW: 16384,
+    REQUEST_MOVIE: 262144,
+    REQUEST_TV: 524288,
+    MANAGE_ISSUES: 1048576,
+    VIEW_ISSUES: 2097152,
+    CREATE_ISSUES: 4194304
+  });
   const bits = (perms) => (Number.isFinite(Number(perms)) && Number(perms) > 0 ? Math.trunc(Number(perms)) : 0);
   /** Hat der Benutzer das Recht p (oder ist er Administrator)? */
   const has = (perms, p) => ((bits(perms) & PERMISSIONS.ADMIN) !== 0) || (bits(perms) & p) === p;

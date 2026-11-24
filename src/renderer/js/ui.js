@@ -312,7 +312,8 @@ export function openMenu(anchor, entries, { onPick, align = 'left', minWidth = 2
   const buttons = [];
   for (const e of entries) {
     if (e.header) {
-      el.append(h('div', { class: 'menu-head' }, e.label));
+      // note: ein Satz ueber den Aktionen (Einzelheiten einer Anfrage), keine Gruppenueberschrift
+      el.append(h('div', { class: `menu-head${e.note ? ' note' : ''}` }, e.label));
       continue;
     }
     if (e.separator) {

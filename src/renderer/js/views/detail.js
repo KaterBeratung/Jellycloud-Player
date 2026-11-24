@@ -4,6 +4,7 @@ import { api, backdropOf, landscapeOf, posterOf, logoOf, isFolder } from '../api
 import { state, updateSettings } from '../state.js';
 import { infoBlock, lazyImage, openMenu, pageStatus, refreshCards, row, showPageStatus, titleOf, toast, closeMenu } from '../ui.js';
 import { mediaTagRow } from '../tags.js';
+import { richText, looksLikeHtml } from '../rich-text.js';
 import { setAmbient } from '../ambient.js';
 import { endsAt, fmtBitrate, fmtDuration, fmtSize, langName, ticksToSec } from '../utils.js';
 import { attachItemMenu, itemStateChanged, playItem, toggleFavorite, toggleWatched } from '../actions.js';
@@ -188,9 +189,7 @@ export function detailView({ id, query }) {
     const poster = isEpisode ? lazyImage(landscapeOf(item, 720), { cls: 'detail-poster landscape', eager: true, fallback: titleOf(item) }) : lazyImage(posterOf(item, 560), { cls: 'detail-poster', eager: true, fallback: titleOf(item) });
 
     const info = h('div', { class: 'detail-info' });
-    if (isEpisode) {
-      info.append(h('a', { class: 'crumb', href: `#/item/${item.SeriesId}` }, icon('chevron-left', 16), item.SeriesName, item.SeasonName ? ` · ${item.SeasonName}` : ''));
-    }
+    // Folge: der Weg zur Serie ist ihr Name vorn in der Angabenzeile (Apple-App Build 95, statt Pfeil bzw. Brotkrume ueber dem Titel)
     const logo = !isEpisode ? logoOf(item, 720) : null;
     if (logo) {
       const l = h('img', { class: 'detail-logo', alt: item.Name, src: logo.url, decoding: 'async' });
@@ -208,6 +207,7 @@ export function detailView({ id, query }) {
     const paintMeta = () => {
       const parts = [];
       const span = (text, attrs = null) => h('span', attrs, text);
+      if (isEpisode && item.SeriesId && item.SeriesName) parts.push(h('a', { class: 'meta-series', href: `#/item/${item.SeriesId}`, 'data-action': 'series-name', 'aria-label': t('detail.toSeries', { name: item.SeriesName }) }, item.SeriesName));
       if (isEpisode && Format.episodeNumbers(item)) parts.push(span(Format.episodeNumbers(item)));
       if (item.ProductionYear) parts.push(span(String(item.ProductionYear)));
       if (item.OfficialRating) parts.push(span(item.OfficialRating, { class: 'rating-box' }));
@@ -505,7 +505,9 @@ export function detailView({ id, query }) {
     // ----- Handlung und Genres (wie die Apple-App: die Genres in einer Zeile unter der Handlung; Regie steht in der Besetzung, das Studio bei den Informationen) -----
     const hideSpoiler = isEpisode && state.settings.general.spoilerProtection && !item.UserData?.Played && !(item.UserData?.PlaybackPositionTicks > 0);
     if (item.Overview) {
-      const p = h('p', { class: 'overview clamp' }, hideSpoiler ? t('detail.spoilerHidden') : item.Overview);
+      // Handlung mit HTML formatiert (Absaetze, Listen, fett, kursiv, Links; rich-text.js), sonst wie bisher als Text
+      const rich = !hideSpoiler && looksLikeHtml(item.Overview);
+      const p = h(rich ? 'div' : 'p', { class: `overview clamp${rich ? ' rich' : ''}` }, hideSpoiler ? t('detail.spoilerHidden') : richText(item.Overview));
       const more = h('button', { class: 'link-btn', type: 'button', hidden: true }, t('action.more'));
       more.addEventListener('click', () => {
         const open = p.classList.toggle('clamp');
@@ -650,7 +652,7 @@ export function detailView({ id, query }) {
         'div',
         { class: 'ep-info' },
         h('div', { class: 'ep-head' }, h('span', { class: 'ep-no' }, ep.IndexNumber != null ? String(ep.IndexNumber) : ''), h('a', { class: 'ep-title', href: `#/item/${ep.Id}` }, ep.Name), h('span', { class: 'ep-rt' }, ep.RunTimeTicks ? fmtDuration(ticksToSec(ep.RunTimeTicks)) : '')),
-        ep.Overview ? h('p', { class: 'ep-ov' }, spoiler ? t('detail.spoilerHidden') : ep.Overview) : null
+        ep.Overview ? h('p', { class: 'ep-ov' }, spoiler ? t('detail.spoilerHidden') : richText(ep.Overview, { compact: true })) : null
       )
     );
     a.style.setProperty('--i', Math.min(i, 14));

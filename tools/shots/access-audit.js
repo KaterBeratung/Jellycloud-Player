@@ -184,6 +184,28 @@ module.exports = async (ctx) => {
   await ctx.capture(path.join(out, 'AA-reduced-settings.png'));
   await ctx.reducedMotion(false);
 
+  // ---------- Kontrast erhoehen (Apple-App Build 94, BH5): gedaempfte Schrift und Kanten werden kraeftiger, in jedem Design ----------
+  const lum = (css) => {
+    // rgb(161, 161, 168) oder color(srgb 0.79 0.79 0.8) (color-mix liefert die zweite Form)
+    const k = /^color\(srgb/.test(css) ? 255 : 1;
+    const m = (css.replace(/^color\(srgb/, '').match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0]).map((v) => v * k);
+    const f = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]);
+  };
+  const muted = () => ctx.run(`(() => { const p = document.createElement('p'); p.style.color = 'var(--muted)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; })()`);
+  const before = await muted();
+  const dbg = ctx.win.webContents.debugger;
+  try {
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-contrast', value: 'more' }] });
+    await ctx.wait(200);
+    const more = await muted();
+    check('Kontrast erhöhen: gedaempfte Schrift wird heller (naeher an der Textfarbe)', lum(more) > lum(before) * 1.25, `${before} -> ${more}`);
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-contrast', value: 'no-preference' }] });
+  } catch (e) {
+    check('Kontrast erhöhen: Emulation moeglich', false, e.message);
+  }
+
   check('Keine Konsolenfehler oder -warnungen', errors.length === 0, errors.slice(0, 4).join(' | '));
   const pass = results.filter(Boolean).length;
   console.log(`\nErgebnis: ${pass}/${results.length} Pruefungen bestanden`);

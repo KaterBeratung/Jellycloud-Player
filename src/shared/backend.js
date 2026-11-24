@@ -176,7 +176,8 @@
       }
       return notices.sync({ seerr: s, user: seerrUser, force, own });
     }
-    const noticesState = () => ({ ...notices.list(), manages: !!seerrUser && SeerrState.canViewAllRequests(seerrUser.permissions) });
+    // offered: die einmalige Frage "Mitteilungen aktivieren?" nach dem Verbinden von Seerr ist auf diesem Geraet schon gestellt (ConfigCore.noticesOffered)
+    const noticesState = () => ({ ...notices.list(), manages: !!seerrUser && SeerrState.canViewAllRequests(seerrUser.permissions), offered: config.noticesOffered === true });
 
     // ---------- Auf diesem Geraet fortsetzen (Plan P19) ----------
     // Die Sitzungen der letzten Abfrage, die dem eigenen Konto gehoeren und nicht dieses Geraet sind: nur sie darf die Oberflaeche anhalten lassen
@@ -225,6 +226,58 @@
 
     /** Meldet eine Sitzung bei Seerr ab, ohne darauf zu warten oder an Fehlern zu scheitern (Trennen, Abmelden, Entfernen, fremde Sitzung). */
     const seerrLogout = (url, cookie) => (cookie ? seerrClient(url, cookie).logout() : Promise.resolve());
+
+    /**
+     * Eine verwaltende Aktion an einer Anfrage. Seerr lehnt eine Aktion ohne Recht auch mit 401 ab (am echten Seerr 3.5.1 gemessen): das ist keine
+     * abgelaufene Anmeldung, daher Code SEERR_DENIED (die Oberflaeche prueft dann still, ob die Sitzung noch gilt); 404 heisst, die Anfrage gibt es nicht
+     * mehr (SEERR_GONE); 409, sie ist nicht mehr ausstehend (SEERR_CHANGED).
+     */
+    async function requestManage(fn) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (e instanceof SeerrError && (e.status === 401 || e.status === 403)) throw Object.assign(new SeerrError('Das ist mit deinem Seerr-Konto nicht möglich, oder die Anfrage hat sich inzwischen geändert.'), { status: e.status, code: 'SEERR_DENIED' });
+        if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError('Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
+        if (e instanceof SeerrError && e.status === 409) throw Object.assign(new SeerrError('Die Anfrage wartet nicht mehr auf eine Entscheidung und lässt sich nicht mehr ändern.'), { status: 409, code: 'SEERR_CHANGED' });
+        throw e;
+      }
+    }
+
+    /**
+     * Uebernimmt eine eben erhaltene Seerr-Sitzung fuer das Profil, fuer das sie angelegt wurde (beide Anmeldewege). Gespeichert werden nur die Sitzung
+     * und das Jellyfin-Konto, das Seerr dazu nennt (/auth/me); eine Anmeldung ohne Jellyfin-Konto gilt nicht. mustBelongTo: ohne Passwort hat das Profil
+     * sich selbst bestaetigt, die Sitzung muss also seinem Jellyfin-Konto gehoeren. Eine vorige Sitzung des Profils wird bei Seerr abgemeldet.
+     */
+    async function adoptSeerrSession({ owner, url, cookie, userName, mustBelongTo = null }) {
+      const fresh = seerrClient(url, cookie);
+      let me;
+      try {
+        me = await fresh.me();
+      } catch (e) {
+        fresh.logout();
+        throw e;
+      }
+      if (!me.jellyfinUserId) {
+        fresh.logout();
+        throw new SeerrError('Seerr nennt zu dieser Anmeldung kein Jellyfin-Konto');
+      }
+      if (mustBelongTo !== null && !sameUser(me.jellyfinUserId, mustBelongTo)) {
+        fresh.logout();
+        throw new SeerrError(Seerr.QC_PROBLEMS.foreignAccount, { code: 'QC_foreignAccount' });
+      }
+      // Wurde waehrend der Anmeldung das Profil gewechselt, gehoert die Sitzung keinem: sonst landete sie beim falschen Profil
+      if (config.data.activeServerId !== owner) {
+        fresh.logout();
+        throw new SeerrError('Das Profil wurde inzwischen gewechselt. Bitte noch einmal verbinden.');
+      }
+      const before = config.getSeerr(owner);
+      config.saveSeerr({ url, userName: userName || me.displayName || '', jellyfinUserId: me.jellyfinUserId, secret: cookie });
+      if (before?.secret && before.secret !== cookie) seerrLogout(before.url, before.secret);
+      foreignDropped.delete(owner);
+      buildSeerr();
+      seerrUser = { id: me.id, displayName: me.displayName, permissions: me.permissions };
+      return publicState();
+    }
 
     /**
      * Prueft das Seerr des aktiven Profils: /status (erreichbar?) und /auth/me (Sitzung gueltig, welches Konto, welche Rechte?) unter EINER Frist.
@@ -595,30 +648,32 @@
           if (!name) throw new SeerrError('Jellyfin-Konto fehlt');
           const probed = await probeSeerr(url, fetch);
           const r = await loginWithJellyfin(probed.url, name, String(password ?? ''), fetch);
-          const fresh = seerrClient(probed.url, r.cookie);
-          let me;
+          return adoptSeerrSession({ owner, url: probed.url, cookie: r.cookie, userName: name });
+        }),
+      /**
+       * Seerr ohne Passwort (wie connectSeerrWithQuickConnect der Apple-App): Seerr holt einen Quick-Connect-Code, die App bestaetigt ihn mit der
+       * Sitzung dieses Profils bei Jellyfin, Seerr liefert die Sitzung. Nur ueber https oder im Heimnetz (die Seerr-Adresse oder der Jellyfin-Server
+       * gilt als Heimnetz), genau ein Code, sofort, nie wiederholt; die Sitzung muss dem Jellyfin-Konto dieses Profils gehoeren.
+       */
+      seerrConnectQuick: ({ url } = {}) =>
+        seerrCall(async () => {
+          const owner = config.data.activeServerId;
+          if (!owner || !client) throw new SeerrError('Zuerst bei Jellyfin anmelden');
+          const server = config.data.servers.find((s) => s.id === owner);
+          const probed = await probeSeerr(url, fetch);
+          // Heimnetz: die Seerr-Adresse ist privat, oder die Verbindung zu Jellyfin gilt als Heimnetz (dieselbe Pruefung wie die Bitratensteuerung)
+          const home = Bitrate.addressLooksLocal(probed.url) || (await refreshLimits().catch(() => null))?.home === true;
+          if (!Seerr.quickConnectAllowed(probed.url, home)) throw new SeerrError(Seerr.QC_PROBLEMS.notAllowed, { code: 'QC_notAllowed' });
+          const { code, secret } = await Seerr.quickConnectInitiate(probed.url, fetch);
+          let authorized = false;
           try {
-            me = await fresh.me();
-          } catch (e) {
-            fresh.logout();
-            throw e;
+            authorized = (await client.quickConnectAuthorize(code)) !== false;
+          } catch {
+            authorized = false;
           }
-          if (!me.jellyfinUserId) {
-            fresh.logout();
-            throw new SeerrError('Seerr nennt zu dieser Anmeldung kein Jellyfin-Konto');
-          }
-          // Wurde waehrend der Anmeldung das Profil gewechselt, gehoert die Sitzung keinem: sonst landete sie beim falschen Profil
-          if (config.data.activeServerId !== owner) {
-            fresh.logout();
-            throw new SeerrError('Das Profil wurde inzwischen gewechselt. Bitte noch einmal verbinden.');
-          }
-          const before = config.getSeerr(owner);
-          config.saveSeerr({ url: probed.url, userName: name, jellyfinUserId: me.jellyfinUserId, secret: r.cookie });
-          if (before?.secret && before.secret !== r.cookie) seerrLogout(before.url, before.secret);
-          foreignDropped.delete(owner);
-          buildSeerr();
-          seerrUser = { id: me.id, displayName: me.displayName, permissions: me.permissions };
-          return publicState();
+          if (!authorized) throw new SeerrError(Seerr.QC_PROBLEMS.unavailable, { code: 'QC_unavailable' });
+          const cookie = await Seerr.quickConnectAuthenticate(probed.url, secret, fetch);
+          return adoptSeerrSession({ owner, url: probed.url, cookie, userName: server?.userName ?? '', mustBelongTo: client.userId });
         }),
       /** Trennt Seerr vom aktiven Profil: die Sitzung wird bei Seerr abgemeldet und entfernt; die Adresse bleibt zum erneuten Verbinden vorbelegt. */
       seerrDisconnect: () =>
@@ -695,6 +750,12 @@
       },
       /** Titel, Jahr, Bild und Stand eines Titels fuer ein Plakat der Anfragen. */
       seerrMedia: (req) => seerrRead((s) => s.media(req?.mediaType, Number(req?.tmdbId))),
+      /** Eine Seite einer Entdecken-Liste (Reihen der Startseite und Seite "Beliebte Filme/Serien"); row: Kennung aus HomeRows.DISCOVER. */
+      seerrDiscover: ({ path, page = 1, genre = null } = {}) => seerrRead((s) => s.discover(String(path ?? ''), { page, genre })),
+      seerrGenres: (mediaType) => seerrRead((s) => s.genres(mediaType)),
+      /** Merkliste: die juengsten gemerkten Titel; merken bzw. entfernen (Seite eines Seerr-Titels). */
+      seerrWatchlist: () => seerrRead((s) => s.watchlist()),
+      seerrSetWatchlist: ({ on, mediaType, tmdbId, title } = {}) => seerrCall(() => requireSeerr().setWatchlisted(on === true, { mediaType, tmdbId: Number(tmdbId), title })),
       /**
        * Aendert eine Anfrage (approve, decline, retry, withdraw, remove) mit der Sitzung des Benutzers; Seerr entscheidet. Seerr lehnt eine
        * Aktion ohne Recht auch mit 401 ab (am echten Seerr 3.5.1 gemessen): das ist keine abgelaufene Anmeldung, daher Code SEERR_DENIED (die
@@ -703,16 +764,35 @@
       async seerrRequestAction({ id, action } = {}) {
         const s = requireSeerr();
         notices.willChange(Number(id)); // was der Nutzer selbst ausloest, meldet die App ihm nicht
-        try {
-          await s.requestAction(Number(id), String(action ?? ''));
-        } catch (e) {
-          if (e instanceof SeerrError && (e.status === 401 || e.status === 403)) throw Object.assign(new SeerrError('Das ist mit deinem Seerr-Konto nicht möglich, oder die Anfrage hat sich inzwischen geändert.'), { status: e.status, code: 'SEERR_DENIED' });
-          if (e instanceof SeerrError && e.status === 404) throw Object.assign(new SeerrError('Diese Anfrage gibt es nicht mehr.'), { status: 404, code: 'SEERR_GONE' });
-          throw e;
-        }
+        await requestManage(() => s.requestAction(Number(id), String(action ?? '')));
         syncNotices({ force: true }).catch(() => {}); // nach einer eigenen Aktion sofort: ihr neuer Stand wird gemerkt
         return true;
       },
+      /**
+       * Anfragen verwalten (Apple-App Build 94/95): Staffeln oder Ziel einer ausstehenden Anfrage aendern (body: ganzer Stand, JCSeerrRequests.editBody),
+       * einen Titel als verfuegbar markieren. Fehler wie bei seerrRequestAction (SEERR_DENIED, SEERR_GONE; 409: nicht mehr ausstehend).
+       */
+      async seerrRequestUpdate({ id, body } = {}) {
+        notices.willChange(Number(id));
+        await requestManage(() => requireSeerr().updateRequest(Number(id), body));
+        syncNotices({ force: true }).catch(() => {});
+        return true;
+      },
+      async seerrMarkAvailable({ id, seerrMediaId, is4k = false } = {}) {
+        if (id) notices.willChange(Number(id));
+        await requestManage(() => requireSeerr().markAvailable(Number(seerrMediaId), { is4k: is4k === true }));
+        syncNotices({ force: true }).catch(() => {});
+        return true;
+      },
+      // Gemeldete Probleme (Apple-App Build 94): lesen, antworten, Stand aendern, loeschen; Fehler wie bei den Anfragen
+      seerrIssues: ({ open = true } = {}) => seerrRead((s) => s.issues({ open: open !== false, take: 50 })),
+      seerrIssueGet: (id) => seerrRead((s) => s.issue(Number(id))), // (seerrIssue ist das Melden, weiter unten)
+      seerrIssueComment: ({ id, message } = {}) => requestManage(() => requireSeerr().commentIssue(Number(id), message)).then(() => true),
+      seerrIssueResolve: ({ id, resolved } = {}) => requestManage(() => requireSeerr().setIssueResolved(Number(id), resolved === true)).then(() => true),
+      seerrIssueDelete: (id) => requestManage(() => requireSeerr().deleteIssue(Number(id))).then(() => true),
+      seerrServices: (movie) => seerrRead((s) => s.services(movie === true)),
+      seerrServiceChoices: ({ movie, serverId } = {}) => seerrRead((s) => s.serviceChoices(movie === true, Number(serverId))),
+      seerrRequesters: () => seerrRead((s) => s.requesters()),
 
       // ---------- Mitteilungen (Plan P17) ----------
       /** Liste, Einstellungen und Zahl des aktiven Profils; manages: das Konto sieht alle Anfragen (nur dann gibt es "Neue Anfrage"). */
@@ -743,6 +823,7 @@
         const next = {};
         if (typeof p?.enabled === 'boolean') next.enabled = p.enabled;
         if (typeof p?.system === 'boolean') next.system = p.system;
+        if (p?.offered === true) config.markNoticesOffered?.();
         if (Array.isArray(p?.kinds)) next.kinds = p.kinds.filter((k) => Notifications.KINDS.includes(k));
         notices.setPreferences(next);
         return noticesState();

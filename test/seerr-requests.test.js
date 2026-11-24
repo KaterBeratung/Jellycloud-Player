@@ -112,7 +112,7 @@ test('Anfrage lesen: Stand, Art, 4K-Stand bei 4K-Anfragen, Staffeln sortiert, ge
     seasons: [{ seasonNumber: 3, status: 5 }, { seasonNumber: 1, status: 5 }, { seasonNumber: 2, status: 2 }, { x: 1 }],
     requestedBy: { id: 3, displayName: 'Ben', email: 'geheim@example.com' }, modifiedBy: { id: 1 }
   });
-  assert.deepEqual(r, { id: 12, status: 2, is4k: false, created: '2026-11-16T12:00:00.000Z', mediaType: 'tv', tmdbId: 1399, mediaStatus: 4, seasons: [1, 2, 3], readySeasons: 2, requesterId: 3, requesterName: 'Ben', modifierId: 1 });
+  assert.deepEqual(r, { id: 12, status: 2, is4k: false, created: '2026-11-16T12:00:00.000Z', mediaType: 'tv', tmdbId: 1399, mediaStatus: 4, seasons: [1, 2, 3], readySeasons: 2, requesterId: 3, requesterName: 'Ben', modifierId: 1, modifierName: '', updated: null, seerrMediaId: null, serverId: null, profileId: null, rootFolder: null, languageProfileId: null, tags: [] });
   assert.equal(normalizeRequest({ id: 1, is4k: true, media: { tmdbId: 5, mediaType: 'movie', status: 5, status4k: 3 } }).mediaStatus, 3, 'bei einer 4K-Anfrage der Stand der 4K-Fassung');
   assert.equal(normalizeRequest({ id: 1, status: 9, media: { tmdbId: 5, mediaType: 'movie' } }).status, null, 'unbekannter Stand');
   assert.equal(normalizeRequest({ id: 1, media: { tmdbId: 5, mediaType: 'movie' }, requestedBy: { jellyfinUsername: 'anna' } }).requesterName, 'anna');
@@ -146,14 +146,56 @@ test('Fall 3: normaler Benutzer: nur "Zurueckziehen", nur fuer eigene wartende; 
 test('Fall 4: mit "Anfragen verwalten" (oder Administrator): Genehmigen und Ablehnen wartender, Erneut versuchen gescheiterter, Entfernen jeder', () => {
   for (const permissions of [16, 2, 16 | 32]) {
     const who = { permissions, userId: 1 };
-    assert.deepEqual(Requests.actionsFor({ status: 1, requesterId: 3 }, who), ['approve', 'decline', 'remove'], `Rechte ${permissions}`);
+    assert.deepEqual(Requests.actionsFor({ status: 1, requesterId: 3 }, who), ['approve', 'decline', 'edit', 'remove'], `Rechte ${permissions}`);
     assert.deepEqual(Requests.actionsFor({ status: 4, requesterId: 3 }, who), ['retry', 'remove']);
     assert.deepEqual(Requests.actionsFor({ status: 2, requesterId: 3 }, who), ['remove']);
-    assert.deepEqual(Requests.actionsFor({ status: 1, requesterId: 1 }, who), ['approve', 'decline', 'remove'], 'eigene wartende: verwalten statt zurueckziehen');
+    assert.deepEqual(Requests.actionsFor({ status: 1, requesterId: 1 }, who), ['approve', 'decline', 'edit', 'remove'], 'eigene wartende: verwalten statt zurueckziehen');
   }
   assert.deepEqual(Requests.actionsFor({ status: 1, requesterId: 3 }, { permissions: 16384, userId: 1 }), [], '"Anfragen ansehen" allein: sehen, nicht aendern');
   assert.deepEqual([...Requests.DESTRUCTIVE].sort(), ['decline', 'remove', 'withdraw']);
   assert.deepEqual(Object.keys(REQUEST_ACTIONS).sort(), ['approve', 'decline', 'remove', 'retry', 'withdraw']);
+});
+
+test('Build 94/95: Staffeln aendern, Anfrage aendern, Als verfuegbar markieren nach Stand und Recht', () => {
+  const tv = (status, extra = {}) => ({ status, requesterId: 3, mediaType: 'tv', mediaStatus: 2, seerrMediaId: 77, ...extra });
+  const manager = { permissions: 16, userId: 1 };
+  assert.deepEqual(Requests.actionsFor(tv(1), manager), ['approve', 'decline', 'seasons', 'edit', 'remove'], 'Verwalter: ausstehende Serie');
+  assert.deepEqual(Requests.actionsFor(tv(1, { requesterId: 1 }), { permissions: 32, userId: 1 }), ['seasons', 'withdraw'], 'eigene ausstehende Serie ohne erweiterte Anfragen: Staffeln, nicht das Ziel');
+  assert.deepEqual(Requests.actionsFor(tv(1, { requesterId: 1 }), { permissions: 32 | 8192, userId: 1 }), ['seasons', 'edit', 'withdraw'], 'mit erweiterten Anfragen auch das Ziel');
+  assert.deepEqual(Requests.actionsFor(tv(1), { permissions: 32 | 8192, userId: 1 }), [], 'fremde Anfrage ohne Verwalten: nichts');
+  assert.deepEqual(Requests.actionsFor({ ...tv(1), mediaType: 'movie' }, manager), ['approve', 'decline', 'edit', 'remove'], 'Filme haben keine Staffeln');
+  for (const status of [2, 4, 5]) assert.ok(Requests.actionsFor(tv(status), manager).includes('available'), `Stand ${status}: als verfuegbar markieren`);
+  assert.ok(!Requests.actionsFor(tv(2, { mediaStatus: 5 }), manager).includes('available'), 'schon verfuegbar');
+  assert.ok(!Requests.actionsFor(tv(2, { seerrMediaId: null }), manager).includes('available'), 'ohne Seerr-Nummer des Titels');
+  assert.ok(!Requests.actionsFor(tv(3), manager).includes('available'), 'abgelehnte nicht');
+  assert.ok(!Requests.actionsFor(tv(2), { permissions: 32, userId: 3 }).includes('available'), 'ohne Verwalten nicht');
+  assert.deepEqual([...Requests.CONFIRMED], ['available']);
+});
+
+test('Einzelheiten einer Anfrage: wer wann; wer entschieden hat nur, wenn es nicht der Anfragende war; eigene "von dir"', () => {
+  const t = (k, v = {}) => ({ 'req.detail.you': 'dir', 'req.detail.asked': 'Angefragt', 'req.detail.askedBy': `Angefragt von ${v.who}`, 'req.detail.askedOn': `Angefragt am ${v.date}`, 'req.detail.askedByOn': `Angefragt von ${v.who} am ${v.date}`, 'req.detail.approved': `Genehmigt von ${v.who}`, 'req.detail.declined': `Abgelehnt von ${v.who}` })[k];
+  const r = { status: 2, requesterId: 3, requesterName: 'Ben', created: '2026-11-16T12:00:00.000Z', modifierId: 1, modifierName: 'Demo' };
+  assert.deepEqual(Requests.detailLines(r, { userId: 9, lang: 'de', t }), ['Angefragt von Ben am 16. November 2026', 'Genehmigt von Demo']);
+  assert.deepEqual(Requests.detailLines(r, { userId: 1, lang: 'de', t }), ['Angefragt von Ben am 16. November 2026', 'Genehmigt von dir']);
+  assert.deepEqual(Requests.detailLines({ ...r, status: 3 }, { userId: 3, lang: 'de', t }), ['Angefragt von dir am 16. November 2026', 'Abgelehnt von Demo']);
+  assert.deepEqual(Requests.detailLines({ ...r, modifierId: 3 }, { userId: 9, lang: 'de', t }), ['Angefragt von Ben am 16. November 2026'], 'automatisch genehmigt: niemand genannt');
+  assert.deepEqual(Requests.detailLines({ ...r, status: 1 }, { userId: 9, lang: 'de', t }), ['Angefragt von Ben am 16. November 2026'], 'ausstehend: noch nicht entschieden');
+  assert.deepEqual(Requests.detailLines({ ...r, created: null, requesterName: '' }, { userId: 9, lang: 'de', t }), ['Angefragt', 'Genehmigt von Demo']);
+});
+
+test('Staffeln und Ziel aendern: waehlbar, speichern, vollstaendiger Koerper wie Seerr ihn verlangt', () => {
+  assert.ok(Requests.seasonEditSelectable({ number: 2, status: 2 }, [2]), 'eigene angefragte Staffel bleibt waehlbar');
+  assert.ok(!Requests.seasonEditSelectable({ number: 3, status: 5 }, [2]), 'vorhandene nicht');
+  assert.ok(Requests.seasonEditSelectable({ number: 4, status: 0 }, [2]), 'offene ja');
+  assert.ok(!Requests.seasonEditCanSave([], [2]), 'mindestens eine');
+  assert.ok(!Requests.seasonEditCanSave([2], [2]), 'nur geaendert');
+  assert.ok(Requests.seasonEditCanSave([4, 2], [2]));
+  const movie = { mediaType: 'movie', requesterId: 3, seasons: [], tags: [7], languageProfileId: null, is4k: false };
+  assert.deepEqual(Requests.editBody(movie, { serverId: 1, profileId: 6, rootFolder: '/kinder', userId: 3 }), { mediaType: 'movie', serverId: 1, profileId: 6, rootFolder: '/kinder', tags: [7] }, 'Film: alles genannt, Tags unveraendert, kein userId');
+  const show = { mediaType: 'tv', requesterId: 3, seasons: [3, 1], tags: [], languageProfileId: 1, is4k: false };
+  assert.deepEqual(Requests.editBody(show, { serverId: 0, profileId: null, rootFolder: null, userId: 2 }), { mediaType: 'tv', serverId: 0, profileId: null, rootFolder: null, tags: [], seasons: [1, 3], languageProfileId: 1, userId: 2 }, 'Serie: Staffeln und Sprachprofil mit, neuer Anfragender');
+  assert.ok(Requests.canChangeRequester(16 | 8) && Requests.canChangeRequester(2) && !Requests.canChangeRequester(16), 'Anfragen als: Anfragen und Benutzer verwalten');
+  assert.deepEqual(Requests.serversFor([{ id: 2, name: 'B', isDefault: false, is4k: false }, { id: 1, name: 'Z', isDefault: true, is4k: false }, { id: 3, name: 'A', isDefault: false, is4k: false }, { id: 4, name: 'UHD', isDefault: true, is4k: true }], { is4k: false }).map((s) => s.id), [1, 3, 2], 'gleiche Aufloesung, Standard zuerst, dann nach Namen');
 });
 
 test('Angabe unter dem Plakat: Jahr, Staffeln oder Art, 4K, im Verwalten der Anfragende', () => {
@@ -232,6 +274,31 @@ test('Fall 3: normaler Benutzer: Seerr liefert nur die eigenen; Genehmigen lehnt
   assert.equal((await b.checkConnection()).seerr.state, 'connected', 'die Sitzung gilt weiter');
   assert.equal(await b.seerrRequestAction({ id: 2, action: 'withdraw' }), true);
   assert.deepEqual(ids(await b.seerrRequests({ scope: 'mine' })), [1]);
+});
+
+test('Build 94/95 am Testserver: Staffeln aendern, Ziel aendern, als verfuegbar markieren; nicht mehr ausstehend ergibt SEERR_CHANGED', async () => {
+  const b = await signedIn(16 | 32 | 8);
+  await seed('count=2&open=2&by=3&type=tv');
+  await b.seerrRequestUpdate({ id: 1, body: { mediaType: 'tv', seasons: [1, 2] } });
+  assert.deepEqual(SEERR.lastRequestEdit, { id: 1, body: { mediaType: 'tv', seasons: [1, 2] } });
+  const [r] = (await b.seerrRequests({ scope: 'manage' })).requests.filter((x) => x.id === 1);
+  assert.deepEqual(r.seasons, [1, 2], 'die Anfrage hat jetzt beide Staffeln');
+  assert.equal(r.languageProfileId, 1, 'Sprachprofil gelesen (wird beim Aendern mitgeschickt)');
+  const servers = await b.seerrServices(false);
+  assert.deepEqual(servers.map((s) => s.name), ['Sonarr']);
+  const choices = await b.seerrServiceChoices({ movie: false, serverId: 0 });
+  assert.deepEqual(choices, { profiles: [{ id: 4, name: 'HD-1080p' }, { id: 6, name: 'Ultra-HD' }], folders: ['/serien', '/serien-alt'] });
+  assert.deepEqual((await b.seerrRequesters()).map((u) => u.name), ['Demo', 'Demo Zwei', 'ben']);
+  const body = Requests.editBody(r, { serverId: 0, profileId: 6, rootFolder: '/serien-alt', userId: 2 });
+  await b.seerrRequestUpdate({ id: 1, body });
+  assert.deepEqual(SEERR.lastRequestEdit.body, { mediaType: 'tv', serverId: 0, profileId: 6, rootFolder: '/serien-alt', tags: [], seasons: [1, 2], languageProfileId: 1, userId: 2 });
+  await b.seerrRequestAction({ id: 2, action: 'approve' });
+  await assert.rejects(() => b.seerrRequestUpdate({ id: 2, body: { mediaType: 'tv', seasons: [1] } }), (e) => e.code === 'SEERR_CHANGED');
+  const approved = (await b.seerrRequests({ scope: 'manage' })).requests.find((x) => x.id === 2);
+  assert.ok(Requests.actionsFor(approved, { permissions: 16, userId: 1 }).includes('available'));
+  await b.seerrMarkAvailable({ id: 2, seerrMediaId: approved.seerrMediaId });
+  assert.deepEqual(SEERR.markedAvailable, [approved.seerrMediaId]);
+  assert.equal((await b.seerrRequests({ scope: 'manage' })).requests.find((x) => x.id === 2).mediaStatus, 5, 'der Titel gilt jetzt als verfuegbar');
 });
 
 test('Fall 4: mit "Anfragen verwalten": Genehmigen, Ablehnen, Erneut versuchen, Entfernen; eine entfernte Anfrage gibt es danach nicht mehr (SEERR_GONE)', async () => {

@@ -1,8 +1,8 @@
 import { h, icon, $ } from '../dom.js';
 import { t, getLocale } from '../i18n.js';
 import { state, updateSettings } from '../state.js';
-import { api, mapImage } from '../api.js';
-import { infoBlock, lazyImage, pageStatus, showPageStatus, row } from '../ui.js';
+import { api, mapImage, itemHref } from '../api.js';
+import { infoBlock, lazyImage, pageStatus, showPageStatus, row, toast } from '../ui.js';
 import { seerrTitleTag } from '../tags.js';
 import { invalidate } from '../router.js';
 import { playItem, resolveSeriesTarget } from '../actions.js';
@@ -130,6 +130,37 @@ export function seerrTitleView({ type, id }) {
     return b;
   }
 
+  /**
+   * "Merken"/"Gemerkt" (wie SeerrDetailSheet.watchlistButton der Apple-App): schaltet sofort um und schickt es an Seerr; scheitert es, steht der Knopf
+   * wieder auf dem alten Stand und ein Hinweis sagt warum. Ein zweiter Klick waehrenddessen zaehlt nicht. Danach zeigt die Startseite die Merkliste neu.
+   */
+  let watchBusy = false;
+  function watchlistButton() {
+    const on = details.onWatchlist;
+    const b = h('button', { class: `btn glass lg${watchBusy ? ' loading' : ''}`, type: 'button', 'data-action': 'watchlist', 'aria-pressed': String(on) }, icon(on ? 'bookmark-fill' : 'bookmark', 20), h('span', null, t(on ? 'seerr.page.watchlisted' : 'seerr.page.watchlist')));
+    b.disabled = watchBusy;
+    b.addEventListener('click', async () => {
+      if (watchBusy || !details) return;
+      const next = !details.onWatchlist;
+      watchBusy = true;
+      details.onWatchlist = next;
+      paintActions();
+      try {
+        await window.jc.seerrSetWatchlist({ on: next, mediaType, tmdbId, title: titleText() });
+        invalidate();
+        document.dispatchEvent(new CustomEvent('seerr-changed'));
+      } catch (e) {
+        if (destroyed) return;
+        details.onWatchlist = !next;
+        toast(t('seerr.error', { msg: e.message }), { type: 'error' });
+      } finally {
+        watchBusy = false;
+        if (!destroyed) paintActions();
+      }
+    });
+    return b;
+  }
+
   /** Knoepfe, Stand und Hinweis nach dem tatsaechlichen Stand. */
   function paintActions() {
     const tag = seerrTitleTag(status, { request: details?.latestRequest ?? null, size: 'regular', surface: 'page' });
@@ -137,6 +168,10 @@ export function seerrTitleView({ type, id }) {
     const list = [];
     if (playable()) list.push(playButton());
     if (canRequestMore()) list.push(requestButton(!playable()));
+    // "Mediathek" (Apple-App Build 95): liegt der Titel in der Mediathek und nennt Seerr ihn vorhanden, fuehrt der Knopf zu seiner Detailseite
+    if (libraryItem && SeerrState.isPresent(status)) list.push(h('a', { class: 'btn glass lg', href: itemHref(libraryItem), 'data-action': 'open-library' }, icon('film', 20), h('span', null, t('seerr.page.library'))));
+    // Merkliste (Build 94): nur, wenn Seerr sagt, ob der Titel gemerkt ist (aeltere Fassungen nennen es nicht)
+    if (user() && typeof details?.onWatchlist === 'boolean') list.push(watchlistButton());
     // Seerr eingerichtet, Benutzer aber (noch) nicht bestaetigt: den Stand sagen statt still keine Anfrage anzubieten
     const s = seerrState();
     if (state.seerr && s !== 'connected') {

@@ -57,7 +57,8 @@ module.exports = async (ctx) => {
   check('Standard: das Banner ist da', await (async () => { await homeReady(); return waitFor(`!!document.querySelector('.home .hero .hero-slide')`, 8000); })());
   const base = await rowTitles();
   console.log('INFO Reihen im Standard:', JSON.stringify(base));
-  check('Standard: mehrere Reihen, "Filme im Trend" steht zuletzt', base.length >= 4 && base[base.length - 1] === 'Filme im Trend', base.join(' | '));
+  // Seit 1.2.25 (Apple-App Build 94): unter "Filme im Trend" folgen die vier Entdecken-Reihen
+  check('Standard: mehrere Reihen, "Filme im Trend" vor den Entdecken-Reihen, "Demnächst: Serien" zuletzt', base.length >= 4 && base.indexOf('Filme im Trend') === base.indexOf('Beliebte Filme') - 1 && base[base.length - 1] === 'Demnächst: Serien', base.join(' | '));
   const slidesDefault = await ctx.run(`document.querySelectorAll('.hero-slide').length`);
   check('Standard: bis zu 6 Folien', slidesDefault >= 3 && slidesDefault <= 6, String(slidesDefault));
   check('Standard: die Einstellungen haben die Standardwerte der Startseite', JSON.stringify(cfgHome()) === JSON.stringify({ hero: true, heroSlides: 6, rankingWindow: 'week', order: [], hidden: [] }), JSON.stringify(cfgHome()));
@@ -67,7 +68,7 @@ module.exports = async (ctx) => {
   check('Einstellungen > Startseite: die Seite hat Bereiche Banner und Reihen', await waitFor(`document.querySelectorAll('.settings-panel .group-title').length >= 2 && !!document.querySelector('.home-rows')`, 4000));
   check('...die Seitenleiste hat den Eintrag "Startseite" und er ist gewaehlt', await ctx.run(`document.querySelector('.snav.on')?.textContent.trim() === 'Startseite'`));
   const names = await listNames();
-  check('...die Liste zeigt alle Reihen in der Standardreihenfolge', names.length >= 4 && names[names.length - 1] === 'Filme im Trend (Seerr)' && names.includes('Weiterschauen') && names.includes('Top 10 Filme') && names.includes('Favoriten'), names.join(' | '));
+  check('...die Liste zeigt alle Reihen in der Standardreihenfolge', names.length >= 4 && names[names.length - 1] === 'Demnächst: Serien (Seerr)' && names.indexOf('Meine Anfragen (Seerr)') === names.indexOf('Als Nächstes') + 1 && names.includes('Filme im Trend (Seerr)') && names.includes('Weiterschauen') && names.includes('Top 10 Filme') && names.includes('Favoriten'), names.join(' | '));
   check('...jede Reihe hat Nummer, zwei Pfeile und einen Schalter, der oberste kann nicht hoch, der unterste nicht runter', await ctx.run(`(() => { const rs = [...document.querySelectorAll('.home-row')]; return rs.every((r) => r.querySelectorAll('.home-row-move button').length === 2 && r.querySelector('button.switch') && r.querySelector('.home-row-pos')) && rs[0].querySelector('.home-row-move button').disabled && rs.at(-1).querySelectorAll('.home-row-move button')[1].disabled; })()`));
   await ctx.capture(path.join(out, 'HC-einstellungen.png'));
 

@@ -23,6 +23,20 @@ const PLAY = 'M231 193L231 271L299 232Z';
 let active = null;
 const waiting = [];
 
+/**
+ * Vorlauf (Apple-App Build 95, SplashController.runStart): Laedt die Oberflaeche noch, waehrend die Animation liefe, ruckelte sie. Deshalb haelt sie ihr erstes
+ * Bild, bis die Oberflaeche bereit ist (splashReady: die Startseite steht, oder es gibt keine), hoechstens MAX_LEAD_MS, und laeuft dann ohne Ladearbeit.
+ */
+const MAX_LEAD_MS = 1500;
+let ready = false;
+let onReady = null;
+/** Die Oberflaeche ist bereit (Startseite aufgebaut, Anmeldung zu sehen oder ein Fehler): die Animation darf laufen. */
+export function splashReady() {
+  if (ready) return;
+  ready = true;
+  onReady?.();
+}
+
 /** Laeuft gerade eine Startanimation (oder wartet sie darauf, dass das Fenster sichtbar wird)? */
 export const splashActive = () => !!active;
 
@@ -101,11 +115,34 @@ export function playSplash() {
     document.body.append(el);
     html.classList.toggle('splash-calm', calm);
     html.classList.add('is-splash');
-    later(REVEAL_MS * k, () => html.classList.add('splash-reveal'));
-    later(TOTAL_MS * k, finish);
+    // Erstes Bild halten (CSS: #splash.hold haelt alle Animationen an), bis die Oberflaeche bereit ist oder die Frist ablaeuft; dann zwei Bildtakte, damit das
+    // Zeichnen der fertigen Seite nicht in den ersten Takt der Animation faellt
+    let started = false;
+    const run = () => {
+      if (started || finished) return;
+      started = true;
+      onReady = null;
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (finished) return;
+          el.classList.remove('hold');
+          later(REVEAL_MS * k, () => html.classList.add('splash-reveal'));
+          later(TOTAL_MS * k, finish);
+        })
+      );
+    };
+    if (ready) run();
+    else {
+      el.classList.add('hold');
+      onReady = run;
+      later(MAX_LEAD_MS, run);
+    }
     // Ueberspringen: Klick oder Taste. Der Grund blendet von seinem jetzigen Stand aus, die Oberflaeche kommt sofort.
     me.skip = () => {
       if (finished || el.classList.contains('skip')) return;
+      started = true; // auch waehrend des Vorlaufs: sofort zur Oberflaeche
+      onReady = null;
+      el.classList.remove('hold');
       el.style.setProperty('--sp-op', getComputedStyle(el).opacity);
       el.classList.add('skip');
       html.classList.add('is-splash', 'splash-reveal', 'splash-skip');

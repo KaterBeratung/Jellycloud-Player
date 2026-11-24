@@ -31,14 +31,28 @@
   const TOP_MOVIES = 'top10Movies';
   const TOP_SERIES = 'top10Series';
   const RANKING_ROWS = [TOP_MOVIES, TOP_SERIES];
-  const STATIC_ROWS = ['continue', 'nextUp', TOP_MOVIES, TOP_SERIES, 'favorites', 'trending'];
+  /** "Meine Anfragen" (Apple-App Build 94): die juengsten eigenen Anfragen bei Seerr mit ihrem Stand als Tag, hoechstens MY_REQUESTS_LIMIT. */
+  const MY_REQUESTS = 'myRequests';
+  const MY_REQUESTS_LIMIT = 10;
+  /** Merkliste von Seerr (Build 94): die juengsten gemerkten Titel, hoechstens WATCHLIST_LIMIT. */
+  const WATCHLIST = 'seerrWatchlist';
+  const WATCHLIST_LIMIT = 20;
+  /** Entdecken bei Seerr (Build 94): beliebte und kommende Filme und Serien, in der Standardreihenfolge ganz unten. */
+  const DISCOVER = {
+    seerrPopularMovies: { path: '/discover/movies', mediaType: 'movie', browse: true },
+    seerrPopularSeries: { path: '/discover/tv', mediaType: 'tv', browse: true },
+    seerrUpcomingMovies: { path: '/discover/movies/upcoming', mediaType: 'movie', browse: false },
+    seerrUpcomingSeries: { path: '/discover/tv/upcoming', mediaType: 'tv', browse: false }
+  };
+  const DISCOVER_ROWS = Object.keys(DISCOVER);
+  const STATIC_ROWS = ['continue', 'nextUp', MY_REQUESTS, WATCHLIST, TOP_MOVIES, TOP_SERIES, 'favorites', 'trending', ...DISCOVER_ROWS];
   /** Stehen in der Standardreihenfolge ganz oben: wer etwas angefangen hat, will zuerst dort weitermachen, und die naechste Folge gehoert direkt darunter. */
   const TOP_ROWS = ['continue', 'nextUp'];
   /**
-   * Reihen, die es nur mit Seerr gibt (Trend, Top 10): ohne Seerr bleiben sie von der Startseite fort; ihr gemerkter Platz und ob sie
-   * ausgeblendet sind, bleiben.
+   * Reihen, die es nur mit Seerr gibt (Trend, Anfragen, Merkliste, Top 10, Entdecken): ohne Seerr bleiben sie von der Startseite fort; ihr gemerkter
+   * Platz und ob sie ausgeblendet sind, bleiben.
    */
-  const SEERR_ROWS = ['trending', ...RANKING_ROWS];
+  const SEERR_ROWS = ['trending', MY_REQUESTS, WATCHLIST, ...RANKING_ROWS, ...DISCOVER_ROWS];
 
   function clampInt(v, min, max, fallback) {
     const n = Math.round(Number(v));
@@ -69,11 +83,11 @@
   }
 
   /**
-   * Standardreihenfolge: Weiterschauen und Als Naechstes ganz oben, dann die Top 10, dann die Neuzugaenge je Bibliothek (in
-   * Bibliotheksreihenfolge), dann die uebrigen festen Reihen (Favoriten, Filme im Trend).
+   * Standardreihenfolge: Weiterschauen und Als Naechstes ganz oben, dann die eigenen Anfragen und die Merkliste, dann die Top 10, dann die
+   * Neuzugaenge je Bibliothek (in Bibliotheksreihenfolge), dann die uebrigen festen Reihen (Favoriten, Filme im Trend, Entdecken).
    */
   function defaultOrder(libraryIds) {
-    const first = [...TOP_ROWS, ...RANKING_ROWS];
+    const first = [...TOP_ROWS, MY_REQUESTS, WATCHLIST, ...RANKING_ROWS];
     return [...first, ...(libraryIds || []).map((id) => `latest:${id}`), ...STATIC_ROWS.filter((id) => !first.includes(id))];
   }
 
@@ -120,5 +134,5 @@
     return out;
   }
 
-  return { LIMITS, DEFAULTS, STATIC_ROWS, TOP_ROWS, TOP_MOVIES, TOP_SERIES, RANKING_ROWS, SEERR_ROWS, homeConfig, defaultOrder, arrangeAll, arrangeRows, moveRow };
+  return { LIMITS, DEFAULTS, STATIC_ROWS, TOP_ROWS, TOP_MOVIES, TOP_SERIES, RANKING_ROWS, MY_REQUESTS, MY_REQUESTS_LIMIT, WATCHLIST, WATCHLIST_LIMIT, DISCOVER, DISCOVER_ROWS, SEERR_ROWS, homeConfig, defaultOrder, arrangeAll, arrangeRows, moveRow };
 });

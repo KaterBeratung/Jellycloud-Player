@@ -7,13 +7,15 @@ import { mediaTag } from '../tags.js';
 import { invalidate } from '../router.js';
 import { seerrState, runSeerrCheck } from '../connection.js';
 import { openSeerrTitle } from '../seerr-open.js';
+import { chooseSeasons } from './season-chooser.js';
+import { editRequestTarget } from './request-editor.js';
 
 const SeerrState = window.JCSeerrState; // Staende und Rechte (src/shared/seerr-state.js)
 const Requests = window.JCSeerrRequests; // Blaettern, Aktionen, Angabe unter dem Plakat (src/shared/seerr-requests.js)
 const Tags = window.JCMediaTags; // Tag eines Stands (src/shared/media-tags.js)
 
 const TMDB_PATH = /^\/[\w-]{8,64}\.(?:jpg|jpeg|png|webp)$/;
-const ACTION_ICONS = { approve: 'check-circle', decline: 'x', retry: 'refresh', withdraw: 'back', remove: 'trash' };
+const ACTION_ICONS = { approve: 'check-circle', decline: 'x', retry: 'refresh', seasons: 'layers', edit: 'edit', available: 'check', withdraw: 'back', remove: 'trash' };
 
 /**
  * Gemerkt ueber den Aufbau der Seite hinaus (Neu laden baut sie neu, ein Reiterwechsel auch): Ansicht, Anzeige und wie viel geladen war, damit
@@ -105,6 +107,10 @@ export function requestsView() {
         (v) => setFilter(v)
       )
     );
+    // Gemeldete Probleme (Apple-App Build 94: im Menue der Ansicht; hier ein Knopf neben der Anzeige): nur mit einem der Rechte dafuer
+    if (Requests.issues.shows(perms())) {
+      controls.append(h('a', { class: 'btn glass sm', href: '#/issues', 'data-action': 'issues' }, icon('warning', 16), h('span', null, t('issues.title'))));
+    }
   }
 
   function setScope(next) {
@@ -210,14 +216,30 @@ export function requestsView() {
     if (busy.has(r.id)) return;
     const acts = Requests.actionsFor(r, { permissions: perms(), userId: user()?.id ?? null });
     if (!acts.length) return;
-    // Entfernen steht abgesetzt am Ende (es gilt fuer jede Anfrage, die anderen nur fuer ihren Stand)
-    const entries = acts.flatMap((a, i) => [...(a === 'remove' && i > 0 ? [{ separator: true }] : []), { id: a, label: t(`req.act.${a}`), icon: ACTION_ICONS[a], danger: Requests.DESTRUCTIVE.includes(a) }]);
+    // Kopf: wer wann angefragt und wer entschieden hat (Apple-App Build 94). Entfernen steht abgesetzt am Ende (es gilt fuer jede Anfrage, die anderen nur fuer ihren Stand)
+    const head = Requests.detailLines(r, { userId: user()?.id ?? null, lang: getLocale(), t }).map((line) => ({ header: true, note: true, label: line }));
+    const entries = [...head, ...(head.length ? [{ separator: true }] : []), ...acts.flatMap((a, i) => [...(a === 'remove' && i > 0 ? [{ separator: true }] : []), { id: a, label: t(`req.act.${a}`), icon: ACTION_ICONS[a], danger: Requests.DESTRUCTIVE.includes(a) }])];
     openMenu(anchor, entries, { align: 'right', columns: false, onPick: (e) => act(r, e.id) });
   }
 
-  /** Eine Aktion einmal ausfuehren (ein zweiter Klick zaehlt nicht), destruktive nach der Rueckfrage; danach den Stand vom Server laden. */
-  async function act(r, action) {
-    if (busy.has(r.id) || destroyed) return;
+  /**
+   * Was eine Aktion schickt; null heisst abgebrochen. Staffeln aendern: erst die Auswahl (die Staffeln der Anfrage vorgewaehlt); Anfrage aendern: das Blatt mit
+   * Zielserver, Profil, Ordner und "Anfragen als" (request-editor.js); Als verfuegbar markieren: nach einer Rueckfrage.
+   */
+  async function prepare(r, action) {
+    if (action === 'seasons') {
+      const d = await window.jc.seerrDetails({ mediaType: 'tv', mediaId: r.tmdbId });
+      const seasons = d.seasonList.length ? await chooseSeasons({ title: titleOf(r), seasons: d.seasonList, own: r.seasons }) : null;
+      return seasons ? () => window.jc.seerrRequestUpdate({ id: r.id, body: { mediaType: 'tv', seasons } }) : null;
+    }
+    if (action === 'edit') {
+      const body = await editRequestTarget(r, { permissions: perms(), title: titleOf(r) });
+      return body ? () => window.jc.seerrRequestUpdate({ id: r.id, body }) : null;
+    }
+    if (action === 'available') {
+      const ok = await confirmDialog({ title: t('req.confirm.available'), text: t('req.confirm.availableText', { title: titleOf(r) }), confirmLabel: t('req.confirmBtn.available') });
+      return ok ? () => window.jc.seerrMarkAvailable({ id: r.id, seerrMediaId: r.seerrMediaId, is4k: r.is4k }) : null;
+    }
     if (Requests.DESTRUCTIVE.includes(action)) {
       const ok = await confirmDialog({
         title: t(`req.confirm.${action}`),
@@ -225,18 +247,37 @@ export function requestsView() {
         confirmLabel: t(`req.confirmBtn.${action}`),
         danger: true
       });
-      if (!ok || destroyed) return;
+      if (!ok) return null;
     }
-    busy.add(r.id);
+    return () => window.jc.seerrRequestAction({ id: r.id, action });
+  }
+
+  const failure = (e) => {
+    if (e.code === 'SEERR_AUTH') return runSeerrCheck();
+    toast(e.code === 'SEERR_DENIED' ? t('req.denied') : e.code === 'SEERR_GONE' ? t('req.gone') : e.code === 'SEERR_CHANGED' ? t('req.changed') : t('seerr.error', { msg: e.message }), { type: 'error' });
+    if (e.code === 'SEERR_DENIED') runSeerrCheck({ quiet: true }); // still nachsehen, ob die Sitzung noch gilt (gilt sie nicht: "Erneut anmelden")
+  };
+
+  /** Eine Aktion einmal ausfuehren (ein zweiter Klick zaehlt nicht), nach Auswahl bzw. Rueckfrage; danach den Stand vom Server laden. */
+  async function act(r, action) {
+    if (busy.has(r.id) || destroyed) return;
+    let run = null;
+    busy.add(r.id); // schon waehrend der Auswahl: ein zweites Menue derselben Anfrage oeffnet sich nicht
+    try {
+      run = await prepare(r, action);
+    } catch (e) {
+      if (!destroyed) failure(e);
+    }
+    if (!run || destroyed) {
+      busy.delete(r.id);
+      return;
+    }
     cards.get(r.id)?.paint();
     try {
-      await window.jc.seerrRequestAction({ id: r.id, action });
+      await run();
+      if (action === 'available' || action === 'seasons' || action === 'edit') toast(t(`req.done.${action}`));
     } catch (e) {
-      if (e.code === 'SEERR_AUTH') runSeerrCheck();
-      else {
-        toast(e.code === 'SEERR_DENIED' ? t('req.denied') : e.code === 'SEERR_GONE' ? t('req.gone') : t('seerr.error', { msg: e.message }), { type: 'error' });
-        if (e.code === 'SEERR_DENIED') runSeerrCheck({ quiet: true }); // still nachsehen, ob die Sitzung noch gilt (gilt sie nicht: "Erneut anmelden")
-      }
+      failure(e);
     } finally {
       busy.delete(r.id);
     }

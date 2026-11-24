@@ -68,7 +68,7 @@ module.exports = async (ctx) => {
     await go('#/settings/seerr');
     await type('.settings-panel input[inputmode=url]', `127.0.0.1:${PORT}`);
     await type('.settings-panel input[type=password]', 'demo');
-    await clickText('.settings-panel .btn.primary', 'Verbinden');
+    await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.24: Hauptknopf ist "Ohne Passwort verbinden"
     return waitFor(`!!document.querySelector('.settings-panel .status-row[data-state=connected]')`, 6000);
   };
   // Ein anderes Seerr-Konto (Mock: "demo2", eigene Sitzung); einen API-Schluessel gibt es nicht mehr
@@ -77,7 +77,7 @@ module.exports = async (ctx) => {
     await type('.settings-panel input[inputmode=url]', `http://127.0.0.1:${PORT}`);
     await type('.settings-panel input[autocomplete=username]', 'demo2');
     await type('.settings-panel input[type=password]', 'demo');
-    await clickText('.settings-panel .btn.primary', 'Verbinden');
+    await clickText('.settings-panel [data-action="seerr-password"]', 'Mit Passwort verbinden'); // seit 1.2.24: Hauptknopf ist "Ohne Passwort verbinden"
     return waitFor(`!!document.querySelector('.settings-panel .status-row[data-state=connected]') && /Jellyfin-Konto \\(demo2\\)/.test(document.querySelector('.settings-panel').innerText)`, 6000);
   };
   const disconnect = async () => {
@@ -87,6 +87,12 @@ module.exports = async (ctx) => {
     await clickText('.mdl .btn', 'Trennen');
     return waitFor(`!!document.querySelector('.settings-panel input.field')`, 4000);
   };
+
+  // Die Reihen aus Build 94 der Apple-App (Meine Anfragen, Merkliste, Entdecken; seerr-home-rows.js) sind hier ausgeblendet: dieses Szenario prueft allein
+  // "Filme im Trend" (ganz unten unter den uebrigen Reihen, drei Abfragen an Seerr)
+  await ctx.run(`window.jc.setSettings({ home: { hidden: ['myRequests', 'seerrWatchlist', 'seerrPopularMovies', 'seerrPopularSeries', 'seerrUpcomingMovies', 'seerrUpcomingSeries'] } }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+  await waitFor(`!!document.querySelector('.topbar')`, 8000);
+  await ctx.wait(1200);
 
   // ---------- Ohne Seerr: keine Reihe, kein Hinweis (E8) ----------
   await go('#/home');
