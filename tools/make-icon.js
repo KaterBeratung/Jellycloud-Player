@@ -4,6 +4,7 @@
 //  - Android je Dichte (mipmap-*): ic_launcher.png (altes Symbol: das abgerundete Quadrat), ic_launcher_round.png (Kreis aus der Mitte) und
 //    ic_launcher_foreground.png (Vordergrund des adaptiven Symbols, randlos: die Maske des Startbildschirms gibt die Form vor; ausserhalb der sichtbaren
 //    72 dp laufen die Randpixel weiter, damit beim Wackeln der Symbole keine Kante erscheint). Der Startbildschirm von Android 12+ nutzt denselben Vordergrund.
+//  - Android TV (seit 1.2.28): drawable-xhdpi/tv_banner.png (320 x 180), Symbol und Name auf der Flaeche ohne Glaskante.
 // Sichtbar ist beim adaptiven und runden Symbol der innere Teil der Vorlage ohne die leuchtende Glaskante (INNER), die Maske ersetzt sie.
 // Start: npm run icon (Electron; Bilder dekodiert und skaliert Chromium mit hoher Qualitaet)
 const { app, BrowserWindow } = require('electron');
@@ -132,6 +133,41 @@ async function build(srcBase64, jobs, inner) {
       g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
       g.clip();
       g.drawImage(base, ix, iy, side, side, 0, 0, S, S);
+    } else if (job.kind === 'banner') {
+      // TV-Banner (Android TV, 16:9): die Flaeche ohne Glaskante als Grund, links das Symbol, daneben der Name
+      const W = job.width, H = job.size;
+      c.width = W;
+      c.height = H;
+      g.imageSmoothingQuality = 'high';
+      // Grund: die Farben der Flaeche, stark weichgezeichnet (die Wolke darin wuerde neben dem Symbol stoeren), etwas abgedunkelt
+      const band = P * (H / W);
+      g.filter = 'blur(' + Math.round(H * 0.12) + 'px)';
+      g.drawImage(plate, 0, (P - band) / 2, P, band, -H * 0.2, -H * 0.2, W + H * 0.4, H + H * 0.4);
+      g.filter = 'none';
+      const shade = g.createLinearGradient(0, 0, W, 0);
+      shade.addColorStop(0, 'rgba(8,6,30,0.2)');
+      shade.addColorStop(1, 'rgba(8,6,30,0.5)');
+      g.fillStyle = shade;
+      g.fillRect(0, 0, W, H);
+      const ic = Math.round(H * 0.6);
+      const ix0 = Math.round(H * 0.15);
+      g.shadowColor = 'rgba(0,0,0,0.45)';
+      g.shadowBlur = H * 0.08;
+      g.shadowOffsetY = H * 0.02;
+      g.drawImage(base, L, T, R - L, B - T, ix0, (H - ic) / 2, ic, ic);
+      // Name: so gross wie moeglich, aber mit Rand rechts
+      const tx = ix0 + ic + H * 0.1;
+      const room = W - tx - H * 0.12;
+      let fs = Math.round(H * 0.2);
+      const fontOf = (s) => '700 ' + s + "px 'Segoe UI Variable Display', 'Segoe UI', sans-serif";
+      g.font = fontOf(fs);
+      while (fs > 10 && g.measureText(job.text).width > room) g.font = fontOf(--fs);
+      g.shadowColor = 'rgba(0,0,0,0.5)';
+      g.shadowBlur = H * 0.05;
+      g.shadowOffsetY = H * 0.01;
+      g.fillStyle = '#ffffff';
+      g.textBaseline = 'middle';
+      g.fillText(job.text, tx, H / 2 + H * 0.01);
     } else {
       // adaptiver Vordergrund: die mittleren 72 von 108 dp zeigen den inneren Teil, die Flaeche ohne Glaskante fuellt alles
       g.drawImage(plate, 0, 0, P, P, 0, 0, S, S);
@@ -149,6 +185,8 @@ app.whenReady().then(async () => {
     jobs.push({ name: `mipmap-${dpi}/ic_launcher_round.png`, kind: 'circle', size: legacy });
     jobs.push({ name: `mipmap-${dpi}/ic_launcher_foreground.png`, kind: 'adaptive', size: adaptive });
   }
+  // TV-Banner im Startbildschirm von Android TV (320 x 180 dp, hier fuer xhdpi; Google empfiehlt den Namen im Banner)
+  jobs.push({ name: 'drawable-xhdpi/tv_banner.png', kind: 'banner', size: 180, width: 320, text: 'Jellycloud' });
   const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
   await win.loadURL('data:text/html;charset=utf-8,<!doctype html><title>icon</title>');
   await win.webContents.executeJavaScript(PAGE_SCRIPT);

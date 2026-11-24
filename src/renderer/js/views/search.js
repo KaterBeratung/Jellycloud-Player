@@ -8,6 +8,7 @@ import { playItem } from '../actions.js';
 import { navigate } from '../router.js';
 import { seerrState } from '../connection.js';
 import { requestCard, setCardStatus } from './request-card.js';
+import { isTv } from '../tv.js';
 
 const Search = window.JCSearchStatus; // Hinweis ohne Treffer, Abgleich mit Seerr (src/shared/search-status.js)
 
@@ -134,7 +135,8 @@ export function searchView({ query }) {
     const sig = `${st.kind}|${st.term ?? ''}|${st.message ?? ''}`;
     if (sig === statusSig && statusNode) return statusNode;
     statusSig = sig;
-    if (st.kind === 'prompt') statusNode = pageStatus({ symbol: 'search', title: t('search.hintTitle'), text: t('search.hintText') });
+    // Fernseher: ohne Tastenkuerzel der Tastatur im Hinweis (tv.js)
+    if (st.kind === 'prompt') statusNode = pageStatus({ symbol: 'search', title: t('search.hintTitle'), text: t(isTv() ? 'search.hintTextTv' : 'search.hintText') });
     else if (st.kind === 'loading') statusNode = pageStatus({ kind: 'loading', title: t('search.searching') });
     else if (st.kind === 'failed') statusNode = pageStatus({ kind: 'failed', text: st.message, retry: () => run() });
     else statusNode = pageStatus({ symbol: 'search', title: t('search.noneTitle', { q: st.term }), text: t('search.noneText') });

@@ -22,6 +22,7 @@ import { adminView } from './views/admin.js';
 import { loginView } from './views/login.js';
 import { installNoDrag } from './no-drag.js';
 import { installCompact } from './compact.js';
+import { installTv } from './tv.js';
 import { playSplash, splashActive, afterSplash, splashReady } from './splash.js';
 document.addEventListener('home-ready', splashReady); // die Startseite steht: die Startanimation laeuft ohne Ladearbeit (splash.js, Vorlauf)
 import { installMotion } from './motion.js';
@@ -332,6 +333,7 @@ async function boot() {
   }
   setLocale(localeFromSettings());
   applyAppearance(state.settings.appearance);
+  installTv(); // Fernseher: die Huelle hat <html data-form="tv"> vor dem Start gesetzt (tv.js; sonst ohne Wirkung)
   if (!splashStarted) {
     splashStarted = true;
     if (!state.devNoSplash) playSplash(); // darunter baut sich die Oberflaeche ganz normal auf (devNoSplash: nur in den Szenarien, main.js)

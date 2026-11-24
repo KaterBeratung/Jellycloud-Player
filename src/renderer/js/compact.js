@@ -11,7 +11,8 @@ export function installCompact() {
   if (root.dataset.platform === 'desktop') return () => {};
   const mq = window.matchMedia(COMPACT_QUERY);
   const apply = () => {
-    root.dataset.compact = mq.matches ? 'on' : 'off';
+    // Fernseher (tv.js): nie die Handy-Ansicht, auch wenn sein Bild in CSS-Pixeln klein ist
+    root.dataset.compact = mq.matches && root.dataset.form !== 'tv' ? 'on' : 'off';
   };
   apply();
   mq.addEventListener('change', apply);

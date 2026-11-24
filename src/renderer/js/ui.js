@@ -291,7 +291,11 @@ export function closeMenu() {
   off();
   // Wie ein Menue des Systems: lag der Fokus im Menue, geht er an den Knopf zurueck, der es geoeffnet hat (Tastatur, Bildschirmleser; eine danach
   // geoeffnete Maske kehrt beim Schliessen dorthin zurueck)
-  if (el.contains(document.activeElement) && anchor?.isConnected) anchor.focus({ preventScroll: true });
+  // Haengt das Menue an einem Teil, der selbst keinen Fokus nimmt (das Plakat einer Karte), bekommt ihn das Element, zu dem er gehoert (die Karte)
+  if (el.contains(document.activeElement) && anchor?.isConnected) {
+    const target = anchor.matches('a[href], button, input, select, textarea, [tabindex]') ? anchor : anchor.closest('a[href], button, [tabindex]');
+    (target ?? anchor).focus({ preventScroll: true });
+  }
   el.classList.add('closing');
   setTimeout(() => el.remove(), 140);
 }

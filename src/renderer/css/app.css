@@ -1667,3 +1667,80 @@ html[data-compact='on'] .settings .page-title { padding-top: 0; }
 :root[data-anim='reduced'] :is(.page-enter, .settings-panel, .detail-bd-img, .connect-card, .qc-outcome, .trailer-ctl, .mdl) { animation-name: fade-in; }
 :root[data-anim='reduced'] :is(.menu, .menu.open, .menu.closing, .toast, .toast.in) { transform: none; filter: none; }
 :root[data-anim='reduced'] :is(.tool, .update-note, .card .thumb, .card:hover .thumb, .card:focus-visible .thumb) { transform: none; }
+/* ==========================================================================
+   TV-Ansicht (Android TV, Google TV; tv.js, seit 1.2.28): <html data-form="tv">. Bedient mit der Fernbedienung wie Apple TV: was den Fokus hat, hebt sich
+   deutlich ab (Karten werden groesser und bekommen einen hellen Rand, Knoepfe werden weiss mit dunkler Schrift); die Kopfleiste gleitet weg, sobald der
+   Fokus im Inhalt liegt und die Seite gescrollt ist. Ein 1080p-Fernseher hat 960 x 540 CSS-Pixel: Raender fuer den Bildrand des Fernsehers
+   (Overscan, 5 % seitlich), keine Fensterleiste, nichts, was nur mit der Maus geht (Pfeile an den Reihen, Neigen, Hover).
+   ========================================================================== */
+:root[data-form='tv'] {
+  --title-h: 12px; /* keine Fensterleiste, nur Abstand zum oberen Bildrand */
+  --nav-h: 64px;
+  --pad: 48px;
+  --tv-lift: 0 18px 40px -12px rgb(0 0 0 / 0.85);
+}
+:root[data-form='tv'] .titlebar, :root[data-form='tv'] .drag-strip, :root[data-form='tv'] .tabbar, :root[data-form='tv'] .row .arrow { display: none !important; }
+:root[data-form='tv'] .topbar { transition: transform var(--t-med) var(--ease), opacity var(--t-med) var(--ease); }
+:root[data-form='tv'].tv-bar-hidden .topbar { transform: translateY(calc(-100% - 12px)); opacity: 0; }
+:root[data-form='tv'] .navrow { padding: 0 var(--pad); }
+:root[data-form='tv'] .update-note { display: none; }
+/* Inhalt mit Abstand zum unteren Bildrand; Reihen scrollen bis an den Rand, die erste Karte steht an der sicheren Kante */
+:root[data-form='tv'] .page { padding-bottom: 48px; }
+:root[data-form='tv'] .scroller { padding-top: 20px; padding-bottom: 34px; scroll-padding-left: var(--pad); scroll-snap-type: none; }
+:root[data-form='tv'] .row { margin-top: 18px; }
+
+/* Fokus statt Zeigen: dieselbe Hervorhebung wie beim Zeigen mit der Maus, staerker und mit hellem Rand (auch ohne :focus-visible, das nach
+   programmatischem Fokus nicht immer gilt) */
+:root[data-form='tv'] :focus { outline: 3px solid var(--ring); outline-offset: 3px; }
+:root[data-form='tv'] .card:focus { outline: none; }
+:root[data-form='tv'] .card:focus .thumb,
+:root[data-form='tv'] .card:focus-visible .thumb {
+  transform: translateY(-4px) scale(1.09);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.95), var(--tv-lift), 0 0 40px -8px rgb(var(--accent-rgb) / 0.6);
+  transition: transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease);
+}
+:root[data-form='tv'] .card:focus .thumb::before { opacity: 1; }
+:root[data-form='tv'] .card:focus .thumb::after { opacity: 1; }
+:root[data-form='tv'] .card:focus .meta { transform: translateY(10px); transition: transform var(--t-med) var(--ease); }
+:root[data-form='tv'] .card .meta { transition: transform var(--t-med) var(--ease); }
+:root[data-form='tv'] .card:focus .l1 { color: #fff; }
+:root[data-form='tv'] .card:hover .thumb:not(:focus *) { transform: none; }
+:root[data-form='tv'] .play-fab { display: none; }
+
+/* Knoepfe (tvOS): im Fokus weiss mit dunkler Schrift, leicht groesser, mit Schatten; der Hauptknopf ohne Fokus bleibt in der Akzentfarbe */
+:root[data-form='tv'] :is(.btn, .tool, .chip-btn, .seg, .tab, .menu-item, .toast-action):focus {
+  outline: none;
+  background: #fff !important;
+  color: #111 !important;
+  border-color: #fff !important;
+  box-shadow: var(--tv-lift) !important;
+  transform: scale(1.06);
+  filter: none;
+}
+:root[data-form='tv'] :is(.btn, .tool, .chip-btn, .seg, .tab):focus .ico svg { filter: none; }
+:root[data-form='tv'] .btn, :root[data-form='tv'] .tool { transition: transform var(--t-fast) var(--ease), background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast); }
+:root[data-form='tv'] .menu-item:focus { transform: none; border-radius: 12px; }
+:root[data-form='tv'] .menu-item:focus .sub { color: #333; }
+
+/* Wie tvOS: ohne Fokus ist jeder Knopf Glas, auch der Hauptknopf (sonst saehe ein weisser Hauptknopf mit der Standardfarbe aus wie einer im Fokus) */
+:root[data-form='tv'] .btn.primary:not(:focus) { background: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.1)); color: #fff; border-color: rgb(255 255 255 / 0.28); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4); }
+:root[data-form='tv'] .who:focus .avatar-sm { color: #111; }
+/* Reiterleiste: der Reiter im Fokus hell und groesser, der gewaehlte ohne Fokus bleibt markiert */
+:root[data-form='tv'] .nav-link { transition: color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease); }
+:root[data-form='tv'] .nav-link:focus { outline: none; color: #111; background: #fff; transform: scale(1.08); box-shadow: var(--tv-lift); }
+:root[data-form='tv'] .brand:focus { outline-offset: 4px; border-radius: 12px; }
+/* Liegt der Fokus in der Reiterleiste, tritt die Markierung des gewaehlten Reiters zurueck: hell ist nur, was den Fokus hat */
+:root[data-form='tv'] .nav:focus-within .nav-indicator { background: rgb(255 255 255 / 0.2); box-shadow: none; }
+:root[data-form='tv'] .nav:focus-within .nav-link.on:not(:focus) { color: var(--text); }
+
+/* Folgen, Zeilen der Einstellungen und Listen: eine helle Flaeche mit Rand */
+:root[data-form='tv'] :is(.ep, .notice-card, .issue-row, .slist-row, .link-row, .settings-row):focus { outline: none; background: rgb(255 255 255 / 0.12); box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.9); border-radius: 16px; }
+:root[data-form='tv'] .ep:focus .ep-thumb { transform: scale(1.04); box-shadow: var(--tv-lift); transition: transform var(--t-med) var(--ease); }
+:root[data-form='tv'] .person:focus, :root[data-form='tv'] .person:focus-visible { outline: none; }
+:root[data-form='tv'] .person:focus :is(.avatar, .person-img, .imgbox) { box-shadow: 0 0 0 3px #fff, var(--tv-lift); transform: scale(1.08); transition: transform var(--t-med) var(--ease); }
+:root[data-form='tv'] input:focus, :root[data-form='tv'] select:focus, :root[data-form='tv'] textarea:focus { outline: 3px solid #fff; outline-offset: 2px; }
+/* Suchfeld: die ganze Kapsel zeigt den Fokus, nicht das Feld darin */
+:root[data-form='tv'] .search-bar .search-input:focus { outline: none; }
+:root[data-form='tv'] .search-bar:focus-within { box-shadow: 0 0 0 3px #fff, var(--tv-lift); }
+
+:root[data-form='tv'][data-anim='reduced'] :is(.card:focus .thumb, .btn:focus, .tool:focus, .nav-link:focus, .ep:focus .ep-thumb, .person:focus .imgbox) { transform: none; }

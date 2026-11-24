@@ -26,7 +26,9 @@ export function applyAppearance(a) {
   root.style.setProperty('--accent-rgb', c.tint.join(' ')); // fuer durchscheinende Tonungen und Leuchten (bei hellen Akzenten abgedunkelt)
   root.style.setProperty('--accent-fg', `rgb(${c.fg.join(' ')})`);
   root.style.setProperty('--accent-ink', c.ink);
-  root.style.setProperty('--poster-w', `${a.posterSize}px`);
+  // Fernseher (tv.js): 960 CSS-Pixel Breite bei 1080p, die Karten im selben Verhaeltnis kleiner, damit eine Reihe wie am Computer etwa sechs Plakate zeigt
+  const scale = root.dataset.form === 'tv' ? 0.78 : 1;
+  root.style.setProperty('--poster-w', `${Math.round(a.posterSize * scale)}px`);
   try {
     window.jc.setTitleBar({ color: '#00000000', symbolColor: THEMES[theme].symbol }).catch(() => {});
   } catch {
