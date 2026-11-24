@@ -59,9 +59,11 @@ Bibliotheken einhalten.
 
 ## Aussehen
 
-- **Icon und Logo:** eine weiße Wolke als Umriss mit Play-Symbol und Leuchten, wie das Logo der Startanimation. Das **App-Symbol** (`build/icon.png`: Taskleiste, Fenster, Installer, Verknüpfung)
-  ist dieselbe Wolke **freistehend**, ohne Platte und ohne dunklen Rand, auf transparentem Grund; es entsteht mit `npm run icon` (`tools/make-icon.js`). Weil es weiß ist, steht es auf dunklem Grund (Taskleiste und Startmenü im dunklen Design) klar,
-  auf hellem Grund (Explorer im hellen Design) tritt es zurück und ist nur noch schwach zu sehen; das ist gewollt, die dunkle Platte (0.0.44 bis 0.0.47) und der dunkle Rand (bis 0.0.43) waren unerwünscht. In der Oberfläche steht dieselbe Form als Logo in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
+- **App-Symbol (seit 1.2.27):** ein lila-blaues Glasquadrat mit leuchtender Wolke und Play-Symbol, vorgegeben als `build/logo-quelle.webp` (2000 × 2000). `npm run icon`
+  (`tools/make-icon.js`) erzeugt daraus `build/icon.png` (1024 px: Taskleiste, Fenster, Installer, Verknüpfung) und die Startsymbole der Android-App (altes, rundes und
+  adaptives Symbol; beim adaptiven gibt die Maske des Startbildschirms die Form vor, die Glaskante der Vorlage fällt dort weg, die Farben laufen bis an den Rand).
+- **Logo in der Oberfläche:** eine weiße Wolke als Umriss mit Play-Symbol und Leuchten, wie das Logo der Startanimation, in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
+  bis 1.2.26 war auch das App-Symbol diese Wolke, freistehend auf transparentem Grund;
   (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
 - **Standardfarbe:** neutrales Silberweiß (`#f5f5f7`) wie bei Apple TV für Buttons, Navigation, Fortschritt und Markierungen. Die Farbe ist unter *Erscheinungsbild* frei wählbar: seit 1.2.6 dieselben acht Farbfelder wie in der
   Apple-App (Silber, Königsblau, Violett, Rosa, Rot, Orange, Grün, Türkis; `SWATCHES` in `accent.js`, Namen DE/EN), dazu Farbwähler und Hex-Code; eine früher gewählte Farbe, die kein Feld mehr ist, bleibt als eigene Farbe. Die Regeln stehen in `src/shared/accent.js`
