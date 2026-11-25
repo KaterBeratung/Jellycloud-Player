@@ -59,9 +59,11 @@ Bibliotheken einhalten.
 
 ## Aussehen
 
-- **App-Symbol (seit 1.2.27):** ein lila-blaues Glasquadrat mit leuchtender Wolke und Play-Symbol, vorgegeben als `build/logo-quelle.webp` (2000 × 2000). `npm run icon`
-  (`tools/make-icon.js`) erzeugt daraus `build/icon.png` (1024 px: Taskleiste, Fenster, Installer, Verknüpfung) und die Startsymbole der Android-App (altes, rundes und
-  adaptives Symbol; beim adaptiven gibt die Maske des Startbildschirms die Form vor, die Glaskante der Vorlage fällt dort weg, die Farben laufen bis an den Rand).
+- **App-Symbol (seit 1.2.30):** dasselbe Logo wie die iOS-App auf iPhone, Mac und Apple TV: eine weiße Glaswolke mit Play-Symbol auf einem Verlauf von Lila (oben) über
+  dunkel zu Blau (unten). Vorlage sind die Ebenen des Apple-TV-Symbols der iOS-App in `build/symbol/` (`hintergrund.png`, `wolke.png`, `play.png`, je 1280 × 768).
+  `npm run icon` (`tools/make-icon.js`) erzeugt daraus `build/icon.png` (1024 px, abgerundetes Quadrat: Taskleiste, Fenster, Installer, Verknüpfung), die Startsymbole der
+  Android-App (altes, rundes und adaptives Symbol; das adaptive wie unter iOS aus zwei Ebenen, Verlauf und Wolke, die Maske des Startbildschirms gibt die Form vor) und das
+  TV-Banner. 1.2.27 bis 1.2.29 war das App-Symbol ein lila-blaues Glasquadrat mit leuchtender Wolke.
 - **Logo in der Oberfläche:** eine weiße Wolke als Umriss mit Play-Symbol und Leuchten, wie das Logo der Startanimation, in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
   bis 1.2.26 war auch das App-Symbol diese Wolke, freistehend auf transparentem Grund;
   (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
