@@ -20,6 +20,30 @@
   const POSITION_STEP_MS = 150;
   const TICKS_PER_SECOND = 10000000;
   const VIDEO_TYPES = Object.freeze(['Movie', 'Episode', 'Video', 'MusicVideo']);
+  /** "Laeuft gerade" (Build 98 der Apple-App, Regeln 18 bis 21): Sitzungen, die sich in den letzten 16 Minuten gemeldet haben. */
+  const STREAMS_S = 960;
+  /** Fernbedienung (Regel 15): so lange gilt der erwartete Stand nach einem Befehl gegen die Abfrage, bis der Server ihn meldet. */
+  const EXPECT_MS = 12000;
+  /** Laufende Streams zaehlen in der Anzeige hoechstens so weit ueber die gemeldete Stelle hinaus (Regel 21). */
+  const DRIFT_MAX_MS = 12000;
+  /** Bildfelder eines Eintrags fuer das kleine Bild (Jellyfin-Namen, wie api.js landscapeOf sie liest). */
+  const ART_FIELDS = ['Type', 'ImageTags', 'BackdropImageTags', 'ParentBackdropItemId', 'ParentBackdropImageTags', 'ParentThumbItemId', 'ParentThumbImageTag', 'SeriesId', 'SeriesPrimaryImageTag'];
+
+  /** Nur Kennungen und Bildkennungen (kurze Texte) aus den Bildfeldern; alles andere faellt weg. */
+  function artOf(it) {
+    const id = (v) => (typeof v === 'string' && /^[0-9a-zA-Z-]{1,64}$/.test(v) ? v : undefined);
+    const tagMap = (m) => (isObject(m) ? Object.fromEntries(Object.entries(m).filter(([k, v]) => /^[A-Za-z]{1,20}$/.test(k) && id(v)).slice(0, 12)) : undefined);
+    const tagList = (l) => (Array.isArray(l) ? l.filter((v) => id(v)).slice(0, 4) : undefined);
+    const out = { Id: id(it.Id) };
+    for (const k of ART_FIELDS) {
+      const v = it[k];
+      if (k === 'Type') out.Type = text(v, 40) ?? undefined;
+      else if (k === 'ImageTags') out.ImageTags = tagMap(v);
+      else if (k.endsWith('ImageTags')) out[k] = tagList(v);
+      else out[k] = id(v);
+    }
+    return out;
+  }
 
   const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const text = (v, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : null);
@@ -48,10 +72,22 @@
       id: raw.Id.slice(0, 120),
       userId: text(raw.UserId, 64),
       deviceId: text(raw.DeviceId, 200),
+      userName: text(raw.UserName, 120),
       deviceName: text(raw.DeviceName, 120),
       client: text(raw.Client, 120),
       supportsRemoteControl: raw.SupportsRemoteControl === true,
-      nowPlaying: it ? { id: it.Id.slice(0, 64), type: text(it.Type, 40), name: text(it.Name, 300), seriesName: text(it.SeriesName, 300), season: int(it.ParentIndexNumber), episode: int(it.IndexNumber) } : null,
+      nowPlaying: it
+        ? {
+            id: it.Id.slice(0, 64),
+            type: text(it.Type, 40),
+            name: text(it.Name, 300),
+            seriesName: text(it.SeriesName, 300),
+            season: int(it.ParentIndexNumber),
+            episode: int(it.IndexNumber),
+            runTimeTicks: Number.isFinite(it.RunTimeTicks) && it.RunTimeTicks > 0 ? Math.round(it.RunTimeTicks) : 0,
+            art: artOf(it)
+          }
+        : null,
       positionTicks: Number.isFinite(ps.PositionTicks) && ps.PositionTicks > 0 ? Math.round(ps.PositionTicks) : 0,
       isPaused: ps.IsPaused === true,
       lastActivity: date(raw.LastActivityDate)
@@ -183,6 +219,67 @@
     return { action: 'play', itemId, startTicks: startTicks({ session: step.session.positionTicks, savedBefore: before, savedAfter: after }) };
   }
 
+  // ---------- Laeuft gerade und Fernbedienung (Build 98 der Apple-App, Regeln 13 bis 21) ----------
+
+  /**
+   * Was gerade laeuft (Regel 19): jede Sitzung mit einem Eintrag, ausser diesem Geraet, deren letzte Meldung hoechstens 16 Minuten alt ist; die juengste
+   * zuerst. Welche Konten darin vorkommen, entscheidet der Server (einem Administrator nennt er alle, sonst nur die eigenen); die App nimmt sich nicht mehr.
+   */
+  function streams(sessions, { ownDeviceId, now = Date.now() } = {}) {
+    const at = (s) => (s.lastActivity === null ? -Infinity : s.lastActivity);
+    return (Array.isArray(sessions) ? sessions : [])
+      .filter((s) => s.nowPlaying && !(s.deviceId && s.deviceId === ownDeviceId) && (s.lastActivity === null || now - s.lastActivity <= STREAMS_S * 1000))
+      .sort((a, b) => at(b) - at(a));
+  }
+
+  /** Befehl fuer den Knopf (Regel 14) nach dem gemeldeten Stand: laeuft -> Pause, pausiert -> Unpause. Nie PlayPause (auf einen veralteten Stand das Gegenteil). */
+  const toggleCommand = (paused) => (paused ? 'Unpause' : 'Pause');
+
+  /**
+   * Welcher Stand gezeigt wird (Regel 15): nach einem angenommenen Befehl der erwartete, bis der Server ihn meldet, hoechstens 12 s; danach allein der Server.
+   * expected: { sessionId, paused, at } oder null. Ergebnis: { paused, expected } (expected null, sobald er verfallen oder eingetroffen ist).
+   */
+  function shownPaused(s, expected, now = Date.now()) {
+    if (!s) return { paused: false, expected: expected || null };
+    if (!expected || expected.sessionId !== s.id) return { paused: !!s.isPaused, expected: expected || null };
+    if (now - expected.at >= EXPECT_MS || s.isPaused === expected.paused) return { paused: !!s.isPaused, expected: null };
+    return { paused: expected.paused, expected };
+  }
+
+  /**
+   * Stelle fuer die Anzeige (Regel 21): laufende Streams zaehlen ab der letzten Meldung weiter, hoechstens 12 s ueber die gemeldete Stelle, nie ueber die
+   * Laenge; pausierte stehen.
+   */
+  function livePositionTicks(s, { paused = s && s.isPaused, now = Date.now() } = {}) {
+    if (!s) return 0;
+    const runtime = (s.nowPlaying && s.nowPlaying.runTimeTicks) || 0;
+    let p = s.positionTicks || 0;
+    if (!paused && s.lastActivity !== null) p += Math.max(0, Math.min(DRIFT_MAX_MS, now - s.lastActivity)) * (TICKS_PER_SECOND / 1000);
+    return runtime > 0 ? Math.min(p, runtime) : p;
+  }
+
+  /** "14:51" bzw. "1:02:05" aus Ticks. */
+  function clock(ticks) {
+    const total = Math.max(0, Math.floor((Number(ticks) || 0) / TICKS_PER_SECOND));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = String(total % 60).padStart(2, '0');
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  }
+
+  /** Titel und zweite Zeile eines Eintrags: Folge "Serie" und "S1 · F3 · Name" (englisch "E3"), Film nur der Titel. */
+  function itemLines(s, lang) {
+    const it = s && s.nowPlaying;
+    if (!it) return { title: '', episode: null };
+    if (it.type !== 'Episode' || !it.seriesName) return { title: it.name || '', episode: null };
+    const en = String(lang || '').slice(0, 2).toLowerCase() === 'en';
+    const parts = [];
+    if (it.season !== null) parts.push(`S${it.season}`);
+    if (it.episode !== null) parts.push(`${en ? 'E' : 'F'}${it.episode}`);
+    if (it.name) parts.push(it.name);
+    return { title: it.seriesName, episode: parts.join(' · ') || null };
+  }
+
   // ---------- Anzeige ----------
 
   /** "Harbor Lights · S1 · F2" (englisch "S1 · E2") oder der Filmtitel; ohne Wiedergabe der Name des Geraets. */
@@ -216,6 +313,15 @@
     POSITION_STEP_MS,
     TICKS_PER_SECOND,
     VIDEO_TYPES,
+    STREAMS_S,
+    EXPECT_MS,
+    DRIFT_MAX_MS,
+    streams,
+    toggleCommand,
+    shownPaused,
+    livePositionTicks,
+    clock,
+    itemLines,
     sameId,
     date,
     normalizeSession,

@@ -345,6 +345,22 @@ class JellyfinClient {
     return Array.isArray(r) ? r : [];
   }
 
+  /**
+   * Alle Sitzungen, die der Server diesem Konto nennt und die sich in den letzten 16 Minuten gemeldet haben ("Laeuft gerade" und die Angebote "Auf diesem
+   * Geraet fortsetzen" aus einer Abfrage, Regel 18 der Apple-App): einem Administrator alle Konten, sonst die eigenen. Roh; ohne Konto keine Anfrage.
+   */
+  async sessionsOverview() {
+    if (!this.userId) return [];
+    const r = await this.request('GET', '/Sessions', { query: { ActiveWithinSeconds: 960 }, timeout: 8000 });
+    return Array.isArray(r) ? r : [];
+  }
+
+  /** Pause oder Abspielen auf einer anderen Sitzung (Regel 14: nie PlayPause). Wessen Sitzung das sein darf, prueft die Rueckseite vorher. */
+  sendPlaystate(sessionId, command) {
+    if (command !== 'Pause' && command !== 'Unpause') return Promise.reject(new JellyfinError('Unbekannter Befehl', { status: 400 }));
+    return this.request('POST', `/Sessions/${encodeURIComponent(String(sessionId))}/Playing/${command}`, { timeout: 8000 });
+  }
+
   /** Haelt die Wiedergabe einer anderen Sitzung an. Wessen Sitzung das sein darf, prueft die App vorher selbst an frisch gelesenen Sitzungen. */
   stopRemotePlayback(sessionId) {
     return this.request('POST', `/Sessions/${encodeURIComponent(String(sessionId))}/Playing/Stop`, { timeout: 8000 });

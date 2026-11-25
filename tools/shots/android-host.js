@@ -430,8 +430,9 @@ module.exports = async (ctx) => {
   const capsuleOk = await waitFor(`(() => { const e = document.querySelector('.handoff.in'); return !!e && !e.hidden; })()`, 10000);
   await ctx.wait(500);
   // Lage ohne die Einblende-Bewegung (im unsichtbaren Fenster laufen Uebergaenge nicht weiter): Kasten der Anordnung, zentriert ueber translate(-50%)
-  const geo = capsuleOk ? await ev(`(() => { const e = document.querySelector('.handoff'); const t = document.querySelector('.tabbar'); const left = e.offsetLeft - e.offsetWidth / 2; return { gap: Math.round(t.offsetTop - (e.offsetTop + e.offsetHeight)), left: Math.round(left), right: Math.round(innerWidth - left - e.offsetWidth), h: e.offsetHeight, detail: document.querySelector('.handoff-detail')?.textContent }; })()`) : null;
-  check('Auf diesem Geraet fortsetzen auf dem Handy: Kapsel ueber der Reiterleiste (Abstand 10), mit dem Seitenrand links und rechts', capsuleOk && geo.gap >= 8 && geo.gap <= 12 && geo.left === 16 && geo.right === 16 && geo.h >= 56 && /Wohnzimmer Apple TV/.test(geo.detail ?? ''), JSON.stringify(geo));
+  const geo = capsuleOk ? await ev(`(() => { const e = document.querySelector('.handoff'); const t = document.querySelector('.tabbar'); const left = e.offsetLeft - e.offsetWidth / 2; return { gap: Math.round(t.offsetTop - (e.offsetTop + e.offsetHeight)), left: Math.round(left), right: Math.round(innerWidth - left - e.offsetWidth), h: e.offsetHeight, title: document.querySelector('.handoff-title')?.textContent, detail: document.querySelector('.handoff-detail')?.textContent }; })()`) : null;
+  // seit 1.2.32 (Build 98 der Apple-App): oben "Laeuft auf <Geraet>", darunter der Titel
+  check('Auf diesem Geraet fortsetzen auf dem Handy: Kapsel ueber der Reiterleiste (Abstand 10), mit dem Seitenrand links und rechts', capsuleOk && geo.gap >= 8 && geo.gap <= 12 && geo.left === 16 && geo.right === 16 && geo.h >= 56 && geo.title === 'Läuft auf Wohnzimmer Apple TV' && !!geo.detail, JSON.stringify(geo));
   // Aufnahme: das Fenster zeigen (ohne Fokus), damit die Kapsel fertig eingeblendet ist. Es bleibt danach sichtbar: ein wieder verborgenes Fenster gilt als
   // "hidden", und die Oberflaeche ruht dann (requestAnimationFrame, Abfragen)
   win.showInactive();

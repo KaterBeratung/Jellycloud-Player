@@ -332,3 +332,68 @@ test('Nach jedem Warten wird geprüft, ob die Übernahme noch gilt: vor dem Stop
   assert.deepEqual(await H.takeOver(s.d), { action: 'abort' });
   assert.equal(s.calls.at(-1), 'stop a', 'angehalten, danach nichts mehr gelesen');
 });
+
+// ---------- Build 98 der Apple-App: Laeuft gerade und Fernbedienung (Regeln 13 bis 21) ----------
+
+test('Laeuft gerade: jede Sitzung mit Eintrag ausser diesem Geraet, hoechstens 16 Minuten still, die juengste zuerst; fremde Konten nennt der Server', () => {
+  const list = [
+    session('alt', { ago: 900 }),
+    session('frisch', { ago: 2, user: 'lena', device: 'lena-tv', control: false }),
+    session('hier', { device: 'mein-pc' }),
+    session('leer', { type: null }),
+    session('weg', { ago: 961 }),
+    session('musik', { type: 'Audio', device: 'box' })
+  ];
+  const ids = H.streams(list, { ownDeviceId: 'mein-pc', now }).map((s) => s.id);
+  assert.deepEqual(ids, ['frisch', 'musik', 'alt'], 'auch Musik (jede Sitzung mit Eintrag), die juengste Meldung zuerst');
+  assert.ok(ids.includes('frisch') && ids.includes('alt'), 'fremdes Konto und 15 Minuten alt: dabei');
+  assert.ok(!ids.includes('hier') && !ids.includes('leer') && !ids.includes('weg'), 'dieses Geraet, ohne Eintrag, zu alt: nicht');
+  assert.equal(ids[0], 'frisch', 'die juengste zuerst');
+});
+
+test('Fernbedienung: Pause oder Unpause nach dem gezeigten Stand, nie PlayPause', () => {
+  assert.equal(H.toggleCommand(false), 'Pause');
+  assert.equal(H.toggleCommand(true), 'Unpause');
+});
+
+test('Fernbedienung: der erwartete Stand gilt hoechstens 12 s gegen die Abfrage, bis der Server ihn meldet', () => {
+  const s = session('a');
+  const exp = { sessionId: 'a', paused: true, at: now };
+  assert.deepEqual(H.shownPaused(s, exp, now + 5000), { paused: true, expected: exp }, 'Server meldet noch "laeuft": der erwartete Stand');
+  assert.deepEqual(H.shownPaused({ ...s, isPaused: true }, exp, now + 6000), { paused: true, expected: null }, 'eingetroffen: die Erwartung faellt weg');
+  assert.deepEqual(H.shownPaused(s, exp, now + H.EXPECT_MS), { paused: false, expected: null }, 'nach 12 s gilt allein der Server');
+  assert.deepEqual(H.shownPaused(s, { ...exp, sessionId: 'b' }, now), { paused: false, expected: { ...exp, sessionId: 'b' } }, 'eine andere Sitzung: unberuehrt');
+  assert.deepEqual(H.shownPaused(s, null, now), { paused: false, expected: null });
+});
+
+test('Stelle in der Anzeige: laufend hoechstens 12 s ueber die Meldung, nie ueber die Laenge; pausiert steht sie', () => {
+  const s = { ...session('a', { ticks: 600 * 1e7, ago: 0 }), nowPlaying: { ...session('a').nowPlaying, runTimeTicks: 610 * 1e7 } };
+  assert.equal(H.livePositionTicks(s, { now: now + 5000 }), 605 * 1e7);
+  assert.equal(H.livePositionTicks(s, { now: now + 60000 }), 610 * 1e7, 'nie ueber die Laenge');
+  const long = { ...s, nowPlaying: { ...s.nowPlaying, runTimeTicks: 7200 * 1e7 } };
+  assert.equal(H.livePositionTicks(long, { now: now + 60000 }), 612 * 1e7, 'hoechstens 12 s');
+  assert.equal(H.livePositionTicks(long, { paused: true, now: now + 60000 }), 600 * 1e7, 'pausiert');
+  assert.equal(H.clock(891 * 1e7), '14:51');
+  assert.equal(H.clock(3725 * 1e7), '1:02:05');
+});
+
+test('Titel und Folge: "Serie" und "S1 · F3 · Name" (englisch E3), Film nur der Titel', () => {
+  const ep = H.normalizeSession({ Id: 'x', NowPlayingItem: { Id: 'e', Type: 'Episode', Name: 'Pilot', SeriesName: 'Harbor', ParentIndexNumber: 1, IndexNumber: 3 } });
+  assert.deepEqual(H.itemLines(ep, 'de'), { title: 'Harbor', episode: 'S1 · F3 · Pilot' });
+  assert.deepEqual(H.itemLines(ep, 'en-US'), { title: 'Harbor', episode: 'S1 · E3 · Pilot' });
+  assert.deepEqual(H.itemLines(session('f'), 'de'), { title: 'Film f', episode: null });
+});
+
+test('Bildfelder des laufenden Eintrags: nur Kennungen und Bildkennungen, Laenge und Kontoname gelesen', () => {
+  const s = H.normalizeSession({
+    Id: 'x',
+    UserName: 'lena',
+    NowPlayingItem: { Id: 'e1', Type: 'Episode', RunTimeTicks: 123, ImageTags: { Primary: 'abc', 'bö se': 'x' }, ParentBackdropItemId: 'ser', ParentBackdropImageTags: ['t1', '<script>'], Overview: 'lang' }
+  });
+  assert.equal(s.userName, 'lena');
+  assert.equal(s.nowPlaying.runTimeTicks, 123);
+  assert.deepEqual(s.nowPlaying.art.ImageTags, { Primary: 'abc' });
+  assert.deepEqual(s.nowPlaying.art.ParentBackdropImageTags, ['t1']);
+  assert.equal(s.nowPlaying.art.Id, 'e1');
+  assert.equal(s.nowPlaying.art.Overview, undefined);
+});

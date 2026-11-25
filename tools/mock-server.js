@@ -1072,6 +1072,12 @@ async function handleSeerr(req, res, p, q, method) {
     const created = addSeerrRequest({ mediaType: b.mediaType, mediaId: b.mediaId, seasons, requestedBy: seerrUserId(sessionUser) });
     return json(201, seerrRequestDto(created));
   }
+  // Zahl der Anfragen je Stand wie Seerr (GET /request/count): pending zaehlt alle wartenden, nicht nur die eigenen (Zahl am Reiter "Anfragen", Build 98)
+  if (sub === '/request/count' && method === 'GET') {
+    const live = SEERR.requests.filter((r) => !r.deleted);
+    const pending = live.filter((r) => r.status === 1).length;
+    return json(200, { total: live.length, movie: live.filter((r) => r.mediaType === 'movie').length, tv: live.filter((r) => r.mediaType === 'tv').length, pending, approved: live.filter((r) => r.status === 2).length, declined: live.filter((r) => r.status === 3).length, processing: 0, available: 0, completed: 0 });
+  }
   if (sub === '/request' && method === 'GET') {
     SEERR.counters.listRequests++;
     await seerrGate.wait(); // festgehalten bis zur Freigabe (POST /__debug/delay?requests=<s> oder /__debug/reset?seerr=1)
@@ -1156,16 +1162,17 @@ async function handleSeerr(req, res, p, q, method) {
 // ---------- Steuerung fuer Tests (/__debug/...), Namen und Bedeutung wie beim Apple-Testserver ----------
 // Anfangsstand von Gesehen, Favoriten und Positionen fuer /__debug/reset?all=1
 const INITIAL = { played: new Set(state.played), fav: new Set(state.fav), progress: new Map(state.progress) };
-const remoteTicks = (r) => Math.round((r.at + (Date.now() - r.since) / 1000) * TICKS);
+// Stelle einer gestellten Sitzung: laeuft ab "since" weiter, pausiert steht sie (Fernbedienung, Build 98)
+const remoteTicks = (r) => Math.round((r.at + (r.paused ? 0 : (Date.now() - r.since) / 1000)) * TICKS);
+const NOW_PLAYING_FIELDS = ['Id', 'Name', 'Type', 'SeriesName', 'SeriesId', 'IndexNumber', 'ParentIndexNumber', 'RunTimeTicks', 'ImageTags', 'BackdropImageTags', 'ParentBackdropItemId', 'ParentBackdropImageTags', 'ParentThumbItemId', 'ParentThumbImageTag', 'SeriesPrimaryImageTag'];
 /** Gestellte Sitzungen anderer Geraete in der Form von GET /Sessions. */
 function remoteSessions() {
   return state.remote.map((r) => {
     const it = items.get(r.item) ?? {};
-    const playing = Object.fromEntries(['Id', 'Name', 'Type', 'SeriesName', 'SeriesId', 'IndexNumber', 'ParentIndexNumber', 'RunTimeTicks'].filter((k) => k in it).map((k) => [k, it[k]]));
+    const playing = Object.fromEntries(NOW_PLAYING_FIELDS.filter((k) => k in it).map((k) => [k, it[k]]));
     return {
       Id: r.id,
       UserId: r.user,
-      UserName: 'demo',
       Client: r.client,
       DeviceName: r.device,
       DeviceId: `dev-${r.id}`,
@@ -1173,7 +1180,8 @@ function remoteSessions() {
       SupportsRemoteControl: r.control,
       SupportsMediaControl: r.control,
       NowPlayingItem: Object.keys(playing).length ? playing : null,
-      PlayState: { PositionTicks: remoteTicks(r), IsPaused: false, PlayMethod: 'DirectPlay' }
+      UserName: r.user === USER.Id ? 'demo' : 'lena',
+      PlayState: { PositionTicks: remoteTicks(r), IsPaused: !!r.paused, PlayMethod: 'DirectPlay' }
     };
   });
 }
@@ -1289,7 +1297,7 @@ function debugControl(p, q) {
     }
     const item = q.get('item') || [...items.values()].find((i) => i.Type === 'Movie')?.Id;
     if (!items.has(item)) return [400, { error: 'item: Id eines Eintrags' }];
-    state.remote.push({ id: `remote${state.remote.length + 1}`, device: q.get('device') || 'Wohnzimmer Apple TV', item, at: Number(q.get('at')) || 600, since: Date.now(), user: q.get('user') === 'other' ? 'someone-else' : USER.Id, control: q.get('control') !== '0', idle: Number(q.get('idle')) || 0, client: q.get('client') || 'Jellycloud' });
+    state.remote.push({ id: `remote${state.remote.length + 1}`, device: q.get('device') || 'Wohnzimmer Apple TV', item, at: Number(q.get('at')) || 600, since: Date.now(), user: q.get('user') === 'other' ? 'someone-else' : USER.Id, control: q.get('control') !== '0', idle: Number(q.get('idle')) || 0, client: q.get('client') || 'Jellycloud', paused: q.get('paused') === '1' });
     return [200, { ok: true, sessions: state.remote.length, item }];
   }
   return [404, { error: `Mock: ${p} ist keine Steuerung` }];
@@ -1525,6 +1533,25 @@ const server = http.createServer(async (req, res) => {
   }
   // Ohne Verwaltungsrechte nur die gestellten Sitzungen, mit Verwaltung wie bisher die Sitzungsliste der Verwaltung; der Stopp merkt sich die Stelle am
   // Eintrag und beendet die Sitzung.
+  // "Laeuft gerade" und die Angebote aus einer Abfrage (Build 98): ohne ControllableByUserId, mit ActiveWithinSeconds (so schreibt sie die App; die Verwaltung
+  // fragt "activeWithinSeconds"). Wie Jellyfin: einem Administrator alle Konten, sonst die eigenen.
+  if (p === '/Sessions' && method === 'GET' && q.has('ActiveWithinSeconds')) {
+    state.log.push({ at: 'GET /Sessions overview', active: q.get('ActiveWithinSeconds') });
+    const all = [...remoteSessions(), ...selfSessions(), ...(state.admin ? (state.adminData ??= freshAdminData()).sessions : [])];
+    return send(res, 200, state.admin ? all : all.filter((s) => s.UserId === USER.Id));
+  }
+  // Fernbedienung (Build 98): Pause und Abspielen einer gestellten Sitzung; die Stelle steht, solange sie pausiert ist
+  if ((m = /^\/Sessions\/([\w-]+)\/Playing\/(Pause|Unpause|PlayPause)$/.exec(p)) && method === 'POST' && state.remote.some((r) => r.id === m[1])) {
+    const r = state.remote.find((x) => x.id === m[1]);
+    const want = m[2] === 'Pause' ? true : m[2] === 'Unpause' ? false : !r.paused;
+    if (want !== !!r.paused) {
+      r.at = remoteTicks(r) / TICKS;
+      r.since = Date.now();
+      r.paused = want;
+    }
+    state.log.push({ at: 'RemotePlaystate', SessionId: r.id, Command: m[2] });
+    return send(res, 204, '');
+  }
   if (p === '/Sessions' && method === 'GET' && !state.admin && state.remote.length) return send(res, 200, remoteSessions());
   if ((m = /^\/Sessions\/([\w-]+)\/Playing\/Stop$/.exec(p)) && method === 'POST' && state.remote.some((r) => r.id === m[1])) {
     const r = state.remote.find((x) => x.id === m[1]);

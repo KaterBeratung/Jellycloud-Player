@@ -36,7 +36,9 @@ const paths = {
   // Herz, durchgestrichen (Favorit entfernen, wie heart.slash)
   'heart-off': `<g ${S}><path d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/><path d="M4 4.5l16 15"/></g>`,
   // Person im Kreis (gemerktes Profil)
-  'person-circle': `<g ${S}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.7 18.2c1.1-2 3-3.1 5.3-3.1s4.2 1.1 5.3 3.1"/></g>`,
+  // Abspielen im Kreis ("Laeuft gerade", wie play.circle der Apple-App), Strich wie das Profilsymbol
+  'play-circle': `<g><circle ${S} cx="12" cy="12" r="9"/><path ${F} d="M10.2 8.4v7.2a.6.6 0 0 0 .9.52l5.9-3.6a.6.6 0 0 0 0-1.04l-5.9-3.6a.6.6 0 0 0-.9.52z"/></g>`,
+  'person-circle':`<g ${S}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.7 18.2c1.1-2 3-3.1 5.3-3.1s4.2 1.1 5.3 3.1"/></g>`,
   // Telefon mit Funkwellen links und rechts (Quick Connect, wie das Symbol der Apple-App)
   qc: `<g ${S}><rect x="8.5" y="3.5" width="7" height="17" rx="1.8"/><path d="M11 17.5h2M5.6 9a5 5 0 0 0 0 6M3.2 6.8a8.4 8.4 0 0 0 0 10.4M18.4 9a5 5 0 0 1 0 6M20.8 6.8a8.4 8.4 0 0 1 0 10.4"/></g>`,
   // Ablage mit Inhalt (Reiter Anfragen, wie tray.full der Apple-App)

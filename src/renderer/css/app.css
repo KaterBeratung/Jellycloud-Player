@@ -237,6 +237,10 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .who { position: relative; }
 .notice-dot { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--badge); box-shadow: 0 0 0 1.5px var(--page); pointer-events: none; }
 .notice-dot[hidden] { display: none; }
+/* Zahl der wartenden Anfragen am Reiter (pending-requests.js, Build 98 der Apple-App): wie das Kennzeichen des Systems, roter Kreis 18 px mit weisser Zahl,
+   ohne Rand. In der Kapsel hinter dem Namen des Reiters (wie die Reiterzeile des Macs), in der Reiterleiste oben rechts am Symbol. */
+.tab-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--badge); color: #fff; font: 600 12px/1 var(--font); font-variant-numeric: tabular-nums; vertical-align: 1px; pointer-events: none; }
+.tab-badge[hidden] { display: none; }
 .drag-strip { position: fixed; inset: 0 0 auto 0; height: var(--title-h); -webkit-app-region: drag; z-index: 5; }
 
 /* ---------- Buttons & Formular ----------
@@ -1030,7 +1034,11 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .arrow.right { right: max(6px, calc(var(--pad) / 2 - 22px)); }
 
 /* Hero: hoeher, Inhalt unten links, Verlauf von unten statt dunkler Wand von links, Seitenpunkte unten mittig in einer Glaskapsel */
-.hero { height: round(down, min(88vh, 860px), 4px); min-height: 520px; } /* ganze 4-px-Schritte: die Unterkante liegt bei 100 bis 200 % Skalierung auf einem Bildpunkt (keine halbe Zeile mit Bildfarben) */
+/* ganze 4-px-Schritte: die Unterkante liegt bei 100 bis 200 % Skalierung auf einem Bildpunkt (keine halbe Zeile mit Bildfarben). Seit 1.2.32 hoechstens 940 statt
+   860 px (Build 98 der Apple-App: "der banner ... soll mehr flaeche einnehmen", Mac 860 statt 780 pt): groessere Bildschirme bekommen mehr Banner; bis 1068 px
+   Fensterhoehe bestimmen weiter die 88 % (darunter bleibt die Ueberschrift der ersten Reihe zu sehen). Fernseher unveraendert (wie Apple TV). */
+.hero { height: round(down, min(88vh, 940px), 4px); min-height: 520px; }
+:root[data-form='tv'] .hero { height: round(down, min(88vh, 860px), 4px); }
 /* Wie bei der Detailseite aus registrierten Zahlen, damit die Abdunklung ueber einem laufenden Trailer weich nachlaesst (Streifen links, Schleier oben und unten) */
 @property --hs-l { syntax: '<percentage>'; inherits: false; initial-value: 62%; }
 @property --hs-m { syntax: '<percentage>'; inherits: false; initial-value: 30%; }
@@ -1473,7 +1481,48 @@ a.notice-card { color: inherit; text-decoration: none; }
    zu sehen ist, bekommt das Ende der Startseite 76 px Platz. Links das Symbol des Geraets im Kreis (40), zwei Zeilen, rechts Abspielen im Akzentkreis (36),
    waehrend der Uebernahme der Kreisel an dessen Stelle. Das Glas liegt auf dem Rahmen, der sich nie bewegt; gedrueckt gibt nur der Knopf darin nach (Streifen
    am Rand gibt es so nicht, siehe Glas-Knoepfe). */
-.handoff { position: fixed; z-index: 55; left: 50%; bottom: 24px; width: min(460px, calc(100% - 2 * var(--pad))); border-radius: 999px; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), inset 0 -1px 0 rgb(255 255 255 / 0.06), 0 18px 40px -16px rgb(0 0 0 / 0.75); opacity: 0; transform: translate(-50%, 10px) scale(0.92); transform-origin: 50% 100%; transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); }
+/* Seit 1.2.32 (Build 98 der Apple-App): die Kapsel klappt zur Steuerkarte auf. Die Karte steht ueber der Zeile der Kapsel und waechst ueber ihre Zeilenhoehe
+   (0fr -> 1fr) nach oben; der Rahmen bleibt unten verankert, so springt nichts. Eckenradius 28 (zu: so hoch wie halb die Kapsel, also rund) -> 24 (offen). */
+.handoff { position: fixed; z-index: 55; left: 50%; bottom: 24px; width: min(460px, calc(100% - 2 * var(--pad))); display: grid; grid-template-rows: 0fr auto; border-radius: 28px; overflow: hidden; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), inset 0 -1px 0 rgb(255 255 255 / 0.06), 0 18px 40px -16px rgb(0 0 0 / 0.75); opacity: 0; transform: translate(-50%, 10px) scale(0.92); transform-origin: 50% 100%; transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease), grid-template-rows var(--t-med) var(--ease), border-radius var(--t-med) var(--ease); }
+.handoff.open { grid-template-rows: 1fr auto; border-radius: 24px; }
+.handoff-card { min-height: 0; overflow: hidden; }
+.handoff-card-inner { display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 4px; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.handoff.open .handoff-card-inner { opacity: 1; transition-delay: 60ms; }
+.handoff-card-title { font-size: 12.5px; font-weight: 650; color: var(--muted); letter-spacing: 0.01em; }
+.handoff-list { display: flex; flex-direction: column; gap: 10px; max-height: min(60vh, 520px); overflow-y: auto; }
+.handoff-row { display: flex; flex-direction: column; gap: 10px; padding: 10px; border-radius: 18px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.handoff-row-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.handoff-thumb, .np-thumb { flex: none; display: grid; place-items: center; width: 96px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--muted); }
+.handoff-thumb img, .np-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.handoff-row-text, .np-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.handoff-row-title, .np-title { font-size: 14.5px; font-weight: 650; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handoff-row-sub, .np-sub, .np-meta { font-size: 12.5px; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handoff-row-device { display: flex; align-items: center; gap: 5px; font-size: 12.5px; line-height: 1.3; color: var(--muted); min-width: 0; }
+.handoff-row-device span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handoff-row-device svg { flex: none; }
+.handoff-row-pos, .np-pos { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.handoff-bar { flex: 1 1 auto; height: 4px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--text) 18%, transparent); }
+.handoff-bar-fill { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--text); transform-origin: 0 50%; transform: scaleX(0); transition: transform 1s linear; }
+.handoff-row-time, .np-time { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+/* Runder Knopf Pause/Abspielen: steuert das andere Geraet; waehrend ein Befehl unterwegs ist, halb durchsichtig und ohne zweiten Druck (Regel 15) */
+.handoff-toggle { flex: none; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); cursor: pointer; transition: background var(--t-fast), opacity var(--t-fast), var(--press-tr); }
+.handoff-toggle:hover { background: color-mix(in srgb, var(--text) 22%, transparent); }
+.handoff-toggle:active { scale: var(--press-scale); transition-duration: var(--t-press-in); }
+.handoff-toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
+.handoff-toggle.busy { opacity: 0.45; pointer-events: none; }
+.handoff-here { width: 100%; justify-content: center; gap: 8px; }
+.handoff-scrim { position: fixed; inset: 0; z-index: 54; background: transparent; }
+.handoff-scrim[hidden] { display: none; }
+.handoff-chevron { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--muted); transition: transform var(--t-med) var(--ease); }
+.handoff.open .handoff-chevron { transform: rotate(180deg); }
+.handoff-chevron .spinner { width: 18px; height: 18px; }
+:root[data-anim='reduced'] .handoff, :root[data-anim='reduced'] .handoff-chevron { transition-property: opacity; }
+/* "Laeuft gerade" (now-playing.js): Blatt mit einer Zeile je Stream */
+.np-list { display: flex; flex-direction: column; gap: 8px; }
+.np-list[hidden] { display: none; }
+.np-row { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 16px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.np-paused { flex: none; font-size: 12px; font-weight: 600; color: var(--text); }
+.np-empty { margin: 8px 0; color: var(--muted); text-align: center; }
 .handoff.in { opacity: 1; transform: translate(-50%, 0) scale(1); }
 /* Hinweis "Seerr verbinden" (seerr-tip.js, wie der Hinweis des Systems der Apple-App): Glaskarte unter der Kopfleiste, rechts unter dem Profil */
 .seerr-tip { position: absolute; z-index: 6; top: calc(var(--topbar-h) + 8px); right: var(--pad); width: min(360px, calc(100% - 2 * var(--pad))); display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px 14px 14px; border-radius: 22px; background: var(--lg-grad), var(--glass); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), 0 18px 40px -16px rgb(0 0 0 / 0.75); color: var(--text); animation: tip-in var(--t-med) var(--ease) both; transition: opacity 200ms var(--ease), transform 200ms var(--ease); }
@@ -1499,15 +1548,7 @@ a.notice-card { color: inherit; text-decoration: none; }
 .handoff-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .handoff-title { font-size: 12.5px; font-weight: 650; line-height: 1.25; }
 .handoff-detail { font-size: 14.5px; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.handoff-go { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
-.handoff-go .spinner { width: 18px; height: 18px; }
 .page.has-handoff { padding-bottom: calc(64px + 76px); }
-/* Auswahl, wenn auf mehreren Geraeten etwas laeuft */
-.handoff-choices { display: flex; flex-direction: column; gap: 6px; }
-.handoff-choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px 8px 8px; border-radius: 16px; border: 1px solid var(--line); background: var(--glass2); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-fast), var(--press-tr); }
-.handoff-choice:hover { background: rgb(255 255 255 / 0.1); }
-.handoff-choice:active { scale: var(--press-scale-wide); transition-duration: var(--t-press-in); }
-.handoff-choice .handoff-device { width: 36px; height: 36px; }
 
 /* ==========================================================================
    Kompakte Ansicht (Handy): gilt nur, wenn compact.js <html data-compact="on"> setzt, also nie im Windows-Programm (dort ist data-platform "desktop").
@@ -1536,7 +1577,8 @@ html[data-compact='on'] .update-note { display: none; }
 
 /* Tab-Leiste unten (app.js, buildTabbar) */
 html[data-compact='on'] .tabbar { position: fixed; z-index: 60; inset: auto 0 0 0; height: var(--tabbar-h); display: flex; align-items: stretch; gap: 2px; padding: 6px 6px env(safe-area-inset-bottom, 0px); background: var(--glass); backdrop-filter: blur(26px) saturate(1.5); border-top: 1px solid var(--line); }
-html[data-compact='on'] .tabbar-item { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 14px; color: var(--muted); font: 600 10.5px/1.1 var(--font); transition: color var(--t-fast), transform var(--t-fast) var(--ease); }
+html[data-compact='on'] .tabbar-item { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 14px; color: var(--muted); font: 600 10.5px/1.1 var(--font); transition: color var(--t-fast), transform var(--t-fast) var(--ease); }
+html[data-compact='on'] .tabbar-item .tab-badge { position: absolute; top: 4px; left: calc(50% + 4px); margin: 0; }
 html[data-compact='on'] .tabbar-item > span:last-child { max-width: 100%; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-compact='on'] .tabbar-item:active { transform: scale(0.94); }
 html[data-compact='on'] .tabbar-item.on { color: var(--accent-fg, var(--accent)); }
@@ -1549,7 +1591,9 @@ html[data-compact='on'] .handoff { bottom: calc(var(--tabbar-h) + 10px); width: 
 html[data-compact='on'] .page.has-handoff { padding-bottom: calc(28px + var(--tabbar-h) + 76px); }
 
 /* Startseite */
-html[data-compact='on'] .hero { height: round(down, min(78vh, 720px), 4px); min-height: 440px; }
+/* Banner wie beim iPhone seit Build 98 der Apple-App (82 statt 70 % der Hoehe ohne Leisten, hoechstens 800 statt 720 pt): hier 84 statt 78 % der Fensterhoehe,
+   hoechstens 800 px, und darunter bleiben bis zur Reiterleiste mindestens 75 px fuer die Ueberschrift der ersten Reihe (kleine Handys wachsen so kaum) */
+html[data-compact='on'] .hero { height: round(down, max(440px, min(84vh, calc(100vh - var(--tabbar-h) - 75px), 800px)), 4px); min-height: 440px; }
 html[data-compact='on'] .hero-content { left: var(--pad); right: var(--pad); width: auto; bottom: 76px; gap: 10px; }
 html[data-compact='on'] .hero-title { font-size: clamp(30px, 9.5vw, 42px); }
 html[data-compact='on'] .hero-logo { max-width: 80%; max-height: 84px; }

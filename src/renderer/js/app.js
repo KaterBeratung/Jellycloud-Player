@@ -28,6 +28,8 @@ document.addEventListener('home-ready', splashReady); // die Startseite steht: d
 import { installMotion } from './motion.js';
 import { runConnectionCheck } from './connection.js';
 import { installNotices, notices, readNotices, noticesReady, setSystemOpener } from './notices.js';
+import { nowPlayingButton } from './now-playing.js';
+import { installPendingBadge } from './pending-requests.js';
 import { notificationsView } from './views/notifications.js';
 import { openSeerrTitle } from './seerr-open.js';
 
@@ -208,7 +210,10 @@ function buildShell() {
     who.setAttribute('aria-label', n ? `${t('nav.profileMenu')}, ${t('notify.newCount', { n })}` : t('nav.profileMenu'));
   };
   paintNotice();
+  // "Laeuft gerade" (Build 98 der Apple-App): links neben dem Profil, nur solange etwas laeuft und die Startseite vorne ist (now-playing.js)
   tools.append(reload, ...(admin ? [admin] : []), settings, who);
+  const nowPlaying = nowPlayingButton(who);
+  nowPlaying.paint();
   // Versionshinweis in Gruen unter dem Konto (rechtsbuendig unter der Kapsel), solange ein Update gefunden, geladen oder bereit ist
   const updateNote = h('a', { class: 'update-note', href: '#/settings/about', hidden: true });
 
@@ -237,6 +242,8 @@ function buildShell() {
     }
   }
   tabbar?.el.addEventListener('click', (e) => sameTabClick(e, e.target.closest('.tabbar-item')));
+  // Zahl der wartenden Anfragen am Reiter "Anfragen" (nur fuer Verwalter bei Seerr, pending-requests.js)
+  const pendingBadge = installPendingBadge([...links, ...(tabbar?.items ?? [])].filter((a) => a._tab === 'requests'));
   root.replaceChildren(topbar, view, ...(tabbar ? [tabbar.el] : []));
 
   const place = (target) => {
@@ -289,6 +296,8 @@ function buildShell() {
     document.removeEventListener('route', onRoute);
     document.removeEventListener('notices-changed', paintNotice);
     resizeObserver.disconnect();
+    nowPlaying.destroy();
+    pendingBadge.destroy();
   };
 
   paintUpdateDot = () => {

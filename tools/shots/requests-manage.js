@@ -58,6 +58,13 @@ module.exports = async (ctx) => {
   };
   const pick = (label) => ctx.run(`[...document.querySelectorAll('.menu.open .menu-item')].find((b) => (b.querySelector('.lbl')?.textContent ?? b.textContent) === ${JSON.stringify(label)})?.click()`);
 
+  // ---------- Zahl der wartenden Anfragen am Reiter (Build 98 der Apple-App) ----------
+  const badge = () => ctx.run(`(() => { const a = [...document.querySelectorAll('.nav-link')].find((x) => x._tab === 'requests' || x.getAttribute('href') === '#/requests'); const b = a?.querySelector('.tab-badge'); return b && !b.hidden ? { n: b.textContent, label: a.getAttribute('aria-label') } : null; })()`);
+  await waitFor(`!!document.querySelector('.nav-link .tab-badge:not([hidden])')`, 6000);
+  const b0 = await badge();
+  check('Reiter "Anfragen" zeigt Verwaltern die Zahl der wartenden Anfragen (rotes Kennzeichen), Bildschirmleser hoeren sie mit', b0?.n === '2' && b0.label === 'Anfragen, 2 wartend', JSON.stringify(b0));
+  await ctx.capture(path.join(out, 'RM-badge.png'));
+
   // ---------- Menue mit Einzelheiten ----------
   const m1 = await openMenuOf('Anfrage 90001');
   check('Kopf des Menues: "Angefragt von ben am ..."', m1.heads.length === 1 && /^Angefragt von ben am \d+\. November 2026$/.test(m1.heads[0]), JSON.stringify(m1.heads));
@@ -118,6 +125,15 @@ module.exports = async (ctx) => {
   await waitFor(`(SEERR_DONE)`.replace('SEERR_DONE', 'true'), 100);
   await ctx.wait(1200);
   check('Seerr hat den Titel als verfuegbar gesetzt', (SEERR.markedAvailable ?? []).length === 1, JSON.stringify(SEERR.markedAvailable));
+
+  // ---------- Genehmigen: die Zahl am Reiter sinkt ----------
+  await ctx.run(`[...document.querySelectorAll('.requests .lib-controls .segmented button, .requests .lib-controls .segmented [role=radio]')].find((b) => b.textContent === 'Alle')?.click()`);
+  await ctx.wait(800);
+  const m4 = await openMenuOf('Anfrage 90001');
+  if (m4.items.includes('Genehmigen')) await pick('Genehmigen');
+  else await ctx.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  const dropped = await waitFor(`(() => { const b = document.querySelector('.nav-link .tab-badge'); return b && !b.hidden && b.textContent === '1'; })()`, 6000);
+  check('Nach dem Genehmigen: eine wartende Anfrage weniger am Reiter', m4.items.includes('Genehmigen') && dropped, JSON.stringify({ items: m4.items, badge: await badge() }));
 
   check('Keine Fehler in der Konsole', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   console.log(`\nErgebnis: ${pass}/${pass + fail} Pruefungen bestanden`);

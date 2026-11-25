@@ -87,6 +87,9 @@ contextBridge.exposeInMainWorld('jc', {
   handoffSessions: () => call('handoff:sessions'),
   handoffItem: (req) => call('handoff:item', req),
   handoffStop: (id) => call('handoff:stop', id),
+  handoffOverview: () => call('handoff:overview'),
+  seerrPendingCount: () => call('seerr:pendingCount'),
+  handoffPlaystate: (req) => call('handoff:playstate', req),
   onNotificationOpen: (cb) => {
     const h = () => cb();
     ipcRenderer.on('notify:open', h);

@@ -374,6 +374,9 @@ function registerIpc() {
   ipcMain.handle('handoff:sessions', wrap(() => backend.handoffSessions()));
   ipcMain.handle('handoff:item', wrap((req) => backend.handoffItem({ id: String(req?.id ?? ''), timeout: Number(req?.timeout) || undefined })));
   ipcMain.handle('handoff:stop', wrap((id) => backend.handoffStop(String(id ?? '').slice(0, 120))));
+  ipcMain.handle('handoff:overview', wrap(() => backend.sessionsOverview()));
+  ipcMain.handle('seerr:pendingCount', wrap(() => backend.seerrPendingCount()));
+  ipcMain.handle('handoff:playstate', wrap((req) => backend.handoffPlaystate({ sessionId: String(req?.sessionId ?? '').slice(0, 120), command: String(req?.command ?? '') })));
   ipcMain.handle('notify:take', wrap(() => {
     const t = pendingOpen;
     pendingOpen = null;

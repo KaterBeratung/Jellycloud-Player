@@ -67,6 +67,9 @@ Bibliotheken einhalten.
 - **Logo in der Oberfläche:** eine weiße Wolke als Umriss mit Play-Symbol und Leuchten, wie das Logo der Startanimation, in der Kopfzeile, auf dem Anmeldebildschirm und unter *Info*, jeweils mit Leuchten in der Akzentfarbe (`.brand-mark`);
   bis 1.2.26 war auch das App-Symbol diese Wolke, freistehend auf transparentem Grund;
   (Bis 0.0.43 war das App-Symbol eine silberne Wolke mit dunklem Rand ohne Leuchten.)
+- **Banner der Startseite (seit 1.2.32, Build 98 der Apple-App: „soll mehr Fläche einnehmen“):** Desktop 88 % der Fensterhöhe, höchstens 940 statt 860 px
+  (größere Bildschirme bekommen mehr Banner); Handy (Kompaktansicht) 84 statt 78 %, höchstens 800 px, mit mindestens 75 px bis zur Reiterleiste für die
+  Überschrift der ersten Reihe; Fernseher unverändert.
 - **Standardfarbe:** neutrales Silberweiß (`#f5f5f7`) wie bei Apple TV für Buttons, Navigation, Fortschritt und Markierungen. Die Farbe ist unter *Erscheinungsbild* frei wählbar: seit 1.2.6 dieselben acht Farbfelder wie in der
   Apple-App (Silber, Königsblau, Violett, Rosa, Rot, Orange, Grün, Türkis; `SWATCHES` in `accent.js`, Namen DE/EN), dazu Farbwähler und Hex-Code; eine früher gewählte Farbe, die kein Feld mehr ist, bleibt als eigene Farbe. Die Regeln stehen in `src/shared/accent.js`
   und gelten für Oberfläche und Player gleich: Weiß, Grau und Schwarz passen sich dem Theme an (auf einem hellen Grund würde Weiß zu Fast-Schwarz, sonst wären
@@ -487,6 +490,10 @@ mitschickt (sonst würde eine falsche Anmeldung durch ein altes Cookie akzeptier
 - **Anfragen verwalten** (Menü einer Anfrage, Regeln in `seerr-requests.js`): Einzelheiten als Kopf (wer, wann, wer entschieden hat), „Staffeln ändern“
   (ausstehende Serie; eigene oder Verwalter), „Anfrage ändern“ (Zielserver, Profil, Ordner, „Anfragen als“; `request-editor.js`, der ganze Stand geht an
   `PUT /request/<n>`), „Als verfügbar markieren“ (`POST /media/<n>/available`, mit Rückfrage).
+- **Zahl wartender Anfragen am Reiter** (seit 1.2.32, Build 98 der Apple-App, `pending-requests.js`): wer bei Seerr Anfragen verwalten darf, sieht am
+  Reiter „Anfragen“ ein rotes Kennzeichen wie das des Systems (Desktop hinter dem Namen, Handy am Symbol; nicht auf dem Fernseher). Quelle
+  `GET /request/count` (`pending`, alle wartenden); neu gelesen bei bestätigter Verbindung, nach jeder Änderung an Anfragen, beim Öffnen des Reiters
+  und alle 15 Minuten. Szenario `requests-manage.js`.
 - **Gemeldete Probleme** (`#/issues`, `issues.js`, Knopf im Reiter Anfragen mit einem der Rechte): Liste Offen/Gelöst wie die Mitteilungen, die Meldung als
   Gespräch mit Antwortfeld, „Als gelöst markieren“/„Wieder öffnen“, löschen mit Rückfrage; Rechte wie Seerr.
 - **Personen:** fehlt die Biografie in der Sprache der App, kommt die englische.
@@ -557,18 +564,32 @@ Jellyfin-Servers (HTTP und WebSocket), kein weiterer Dienst. Jedes Gerät ist be
   - *Windows* (`src/main/remote-channel.js`): der eingebaute WebSocket von Node in Electron 45 (Kopfzeilen geprüft, Entscheidung E14), keine neue
     Abhängigkeit. Grenzen: kein Proxy des Systems und keine Ausnahme für selbst signierte Zertifikate (dann wird die Sitzung nirgends angeboten).
   - *Android* (`mobile/android/.../RemoteChannel.java`, im Player `PlayerActivity`): OkHttp 4.12 (mit Zustimmung des Nutzers, E14).
-- **Ziel (Startseite, `src/renderer/js/handoff.js`, Regeln in `src/shared/handoff.js`):** alle 5 s
-  `GET /Sessions?ControllableByUserId=<Konto>&ActiveWithinSeconds=90`, nur solange die Startseite vorne ist (nicht im Hintergrund, nicht während hier
-  gespielt wird, nicht bei ausgeschalteter Einstellung). Angeboten wird eine Sitzung nur mit allen fünf Bedingungen: nicht dieses Gerät, **eigenes
-  Konto** (fremde Sitzungen, die der Server einem Administrator nennt, verlassen die Rückseite nie), spielt ein Video, steuerbar, Meldung höchstens 90 s
-  alt; die jüngste zuerst. Die Kapsel liegt als Glas über dem Inhalt (unten mittig, höchstens 460 px; auf dem Handy über der Reiterleiste), mit Gerät,
-  Titel und Abspielen; mehrere Geräte: Auswahl „Von welchem Gerät fortsetzen?“.
+- **Ziel (Startseite, `src/renderer/js/handoff.js`, Regeln in `src/shared/handoff.js`):** seit 1.2.32 (Build 98 der Apple-App, Regel 18) eine Abfrage
+  für die Angebote und „Läuft gerade“: alle 5 s `GET /Sessions?ActiveWithinSeconds=960`, nur solange die Startseite vorne ist (nicht im Hintergrund,
+  nicht während hier gespielt wird); der Stand liegt in `src/renderer/js/sessions-feed.js`. Angeboten wird eine Sitzung nur mit allen fünf Bedingungen:
+  nicht dieses Gerät, **eigenes Konto**, spielt ein Video, steuerbar, Meldung höchstens 90 s alt; die jüngste zuerst. Die Übernahme selbst liest
+  frisch mit `ControllableByUserId` (wie bisher).
+- **Kapsel (seit 1.2.32 wie Build 98, Regeln 13 bis 17):** Glas über dem Inhalt (unten mittig, höchstens 460 px; auf dem Handy über der Reiterleiste). Zu:
+  Gerät, „Läuft auf <Gerät>“ bzw. „Pausiert auf <Gerät>“ (mehrere: „Läuft auf <n> Geräten“), der Titel, ein Pfeil. Ein Klick lässt dieselbe Fläche nach
+  oben zur Steuerkarte wachsen (Zeilenhöhe 0fr → 1fr, unten verankert, kein Sprung): je Gerät (höchstens drei) kleines Bild, Titel, Folge, Gerät, Stelle
+  mit Zeit (läuft jede Sekunde weiter, höchstens 12 s über die Meldung), ein runder Knopf **Pause/Abspielen** und „Hier fortsetzen“. Zu mit dem Pfeil,
+  einem Klick daneben (die Fläche dafür gibt es nur, solange die Karte offen ist) oder Escape.
+- **Fernbedienung:** der runde Knopf hält die Wiedergabe auf dem anderen Gerät an oder setzt sie fort, ohne sie zu übernehmen:
+  `POST /Sessions/<Id>/Playing/Pause` bzw. `/Unpause` nach dem gezeigten Stand, **nie `PlayPause`** (auf einen veralteten Stand bewirkte er das
+  Gegenteil). Während ein Befehl unterwegs ist, nimmt der Knopf keinen zweiten an; nach Erfolg gilt der erwartete Stand höchstens 12 s gegen die
+  Abfrage. Die Rückseite nimmt den Befehl nur für ein Angebot der letzten Abfrage an (eigenes Konto, steuerbar). Scheitert er: „Steuerung nicht möglich“.
+  Als Empfänger genügen Windows (`player.js remote`) und Android (`PlayerActivity.onRemoteCommand`) schon: Pause und Abspielen werden umgesetzt und
+  sofort mit `IsPaused` gemeldet.
+- **„Läuft gerade“ (seit 1.2.32, Regeln 19 bis 21, `src/renderer/js/now-playing.js`):** Knopf in der Kapsel oben rechts, links neben dem Profil, nur
+  solange etwas läuft und die Startseite vorne ist; ohne Zahl im Symbol (Bildschirmleser: „Läuft gerade, 2 Streams“), nicht auf dem Fernseher. Das Blatt
+  zeigt je Stream Bild, „Name · Programm · Gerät“, Titel, Folge, „Pausiert“ und die Stelle. Einem Administrator nennt der Server alle Konten, anderen nur
+  die eigenen; Pause/Abspielen nur bei eigenen, steuerbaren Streams, fremde nur ansehen.
 - **Ablauf der Übernahme:** Eintrag prüfen → Sitzungen frisch lesen → entscheiden → Stopp (`POST /Sessions/<Id>/Playing/Stop`, nur eine eben gelesene
   eigene Sitzung) → höchstens 1,5 s auf die genaue Stelle warten → Start hier über den normalen Weg der Wiedergabe. Spielt das andere Gerät inzwischen
   etwas anderes oder nimmt den Stopp gerade nicht an, startet hier nichts („Fortsetzen nicht möglich“ mit Grund); bei jedem Fehler vor dem Stopp läuft
   es dort weiter. Nach jedem Warten wird geprüft, ob die Übernahme noch gilt (Profil, Vordergrund, kein eigener Player).
-- **Einstellung:** Einstellungen › Wiedergabe › *Andere Geräte* › „„Auf diesem Gerät fortsetzen“ anzeigen“ (Standard an). Aus: keine Abfrage; den
-  Stopp anderer Geräte nimmt die App während der Wiedergabe trotzdem an.
+- **Einstellung:** Einstellungen › Wiedergabe › *Andere Geräte* › „„Auf diesem Gerät fortsetzen“ anzeigen“ (Standard an). Aus: keine Kapsel; die Abfrage
+  läuft für „Läuft gerade“ weiter. Den Stopp anderer Geräte nimmt die App während der Wiedergabe trotzdem an.
 - Tests: `test/handoff.test.js` (die 24 Fälle aus `HandoffRulesTests` und der Ablauf der Übernahme), `test/remote-channel.test.js` (Windows-Kanal gegen
   den WebSocket des Testservers), `test/handoff-backend.test.js`; 28 Gegenproben. Szenario `handoff.js` (Port 8983, beide Rollen; 6 Gegenproben an der
   Oberfläche). Der Testserver kennt `/socket`, die eigene Sitzung der App und gestellte Sitzungen anderer Geräte (`/__debug/session`, `/__debug/socket`).

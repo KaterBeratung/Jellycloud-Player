@@ -184,6 +184,7 @@
     // ---------- Auf diesem Geraet fortsetzen (Plan P19) ----------
     // Die Sitzungen der letzten Abfrage, die dem eigenen Konto gehoeren und nicht dieses Geraet sind: nur sie darf die Oberflaeche anhalten lassen
     let handoffOwn = { client: null, ids: new Set() };
+    let controlOwn = { client: null, ids: new Set() }; // Angebote der letzten Uebersicht: nur sie nimmt die Fernbedienung an (handoffPlaystate)
     const requireClient = () => {
       if (!client) throw new JellyfinError('Nicht angemeldet', { status: 401 });
       return client;
@@ -739,6 +740,14 @@
        * Eine Seite der Anfragen (Reiter Anfragen): scope "mine" nur die eigenen (requestedBy, die Nummer aus /auth/me; ohne bekannten Benutzer
        * erst die Pruefung, sonst liefe die Abfrage ohne Filter und zeigte Verwaltern alle), "manage" alle, soweit Seerr sie dem Benutzer zeigt.
        */
+      /**
+       * Zahl der wartenden Anfragen fuer den Reiter "Anfragen" (Build 98 der Apple-App): nur fuer ein Seerr-Konto, das Anfragen verwalten darf (sonst null,
+       * dann keine Zahl). Erst nach einer bestaetigten Verbindung (seerrUser), wie bei den Mitteilungen.
+       */
+      async seerrPendingCount() {
+        if (!seerr || !seerrUser || !SeerrState.canManageRequests(seerrUser.permissions)) return null;
+        return seerrRead((s) => s.pendingRequestCount());
+      },
       async seerrRequests({ scope = 'mine', skip = 0, take = 50 } = {}) {
         const mine = scope !== 'manage';
         let checked = null;
@@ -846,6 +855,28 @@
         const sessions = Handoff.ownAccount(Handoff.sessionsOf(raw), c.userId);
         if (client === c) handoffOwn = { client: c, ids: new Set(sessions.filter((s) => s.deviceId !== c.deviceId).map((s) => s.id)) };
         return { own, sessions };
+      },
+      /**
+       * "Laeuft gerade" und die Angebote aus einer Abfrage (Regel 18): streams = was laeuft (src/shared/handoff.js streams; einem Administrator nennt der
+       * Server alle Konten, nur zur Anzeige), sessions = die Sitzungen des eigenen Kontos (daraus die Angebote). Nur die Angebote darf die Fernbedienung
+       * steuern (handoffPlaystate), Sitzungen anderer Konten nie.
+       */
+      async sessionsOverview() {
+        const c = requireClient();
+        const all = Handoff.sessionsOf(await c.sessionsOverview());
+        const own = { ownDeviceId: c.deviceId, ownUserId: c.userId };
+        const sessions = Handoff.ownAccount(all, c.userId);
+        if (client === c) controlOwn = { client: c, ids: new Set(Handoff.offers(sessions, own).map((s) => s.id)) };
+        return { own, sessions, streams: Handoff.streams(all, { ownDeviceId: c.deviceId }) };
+      },
+      /** Pause oder Abspielen auf einem anderen Geraet des eigenen Kontos (Fernbedienung, Regeln 13 bis 16): nur fuer ein Angebot der letzten Abfrage. */
+      async handoffPlaystate({ sessionId, command } = {}) {
+        const c = requireClient();
+        const id = String(sessionId ?? '');
+        if (command !== 'Pause' && command !== 'Unpause') throw new JellyfinError('Unbekannter Befehl', { status: 400 });
+        if (controlOwn.client !== c || !controlOwn.ids.has(id)) throw new JellyfinError('Diese Sitzung lässt sich nicht steuern', { status: 403, code: 'HANDOFF_FOREIGN' });
+        await c.sendPlaystate(id, command);
+        return true;
       },
       /** Eintrag fuer die Uebernahme (gemerkte Stelle, abspielbar); timeout in ms, 1 bis 8000. */
       async handoffItem({ id, timeout } = {}) {

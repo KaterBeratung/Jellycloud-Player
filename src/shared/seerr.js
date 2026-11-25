@@ -907,6 +907,16 @@ class SeerrClient {
   // ---------- Gemeldete Probleme (Apple-App Build 94; server/routes/issue.ts) ----------
 
   /** Die zuletzt geaenderten Meldungen (offen oder geloest), mit der Zahl, die Seerr nennt. */
+  /**
+   * Wie viele Anfragen auf eine Entscheidung warten (GET /request/count, Feld pending; Seerr zaehlt alle Anfragen, nicht nur die eigenen). Fuer die Zahl am
+   * Reiter "Anfragen" (Build 98 der Apple-App); 0 ohne lesbare Zahl.
+   */
+  async pendingRequestCount() {
+    const r = await this.request('GET', '/request/count', { timeout: 10000 });
+    const n = Number(r?.pending);
+    return Number.isInteger(n) && n > 0 ? Math.min(n, 9999) : 0;
+  }
+
   async issues({ open = true, take = 50 } = {}) {
     const r = await this.request('GET', '/issue', { query: { take: Math.max(1, Math.min(200, Number(take) || 50)), skip: 0, sort: 'modified', filter: open ? 'open' : 'resolved' } });
     const list = (Array.isArray(r?.results) ? r.results : []).map(normalizeIssue).filter(Boolean);
