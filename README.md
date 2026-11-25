@@ -805,6 +805,11 @@ jede Verbindung für lokal. Ist *Transcoding erlauben* aus, setzt die App keine 
 1. Sagt der Server „nicht im Heimnetz“ (`GET /System/Endpoint`, `IsInNetwork: false`), ist die Verbindung extern, auch unter einer privaten Adresse. `IsLocal` zählt nicht mehr.
 2. Private Adresse (10.x, 192.168.x, 172.16–31.x, `.local`, `.lan`, Rechnername …): Heimnetz, außer über Mobilfunk (Android: Verbindungsart der WebView). Antwortet der
    Server nicht auf die Frage, bleibt es beim Heimnetz (er setzt seine Grenze für Verbindungen, die er als entfernt sieht, selbst durch).
+   **Seit 1.2.31 zählt auch das DNS** (`Bitrate.hostResolvesLocal`, Windows: `dns.lookup` im Hauptprozess, Android: `JellycloudPlayerPlugin.resolveHost`,
+   Frist 2 s): Ein Name, der nicht schon dem Namen nach lokal ist, gilt als private Adresse, wenn er auf eine private Adresse auflöst. Das sind eigene
+   Endungen fürs Heimnetz (`.int`, `.home`, `.fritz.box`) und eigene Domains, die der Router oder ein DNS im Heimnetz auf den Server zeigen lässt
+   (Split-DNS). Unterwegs löst derselbe Name öffentlich oder gar nicht auf. Vorher galt so ein Name als öffentlich; nannte der Server keine eigene
+   Heimadresse, war die App auch zu Hause „im Internet“ mit der Grenze des Servers. Szenario `home-dns.js` (mit `localtest.me`, ohne DNS übersprungen).
 3. Öffentliche Adresse: Heimnetz nur, wenn unter der Heimadresse, die der Server nennt (`/System/Info/Public`, `LocalAddress`), derselbe Server antwortet
    (gleiche Id, Frist 3 s, ohne Token). Die Einstufung des Servers allein reicht hier nicht (Reverse Proxy).
 

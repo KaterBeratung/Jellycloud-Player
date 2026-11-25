@@ -78,8 +78,10 @@
    *   zeigt fertige Mitteilungen (src/shared/notifications.js systemNotificationOf) und nimmt sie zurueck; ohne: keine
    * @param {() => {signature?: string, viaLocalInterface?: boolean|null}} [deps.connection] Netz des Geraets fuer die Heimnetz-Pruefung (Plan P21): signature
    *   aendert sich, wenn das Netz wechselt (dann gilt nichts Gemerktes mehr), viaLocalInterface false = Mobilfunk; ohne: unbekannt
+   * @param {(host: string) => Promise<string[]>} [deps.resolveHost] DNS des Geraets fuer die Heimnetz-Pruefung: die Adressen eines Namens (Windows: Node,
+   *   Android: InetAddress); ein Name mit privater Adresse gilt wie eine private Adresse (".int", Split-DNS); ohne: nur der Name zaehlt (Browser)
    */
-  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {}, systemNotify = null, connection = () => ({}) }) {
+  function createBackend({ config, fetch, appVersion, locale, deviceName, extraState = () => ({}), onSettings = () => {}, checkTimeoutMs = CHECK_TIMEOUT_MS, notifyIo = null, onNotifications = () => {}, systemNotify = null, connection = () => ({}), resolveHost = null }) {
     /** @type {InstanceType<typeof JellyfinClient>|null} */
     let client = null;
     /** @type {InstanceType<typeof SeerrClient>|null} Seerr des aktiven Profils, nur mit gueltiger Sitzung */
@@ -349,7 +351,7 @@
       if (!force && limits && limits.settled && limitsNet === net.signature && Date.now() - limitsAt < LIMITS_TTL_MS) return Promise.resolve(limits);
       const mine = client;
       const p = mine
-        .getStreamingLimits({ viaLocalInterface: net.viaLocalInterface, probeHome: (run) => homeProbe.get(net.signature, run) })
+        .getStreamingLimits({ viaLocalInterface: net.viaLocalInterface, probeHome: (run) => homeProbe.get(net.signature, run), resolveHost })
         .then((l) => {
           if (client !== mine) return l;
           const out = { ...l };
@@ -663,8 +665,10 @@
           if (!owner || !client) throw new SeerrError('Zuerst bei Jellyfin anmelden');
           const server = config.data.servers.find((s) => s.id === owner);
           const probed = await probeSeerr(url, fetch);
-          // Heimnetz: die Seerr-Adresse ist privat, oder die Verbindung zu Jellyfin gilt als Heimnetz (dieselbe Pruefung wie die Bitratensteuerung)
-          const home = Bitrate.addressLooksLocal(probed.url) || (await refreshLimits().catch(() => null))?.home === true;
+          // Heimnetz: die Seerr-Adresse ist privat (dem Namen oder dem DNS nach), oder die Verbindung zu Jellyfin gilt als Heimnetz (dieselbe Pruefung
+          // wie die Bitratensteuerung)
+          const home =
+            Bitrate.addressLooksLocal(probed.url) || (await Bitrate.hostResolvesLocal(probed.url, resolveHost)) || (await refreshLimits().catch(() => null))?.home === true;
           if (!Seerr.quickConnectAllowed(probed.url, home)) throw new SeerrError(Seerr.QC_PROBLEMS.notAllowed, { code: 'QC_notAllowed' });
           const { code, secret } = await Seerr.quickConnectInitiate(probed.url, fetch);
           let authorized = false;

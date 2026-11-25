@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, protocol, net, shell, Menu, safeStorage, se
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const dns = require('node:dns').promises;
 const { ConfigStore, notifyIo, DEFAULT_UPDATE_SOURCE } = require('./config');
 const { PlayerController } = require('./player');
 const { AudioOutputProbe } = require('./audio-output');
@@ -501,7 +502,9 @@ async function startUp() {
     systemNotify: notifier,
     // Heimnetz-Pruefung (Plan P21): das Netz des Rechners als Kennzeichen (Adapter und Adressen, nur im Speicher). Wechselt es (anderes WLAN, VPN an
     // oder aus), gilt keine gemerkte Einstufung mehr. Ueber welche Schnittstelle eine Verbindung laeuft, laesst sich hier nicht bestimmen (unbekannt).
-    connection: () => ({ signature: networkSignature() })
+    connection: () => ({ signature: networkSignature() }),
+    // Heimnetz-Pruefung: DNS des Rechners. Ein Name, der im Heimnetz auf eine private Adresse zeigt (".int", Split-DNS), gilt wie eine private Adresse
+    resolveHost: (host) => dns.lookup(host, { all: true }).then((list) => list.map((a) => a.address))
   });
   backend.buildSeerr();
 

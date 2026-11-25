@@ -737,10 +737,12 @@ class JellyfinClient {
    * src/shared/bitrate.js). Erst die Einstufung des Servers (/System/Endpoint); bei einer oeffentlichen Adresse, die der Server nicht als entfernt
    * einstuft, die Probe der Heimadresse (probeHome: die Rueckseite merkt sich ihr Ergebnis je Netz). Nur ausserhalb des Heimnetzes werden die Grenzen
    * gelesen: die des Kontos und die des Servers (die Server-Einstellung ist nicht fuer jeden lesbar). viaLocalInterface: false = Mobilfunk (nie Heimnetz).
+   * resolveHost(host) -> Promise<string[]>: DNS des Geraets (Windows, Android); loest ein Name, der nicht schon dem Namen nach lokal ist (".int",
+   * eigene Domain mit Split-DNS), auf eine private Adresse auf, zaehlt er wie eine private Adresse (Bitrate.hostResolvesLocal). Ohne: nur der Name.
    */
-  async getStreamingLimits({ viaLocalInterface = null, probeHome = (run) => run() } = {}) {
-    const endpoint = await this.getEndpoint();
-    const looksLocal = Bitrate.addressLooksLocal(this.baseUrl);
+  async getStreamingLimits({ viaLocalInterface = null, probeHome = (run) => run(), resolveHost = null } = {}) {
+    const [endpoint, resolvesLocal] = await Promise.all([this.getEndpoint(), Bitrate.hostResolvesLocal(this.baseUrl, resolveHost)]);
+    const looksLocal = Bitrate.addressLooksLocal(this.baseUrl) || resolvesLocal;
     const serverView = endpoint ? endpoint.inNetwork : null;
     const probe = serverView !== false && !looksLocal && viaLocalInterface !== false;
     const homeAnswers = probe ? await Promise.resolve(probeHome(() => this.homeAddressAnswers())).catch(() => false) : false;

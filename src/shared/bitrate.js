@@ -74,31 +74,74 @@
     return { mbps: auto, autoMbps: auto };
   }
 
-  /** Zeigt schon der Name der eingetragenen Adresse aufs Heimnetz (private IP, ".local", einfacher Rechnername)? Ohne Netzwerkzugriff. */
-  function addressLooksLocal(baseUrl) {
-    let host;
+  /** Hostname einer Adresse, klein, ohne eckige Klammern bei IPv6; '' bei einer ungueltigen Adresse. */
+  function hostOf(baseUrl) {
     try {
-      host = new URL(String(baseUrl)).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+      return new URL(String(baseUrl)).hostname.toLowerCase().replace(/^\[|\]$/g, '');
     } catch {
-      return false;
+      return '';
     }
-    if (!host) return false;
-    if (host === 'localhost' || host === '::1' || /\.(local|lan|home\.arpa|internal)$/.test(host)) return true;
-    if (!host.includes('.') && !host.includes(':')) return true; // "nas", "jellyfin"
-    const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  }
+
+  const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  /** Ist der Text eine IP-Adresse (v4 oder v6)? Dann gibt es nichts aufzuloesen. */
+  const isIpLiteral = (host) => IPV4.test(host) || host.includes(':');
+
+  /**
+   * Ist das eine Adresse im Heimnetz: privat (10/8, 172.16/12, 192.168/16), link-lokal (169.254/16, fe80::/10), eigener Rechner (127/8, ::1) oder
+   * privat nach IPv6 (fc00::/7), auch als IPv4 in IPv6 ("::ffff:192.168.1.2"). Eine Zone ("fe80::1%eth0") zaehlt nicht mit.
+   */
+  function ipIsPrivate(address) {
+    let ip = String(address ?? '').toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip);
+    if (mapped) ip = mapped[1];
+    const v4 = IPV4.exec(ip);
     if (v4) {
       const a = +v4[1];
       const b = +v4[2];
       return a === 10 || a === 127 || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31);
     }
-    // IPv6: link-lokal (fe80::/10) und private Adressen (fc00::/7); nur bei Adressen, ein Name wie "fdserver.example.com" ist kein Heimnetz
-    return host.includes(':') && (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd'));
+    if (!ip.includes(':')) return false;
+    return ip === '::1' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd');
+  }
+
+  /** Zeigt schon der Name der eingetragenen Adresse aufs Heimnetz (private IP, ".local", einfacher Rechnername)? Ohne Netzwerkzugriff. */
+  function addressLooksLocal(baseUrl) {
+    const host = hostOf(baseUrl);
+    if (!host) return false;
+    if (host === 'localhost' || /\.(local|lan|home\.arpa|internal)$/.test(host)) return true;
+    if (!host.includes('.') && !host.includes(':')) return true; // "nas", "jellyfin"
+    // Nur Adressen selbst: ein Name wie "fdserver.example.com" ist kein Heimnetz
+    return isIpLiteral(host) && ipIsPrivate(host);
+  }
+
+  /**
+   * Zeigt der Name der eingetragenen Adresse laut DNS ins Heimnetz? Fuer Namen, die nicht schon dem Namen nach lokal sind: eigene Endungen fuer das
+   * Heimnetz (".int", ".home", ".fritz.box") oder eine eigene Domain, die der Router oder ein DNS im Heimnetz auf eine private Adresse aufloest (Split-DNS).
+   * Von unterwegs loest derselbe Name oeffentlich oder gar nicht auf. resolve(host) -> Promise<string[]> (die Adressen des Namens); hoechstens
+   * timeoutMs warten. false ohne Aufloesung, bei einem Fehler oder einer Adresse, die schon dem Namen nach entschieden ist.
+   */
+  async function hostResolvesLocal(baseUrl, resolve, { timeoutMs = 2000 } = {}) {
+    const host = hostOf(baseUrl);
+    if (typeof resolve !== 'function' || !host || isIpLiteral(host) || addressLooksLocal(baseUrl)) return false;
+    let timer = null;
+    try {
+      const list = await Promise.race([
+        Promise.resolve().then(() => resolve(host)),
+        new Promise((r) => (timer = setTimeout(() => r(null), timeoutMs)))
+      ]);
+      return Array.isArray(list) && list.some(ipIsPrivate);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
    * Gilt die Verbindung als Heimnetz (dort ohne Grenze)? Wie HomeNetwork.isHome der Apple-App:
    * - serverInNetwork: Einstufung des Servers (/System/Endpoint, IsInNetwork); null, wenn er sie nicht nennt.
-   * - addressLooksLocal: die eingetragene Adresse ist dem Namen nach privat.
+   * - addressLooksLocal: die eingetragene Adresse ist dem Namen nach privat, oder ihr Name loest im DNS auf eine private Adresse auf (hostResolvesLocal).
    * - viaLocalInterface: die Verbindung laeuft ueber das Netz vor Ort; false ueber Mobilfunk, null unbekannt (Windows kann die Schnittstelle einer
    *   Verbindung nicht ohne Weiteres bestimmen, ein VPN ins Heimnetz zaehlt dort darum als Heimnetz).
    * - homeAddressAnswers: unter der Heimadresse, die der Server nennt, antwortet derselbe Server.
@@ -343,7 +386,9 @@
     bitrateCeiling,
     autoBitrateMbps,
     effectiveQuality,
+    ipIsPrivate,
     addressLooksLocal,
+    hostResolvesLocal,
     isHome,
     readServerLimit,
     resolveLimit,

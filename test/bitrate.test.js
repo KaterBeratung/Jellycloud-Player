@@ -161,6 +161,30 @@ test('Adresse dem Namen nach privat: IPv4-Bereiche, .local/.lan/.home.arpa/.inte
     assert.equal(B.addressLooksLocal(u), false, u);
 });
 
+test('Private Adresse: IPv4-Bereiche, link-lokal, eigener Rechner, IPv6 privat und als IPv4 in IPv6; oeffentliche nicht', () => {
+  for (const a of ['192.168.1.5', '10.1.2.3', '172.20.0.1', '169.254.3.4', '127.0.0.1', '::1', 'fd12::5', 'fe80::1%eth0', '::ffff:192.168.0.10', '[fd00::1]'])
+    assert.equal(B.ipIsPrivate(a), true, a);
+  for (const a of ['8.8.8.8', '100.64.0.1', '172.32.0.1', '2001:db8::1', '::ffff:8.8.8.8', 'jf.example.int', '', null]) assert.equal(B.ipIsPrivate(a), false, String(a));
+});
+
+test('DNS: ein Name mit privater Adresse gilt als Heimnetz (".int", Split-DNS); oeffentlich, Fehler, Frist und IP-Adressen nicht', async () => {
+  const asked = [];
+  const dns = (map) => async (host) => (asked.push(host), map[host] ?? Promise.reject(new Error('ENOTFOUND')));
+  assert.equal(await B.hostResolvesLocal('https://jellyfin.home.int', dns({ 'jellyfin.home.int': ['192.168.1.5'] })), true);
+  assert.equal(await B.hostResolvesLocal('https://jf.example.com', dns({ 'jf.example.com': ['2001:db8::1', '10.0.0.7'] })), true, 'eine private Adresse reicht');
+  assert.equal(await B.hostResolvesLocal('https://jf.example.com', dns({ 'jf.example.com': ['93.184.216.34'] })), false, 'von unterwegs: oeffentlich');
+  assert.equal(await B.hostResolvesLocal('https://unbekannt.int', dns({})), false, 'nicht aufloesbar');
+  assert.equal(await B.hostResolvesLocal('https://jf.example.com', null), false, 'ohne DNS (Browser)');
+  asked.length = 0;
+  assert.equal(await B.hostResolvesLocal('http://192.168.1.5:8096', dns({})), false, 'IP: nichts aufzuloesen (entscheidet der Name)');
+  assert.equal(await B.hostResolvesLocal('http://nas:8096', dns({})), false, 'schon dem Namen nach lokal');
+  assert.deepEqual(asked, [], '...dann keine Frage an das DNS');
+  const t0 = Date.now();
+  assert.equal(await B.hostResolvesLocal('https://langsam.int', () => new Promise(() => {}), { timeoutMs: 50 }), false, 'Frist');
+  assert.ok(Date.now() - t0 < 1000);
+  assert.equal(await B.hostResolvesLocal('https://kaputt.int', () => { throw new Error('x'); }), false, 'Fehler beim Aufruf');
+});
+
 test('Planung: Grenze des Servers nur extern; ohne Transcoding keine eigene Grenze; Messung nur bei Automatisch extern', () => {
   const home = { home: true, limitBps: 0 };
   const remote = { home: false, limitBps: 15 * MBIT };
@@ -321,6 +345,19 @@ test('Pruefung am Client: private Adresse und Server "im Netz" ohne weitere Frag
   assert.ok(!log.includes('/System/Info/Public'), 'ueber Mobilfunk keine Probe der Heimadresse');
   const remote = await make('http://192.168.1.5:8096', { inNetwork: false }).getStreamingLimits();
   assert.deepEqual([remote.home, remote.serverView, remote.limitBps], [false, false, 15 * MBIT], 'Server sagt "entfernt": extern, auch unter privater Adresse');
+
+  // Eigene Endung fuer das Heimnetz (".int"), die der Router auf eine private Adresse aufloest; die Heimadresse des Servers ist die Domain selbst
+  const lan = async (host) => (host === 'jellyfin.home.int' ? ['192.168.1.5'] : ['93.184.216.34']);
+  log.length = 0;
+  const int = await make('https://jellyfin.home.int', { localAddress: 'https://jellyfin.home.int' }).getStreamingLimits({ resolveHost: lan });
+  assert.deepEqual([int.home, int.limitBps], [true, 0], '.int mit privater Adresse: Heimnetz');
+  assert.ok(!log.includes('/System/Info/Public') && !log.includes('/Users/Me'), '...ohne Probe der Heimadresse und ohne Grenzen');
+  const away = await make('https://jellyfin.home.int', { localAddress: 'https://jellyfin.home.int' }).getStreamingLimits({ resolveHost: async () => ['93.184.216.34'] });
+  assert.deepEqual([away.home, away.limitBps], [false, 15 * MBIT], 'derselbe Name oeffentlich aufgeloest: unterwegs');
+  const intRemote = await make('https://jellyfin.home.int', { inNetwork: false }).getStreamingLimits({ resolveHost: lan });
+  assert.equal(intRemote.home, false, 'Server sagt "entfernt" (VPN-Netz am Server): gilt immer');
+  const intCell = await make('https://jellyfin.home.int').getStreamingLimits({ resolveHost: lan, viaLocalInterface: false });
+  assert.equal(intCell.home, false, 'ueber Mobilfunk nie Heimnetz');
 });
 
 test('Frist einer Anfrage gilt auch, wenn die Abruffunktion das Abbruchsignal nicht kennt (native Anfrage der Android-Huelle)', async () => {

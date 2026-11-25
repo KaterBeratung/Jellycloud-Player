@@ -150,7 +150,9 @@
         connection: () => {
           const type = String(navigator.connection?.type ?? '');
           return { signature: `${type}|${navigator.onLine}`, viaLocalInterface: type === 'cellular' ? false : null };
-        }
+        },
+        // DNS der Huelle (Android: InetAddress): ein Name mit privater Adresse (".int", Split-DNS) gilt wie eine private Adresse; im Browser keiner
+        resolveHost: typeof host.resolveHost === 'function' ? (name) => host.resolveHost(name) : null
       });
       backend.buildSeerr();
       if (config.data.activeServerId) backend.activateServer(config.data.activeServerId);
