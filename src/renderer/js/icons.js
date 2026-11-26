@@ -36,6 +36,10 @@ const paths = {
   // Herz, durchgestrichen (Favorit entfernen, wie heart.slash)
   'heart-off': `<g ${S}><path d="M12 20.2s-7.5-4.6-7.5-10.3A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6c0 5.7-7.5 10.3-7.5 10.3z"/><path d="M4 4.5l16 15"/></g>`,
   // Person im Kreis (gemerktes Profil)
+  // Abspielen im Rechteck (Einstellungen "Wiedergabe", wie play.rectangle der Apple-App), Umriss wie die anderen Symbole der Seitenleiste
+  'play-rect': `<g ${S}><rect x="2.8" y="5" width="18.4" height="14" rx="3.2"/><path d="M10.3 9.4v5.2l4.3-2.6z"/></g>`,
+  // Spiel-Controller (Einstellungen "Discord": Rich Presence zeigt die Wiedergabe wie ein Spiel; kein Markenlogo)
+  gamepad: `<g ${S}><path d="M7.6 7.6h8.8a4.4 4.4 0 0 1 4.3 3.5l.85 4.4a2.5 2.5 0 0 1-4.4 2.1l-1.6-1.9H8.45l-1.6 1.9a2.5 2.5 0 0 1-4.4-2.1l.85-4.4a4.4 4.4 0 0 1 4.3-3.5z"/><path d="M8.2 10.4v3M6.7 11.9h3"/><circle cx="15.6" cy="11.1" r=".35"/><circle cx="17.3" cy="12.8" r=".35"/></g>`,
   // Abspielen im Kreis ("Laeuft gerade", wie play.circle der Apple-App), Strich wie das Profilsymbol
   'play-circle': `<g><circle ${S} cx="12" cy="12" r="9"/><path ${F} d="M10.2 8.4v7.2a.6.6 0 0 0 .9.52l5.9-3.6a.6.6 0 0 0 0-1.04l-5.9-3.6a.6.6 0 0 0-.9.52z"/></g>`,
   'person-circle':`<g ${S}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.7 18.2c1.1-2 3-3.1 5.3-3.1s4.2 1.1 5.3 3.1"/></g>`,

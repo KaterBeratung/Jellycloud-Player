@@ -1136,6 +1136,14 @@ Aus einer Durchsicht des Codes, jeweils mit Test (`test/` bzw. `tools/shots/revi
   sogar **verloren**, weil das Drücken den Knopf verkleinert (im Test 3 von 6 Klicks). Jetzt hält ein unsichtbarer Streifen in Richtung der Bewegung die Trefferfläche unter der Maus (`::before` in `app.css` und `player.css`), das Aussehen ist gleich. Bei *Bewegung reduzieren* (System) entfällt die Hebung. Der Knopf *Intro überspringen*
   im Player hob sich nie an, weil seine Eingangsanimation (`both`) den Endwert festhielt (jetzt `backwards`). In Menüs wandert der Fokus mit der Maus: mit der Tastatur geöffnet leuchteten sonst der erste Eintrag und der unter der Maus zugleich. Nicht prüfbar mit simulierten Mausereignissen: ein Hover, der an der Ziehfläche der
   Titelzeile hängen bleiben könnte (bekanntes Verhalten von Electron bei `-webkit-app-region: drag`).
+- **Hover ohne Bewegung (seit 1.2.33):** Die Hebung beim Zeigen ist für alle Bedienelemente der Oberfläche entfallen (Knöpfe, Auswahlfelder, Reiter, Optionen,
+  Themenkacheln, Marke, Seitenleiste der Einstellungen); sie werden nur heller, wie `hoverEffect(.highlight)` der Apple-App. Heben gilt nur noch für Karten
+  (`.lift`), beim Link „Alle“ einer Reihe ruckt nur der Pfeil. Die Seitenleiste der Einstellungen bekam beim Zeigen vorher fast den Look des gewählten Eintrags
+  (Glas mit Lichtkante, als harter Sprung, weil sich ein Verlauf nicht überblenden lässt) und rutschte 2 px; jetzt eine ruhige Fläche. Die unsichtbaren
+  Streifen gegen das Zittern sind damit überflüssig (die Trefferfläche bleibt fürs Drücken); das Flackern am Banner-Knopf „Fortsetzen“ (`hover-audit.js`,
+  seit 1.2.31) ist weg. Dazu in den Einstellungen eine Höhe für alle Bedienelemente einer Zeile (36 px; vorher 48 px hohe Felder neben 34 px hohen Knöpfen),
+  „Name in Discord“ mit „Servername“ in einer Zeile, eigene Umriss-Symbole für *Wiedergabe* (Play im Rechteck) und *Discord* (Controller statt des
+  Monitors von *Bild & HDR*). Durchsicht mit `tools/shots/settings-hover-look.js` (Ruhe und Hover jeder Art von Bedienelement als Bild, Stilunterschiede im Protokoll).
 - **Problem melden:** Schließt man das Fenster, während gesendet wird, und es scheitert, erscheint der Fehler als Hinweis (früher stand er im unsichtbaren Fenster).
 
 Nicht geändert, aber gut zu wissen: Der Installer ist **nicht signiert** (die Prüfsumme in `latest.json` kommt aus derselben GitHub-Quelle, sie schützt vor beschädigten Downloads, nicht vor einem manipulierten Repo), und `allowSelfSigned` gilt nur für den Jellyfin-Server, nicht für Seerr.

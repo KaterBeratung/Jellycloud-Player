@@ -16,7 +16,7 @@ import { applyNotices } from '../notices.js';
 // (Bild & HDR, Ton, Discord) und "Allgemein" an der Stelle vor Info.
 const SECTIONS = [
   ['account', 'user'],
-  ['behavior', 'play'],
+  ['behavior', 'play-rect'],
   ['subtitles', 'subtitles'],
   ['network', 'link'],
   ['video', 'monitor'],
@@ -25,7 +25,7 @@ const SECTIONS = [
   ['home', 'home'],
   ['seerr', 'plus'],
   ['notifications', 'bell'],
-  ['discord', 'tv'],
+  ['discord', 'gamepad'],
   ['general', 'settings'],
   ['about', 'info']
 ];

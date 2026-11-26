@@ -26,6 +26,10 @@ module.exports = async (ctx) => {
 
   // Kein Trailer: sein fremder Rahmen (YouTube) kann Mausereignisse an sich ziehen und die Messung der folgenden Seiten verfaelschen
   await ctx.run(`window.jc.setSettings({ trailer: { autoplay: false, home: false } })`);
+  // Banner ohne eigenes Weiterschalten: zwischen zwei Messungen steht die Maus in der Ecke, das Banner schaltete dann weiter, und die gemessene Folie war
+  // inaktiv (inert: kein Hover, gewollt). Unter der Maus haelt das Banner ohnehin an (home.js, pointerenter).
+  await ctx.run(`window.jc.setSettings({ appearance: { heroAutoplay: false } }).then(() => document.dispatchEvent(new CustomEvent('relogin')))`);
+  await ctx.wait(1800);
   const wc = ctx.win.webContents;
   const move = (x, y) => wc.sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) });
   const movie = [...items.values()].find((i) => i.Name === 'Paper Moons');
@@ -49,7 +53,7 @@ module.exports = async (ctx) => {
       const r = el.getBoundingClientRect();
       if (r.width < 16 || r.height < 16 || r.top < 96 && !el.closest('.topbar') && r.top < 70 || r.bottom > innerHeight - 6 || r.top < 4 || r.right > innerWidth - 6 || r.left < 4) continue;
       const cs = getComputedStyle(el);
-      if (cs.visibility === 'hidden' || cs.pointerEvents === 'none' || el.disabled || cs.display === 'none' || +cs.opacity < 0.2) continue;
+      if (cs.visibility === 'hidden' || cs.pointerEvents === 'none' || el.disabled || cs.display === 'none' || +cs.opacity < 0.2 || el.closest('[inert]')) continue; // inert: ausgeblendete Folie, nimmt nichts an
       const key = el.tagName + '.' + String(el.className).split(/\\s+/).filter((c) => !/^(on|off|selected|open)$/.test(c)).join('.');
       sig.set(key, (sig.get(key) ?? 0) + 1);
       if (sig.get(key) > 2) continue; // je Art hoechstens zwei Stuecke
@@ -64,9 +68,10 @@ module.exports = async (ctx) => {
     const pt = await ctx.run(`(() => {
       const el = document.querySelector('[data-hv="${i}"]'); if (!el) return null;
       const r = el.getBoundingClientRect();
-      // Ganze Bildpunkte (so kommen Mausereignisse an): die letzte Zeile bzw. erste Spalte im Element, genau dort, wo eine Verschiebung beim Zeigen den Hover verliert
+      // Ganze Bildpunkte (so kommen Mausereignisse an): die letzte Zeile bzw. erste Spalte, die ganz im Element liegt, genau dort, wo eine Verschiebung beim
+      // Zeigen den Hover verliert. Eine angebrochene Randzeile (gebrochene Kante bei 125 % Skalierung) trifft Chromium nicht verlaesslich: dort nicht messen.
       const cx = Math.floor(r.left + r.width / 2); const cy = Math.floor(r.top + r.height / 2);
-      const p = { bottom: [cx, Math.floor(r.bottom - 0.01)], left: [Math.ceil(r.left + 0.01), cy], top: [cx, Math.ceil(r.top + 0.01)], right: [Math.floor(r.right - 0.01), cy] }['${edge}'];
+      const p = { bottom: [cx, Math.floor(r.bottom - 1)], left: [Math.floor(r.left) + 1, cy], top: [cx, Math.ceil(r.top)], right: [Math.ceil(r.right) - 2, cy] }['${edge}'];
       // Runde Elemente (Farbfelder, Scheiben) haben an ihrem aeussersten Punkt keine verlaessliche Flaeche: dort nicht messen
       const cs = getComputedStyle(el); const round = parseFloat(cs.borderTopLeftRadius) >= Math.min(r.width, r.height) / 2 - 1 && cs.borderTopLeftRadius.indexOf('%') < 0 || cs.borderTopLeftRadius === '50%';
       if (round && ('${edge}' === 'left' || '${edge}' === 'right')) return null;
@@ -85,7 +90,9 @@ module.exports = async (ctx) => {
     }
     let flips = 0;
     for (let k = 1; k < samples.length; k++) if (samples[k] !== samples[k - 1]) flips++;
-    return { flips, end: samples.at(-1), samples };
+    // Ohne Hover: was liegt dort jetzt oben, ist das Element noch da und aktiv? (Grund im Protokoll statt nur "000000000")
+    const why = samples.at(-1) === false ? await ctx.run(`(() => { const el = document.querySelector('[data-hv="${i}"]'); const top = document.elementFromPoint(${pt[0]}, ${pt[1]}); const r = el?.getBoundingClientRect(); return { connected: !!el?.isConnected, inert: !!el?.closest('[inert]'), top: top ? top.tagName + '.' + String(top.className).slice(0, 40) : null, own: !!top && !!el && (top === el || el.contains(top)), rect: r ? [Math.round(r.top), Math.round(r.bottom)] : null, y: ${pt[1]}, hovered: [...document.querySelectorAll(':hover')].map((e) => e.tagName + '.' + String(e.className).slice(0, 24)).slice(-2) }; })()`) : null;
+    return { flips, end: samples.at(-1), samples, why };
   };
 
   const flickers = [];
@@ -113,7 +120,7 @@ module.exports = async (ctx) => {
         // Fehler: der Hover zittert (wechselt) oder geht ganz verloren, obwohl die Maus im Element steht (die Hebung hat das Element unter der Maus weggezogen)
         if (r.flips >= 2 || r.end === false) {
           bad++;
-          flickers.push(`[${name}] ${el.key} "${el.text}" Rand ${edge}: ${r.samples.map((s) => (s ? 1 : 0)).join('')}`);
+          flickers.push(`[${name}] ${el.key} "${el.text}" Rand ${edge}: ${r.samples.map((s) => (s ? 1 : 0)).join('')}${r.why ? ` ${JSON.stringify(r.why)}` : ''}`);
         }
       }
       if (el.cursor !== 'pointer' && !/^(INPUT|TEXTAREA|SELECT)/.test(el.key) && !cursors.includes(`${el.key} "${el.text}" (${el.cursor})`)) cursors.push(`[${name}] ${el.key} "${el.text}" (${el.cursor})`);
@@ -270,7 +277,8 @@ module.exports = async (ctx) => {
     }
     if (goShown) {
       await ov.executeJavaScript(`document.querySelector('.pause-go').dataset.hv = 'go'`);
-      const gpt = await ov.executeJavaScript(`(() => { const e = document.querySelector('.pause-go'); const r = e.getBoundingClientRect(); return [Math.floor(r.left + r.width / 2), Math.floor(r.bottom - 0.01)]; })()`);
+      // die letzte Zeile, die ganz im Knopf liegt (wie oben; eine angebrochene Randzeile trifft Chromium nicht verlaesslich)
+      const gpt = await ov.executeJavaScript(`(() => { const e = document.querySelector('.pause-go'); const r = e.getBoundingClientRect(); return [Math.floor(r.left + r.width / 2), Math.floor(r.bottom - 1)]; })()`);
       ovMove(gpt[0] + 60, gpt[1] - 80);
       await ctx.wait(100);
       ovMove(gpt[0], gpt[1]);

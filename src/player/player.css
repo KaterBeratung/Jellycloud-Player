@@ -109,7 +109,7 @@ button { font: inherit; color: inherit; }
 .ctrls { display: flex; align-items: center; gap: 4px; height: 52px; }
 .ctrls .sp { flex: 1; }
 .ibtn { position: relative; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; cursor: pointer; color: rgb(255 255 255 / 0.92); transition: background var(--t-fast), transform var(--t-fast) var(--ease), color var(--t-fast), var(--press-tr); }
-.ibtn:hover { background: rgb(255 255 255 / 0.16); transform: translateY(-1px); }
+.ibtn:hover { background: rgb(255 255 255 / 0.16); }
 .ibtn.on { color: var(--accent-fg, var(--accent)); }
 .ibtn.big { width: 52px; height: 52px; background: #fff; color: #111; }
 .ibtn.big:hover { background: #fff; transform: scale(1.07); }
@@ -129,7 +129,7 @@ button { font: inherit; color: inherit; }
 .floaters > * { pointer-events: auto; }
 .skip { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.25); background: var(--glass); font: 700 15px var(--font); cursor: pointer; box-shadow: 0 14px 36px rgb(0 0 0 / 0.5); animation: slide-in calc(420ms * var(--dur)) var(--ease) backwards; transition: background var(--t-fast), transform var(--t-fast) var(--ease), var(--press-tr); }
 /* "backwards" statt "both": Mit "both" haelt die Animation ihren Endwert (transform: none) fest und ueberschreibt die Hebung beim Zeigen, der Knopf hob sich nie an */
-.skip:hover { background: #fff; color: #111; transform: translateY(-2px); }
+.skip:hover { background: #fff; color: #111; }
 @keyframes slide-in { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Bildschirm "Naechste Folge" (Countdown, Plan P22) ----------
@@ -371,11 +371,11 @@ button { font: inherit; color: inherit; }
 .pause-times .b b { color: #fff; font-weight: 800; font-size: 14px; }
 .pause-actions { display: flex; align-items: center; gap: 16px; margin-top: 8px; pointer-events: auto; }
 .pause-go { height: 48px; padding: 0 26px 0 20px; border: 0; border-radius: 999px; display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent)); color: var(--accent-ink); font: 800 16px var(--font); cursor: pointer; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 12px 30px -8px rgb(var(--accent-rgb) / 0.8); transition: transform var(--t-fast) var(--ease), filter var(--t-fast), var(--press-tr); }
-.pause-go:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); }
+.pause-go:hover { transform: scale(1.03); filter: brightness(1.06); } /* seit 1.2.33 ohne Hebung (wie die Oberflaeche), nur die leichte Vergroesserung des runden Hauptknopfs */
 /* Hover ohne Zittern (wie in der Oberflaeche, siehe app.css): Heben sich Knoepfe beim Zeigen an oder werden sie beim Druecken kleiner, verlieren sie am Rand den Hover und ein Klick dort ginge verloren.
    Ein unsichtbarer Rand in Richtung der Bewegung haelt die Trefferflaeche unter der Maus. */
 :where(.skip, .pause-go, .round, .stepper button) { position: relative; }
-.skip::before, .pause-go::before { content: ''; position: absolute; inset: 0 0 -4px; border-radius: inherit; }
+.skip::before, .pause-go::before { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .ibtn::before, .round::before, .stepper button::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
 /* Druecken wie in der Oberflaeche (PressFeedback der Apple-App): eine Reaktion je Knopf, sofort kleiner und blasser, weich zurueck (--press-tr am Knopf). Waehrend des
    Drueckens waechst der unsichtbare Rand so weit, wie der Knopf schrumpft: ein Klick ganz am Rand geht nicht verloren. */

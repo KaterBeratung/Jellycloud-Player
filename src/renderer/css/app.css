@@ -229,7 +229,7 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .nav-indicator.hidden { opacity: 0; }
 .tools { display: flex; align-items: center; gap: 6px; }
 .tool { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease), var(--press-tr); }
-.tool:hover { background: var(--glass2); color: var(--text); transform: translateY(-1px); }
+.tool:hover { background: var(--glass2); color: var(--text); }
 .tool.on { color: var(--accent-fg, var(--accent)); background: rgb(var(--accent-rgb) / 0.14); }
 .who { padding: 0; cursor: pointer; font: inherit; }
 .avatar-sm { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; letter-spacing: 0.02em; color: var(--text); }
@@ -255,12 +255,11 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
   transition: transform var(--t-fast) var(--ease), background var(--t-fast), box-shadow var(--t-med), border-color var(--t-fast), filter var(--t-fast), var(--press-tr);
   -webkit-app-region: no-drag;
 }
-.btn:hover { transform: translateY(-1px); background: var(--surface3); }
+.btn:hover { background: var(--surface3); }
 .btn:disabled { opacity: 0.5; pointer-events: none; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 10px 26px -10px rgb(var(--accent-rgb) / 0.75); }
 .btn.primary:hover { background: var(--accent); filter: brightness(1.08); box-shadow: 0 14px 32px -10px rgb(var(--accent-rgb) / 0.9); }
 .btn.glass { background: var(--glass2); border-color: var(--line); }
-.btn.glass:hover { background: rgb(255 255 255 / 0.13); border-color: var(--line2); }
 .btn.danger { background: rgb(255 77 109 / 0.14); color: var(--danger-fg); border-color: rgb(255 77 109 / 0.3); }
 .btn.danger:hover { background: rgb(255 77 109 / 0.24); }
 .btn.sm { height: 34px; padding: 0 12px; font-size: 13px; gap: 6px; }
@@ -271,16 +270,11 @@ img { display: block; -webkit-user-drag: none; user-select: none; }
 .btn.loading::after { content: ''; width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.7s linear infinite; margin-left: 6px; }
 .btn small { font-weight: 500; opacity: 0.75; margin-left: 4px; font-size: 12.5px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* Hover ohne Zittern: Hebt sich ein Element beim Zeigen selbst an (translateY(-1px), bei den Reitern der Einstellungen translateX), liegt die Maus in der letzten Bildpunktzeile
-   nach der Bewegung ausserhalb. Der Hover faellt weg, das Element sinkt zurueck, bekommt ihn wieder ... und zittert. Ein unsichtbarer Streifen in Richtung der Bewegung
-   haelt die Trefferflaeche unter der Maus; das Element selbst sieht gleich aus. */
-:where(.opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile, .snav, .row-head .more, .tool, .menu-item, .toast-action) { position: relative; }
-.btn::before, .opt::before, .tab::before, .chip-btn::before, .brand::before, .issue-type::before { content: ''; position: absolute; inset: 0 0 -3px; }
-.theme-tile::before { content: ''; position: absolute; inset: 0 0 -4px; }
-.snav::before { content: ''; position: absolute; inset: 0 0 0 -3px; }
-.row-head .more::before { content: ''; position: absolute; inset: 0 0 0 -4px; }
-/* Systemeinstellung "Bewegung reduzieren" (motion.js): die kleine Hebung beim Zeigen entfaellt, unter der Maus bewegt sich nichts */
-:root[data-anim='reduced'] :is(.btn, .opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile, .snav, .row-head .more):hover { transform: none; }
+/* Zeigen wie hoverEffect(.highlight) der Apple-App (seit 1.2.33): Bedienelemente werden nur heller, sie bewegen sich nicht. Bis 1.2.32 hoben sich Knoepfe,
+   Reiter und Kacheln um 1 bis 2 px und die Seitenleiste der Einstellungen rutschte 2 px zur Seite; das wirkte unruhig und brauchte unsichtbare Streifen gegen
+   das Zittern am Rand (am Banner reichten sie nicht). Heben ("lift") gilt nur noch fuer Karten. Die Trefferflaeche (::before) braucht nur noch das Druecken. */
+:where(.opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile, .snav, .tool, .menu-item, .toast-action) { position: relative; }
+:is(.btn, .opt, .tab, .chip-btn, .brand, .issue-type, .theme-tile)::before { content: ''; position: absolute; inset: 0; }
 /* Druecken wie in der Apple-App (PressFeedback): eine Reaktion fuer jeden Knopf, sofort etwas kleiner und blasser, weich zurueck (Uebergang --press-tr am Knopf).
    Eigene Eigenschaft "scale", damit sie sich nicht mit der Hebung beim Zeigen oder dem Einblenden (transform) ins Gehege kommt. Waehrend des Drueckens waechst der
    unsichtbare Streifen auf allen Seiten so weit, wie der Knopf schrumpft: ein Klick ganz am Rand geht nicht verloren (die Maus bleibt ueber dem Knopf, bis sie loslaesst). */
@@ -396,8 +390,12 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .row-head { display: flex; align-items: baseline; gap: 12px; padding: 0 var(--pad); }
 .row-head h2 { font: 700 21px/1.2 var(--font-display); letter-spacing: -0.015em; }
 .row-head .sub { color: var(--muted); font-weight: 600; }
-.row-head .more { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-weight: 600; transition: color var(--t-fast), transform var(--t-fast) var(--ease); }
-.row-head .more:hover { color: var(--accent-fg, var(--accent)); transform: translateX(3px); }
+.row-head .more { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-weight: 600; transition: color var(--t-fast); }
+/* Nur der Pfeil ruckt beim Zeigen nach rechts, der Link selbst bleibt unter der Maus stehen */
+.row-head .more svg { transition: transform var(--t-fast) var(--ease); }
+.row-head .more:hover { color: var(--accent-fg, var(--accent)); }
+.row-head .more:hover svg { transform: translateX(3px); }
+:root[data-anim='reduced'] .row-head .more:hover svg { transform: none; }
 .row-body { position: relative; }
 .scroller { display: flex; gap: 18px; overflow-x: auto; overflow-y: hidden; padding: 16px var(--pad) 30px; scroll-snap-type: x proximity; scroll-padding-left: var(--pad); scrollbar-width: none; }
 .scroller::-webkit-scrollbar { display: none; }
@@ -541,7 +539,7 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .detail-actions-row.fill > .btn { flex: 1 1 0; justify-content: center; min-width: 0; }
 .detail-options { display: flex; flex-wrap: wrap; gap: 10px; }
 .opt { display: inline-flex; align-items: center; gap: 8px; height: var(--control-h); padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass2); cursor: pointer; max-width: 360px; transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast) var(--ease), var(--press-tr); }
-.opt:hover { background: rgb(255 255 255 / 0.12); border-color: var(--line2); transform: translateY(-1px); }
+.opt:hover { background: rgb(255 255 255 / 0.12); border-color: var(--line2); }
 .opt .lbl { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 .opt .val { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overview { max-width: 74ch; font-size: 15px; line-height: 1.65; color: color-mix(in srgb, var(--text) 88%, transparent); }
@@ -565,7 +563,7 @@ textarea.field { height: auto; padding: 12px 16px; border-radius: 16px; }
 .season-tabs { display: flex; gap: 8px; padding: 0 var(--pad) 6px; overflow-x: auto; scrollbar-width: none; }
 .season-tabs::-webkit-scrollbar { display: none; }
 .tab { flex: none; height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass2); color: var(--muted); font-weight: 650; cursor: pointer; transition: all var(--t-fast) var(--ease), var(--press-tr); }
-.tab:hover { color: var(--text); border-color: var(--line2); transform: translateY(-1px); }
+.tab:hover { color: var(--text); border-color: var(--line2); }
 .tab.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 8px 22px -8px rgb(var(--accent-rgb) / 0.7); }
 /* Jede Folge auf einer gemeinsamen Karte (Apple-App Build 95, EpisodeRow): deckende Flaeche des Designs, feine Kante, kein Glas (viele Zeilen in einer
    scrollenden Liste); die Rundung umschliesst die des Bildes im Abstand des Innenrands. Bild spielt ab, der Titel oeffnet die Seite der Folge. */
@@ -620,7 +618,8 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .settings-layout { display: flex; gap: 36px; padding: 0 var(--pad); align-items: flex-start; }
 .settings-nav { position: sticky; top: calc(var(--topbar-h) + 4px); flex: none; width: 220px; display: flex; flex-direction: column; gap: 4px; }
 .snav { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: calc(var(--radius) * 0.8); color: var(--muted); font-weight: 650; transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease); }
-.snav:hover { background: var(--glass2); color: var(--text); transform: translateX(2px); }
+/* Zeigen: nur eine ruhige Flaeche (wie hoverEffect(.highlight) der Apple-App), deutlich schwaecher als der gewaehlte Eintrag; keine Bewegung, kein Glas */
+.snav:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 .snav.on { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-fg, var(--accent)); }
 .settings-panel { flex: 1; min-width: 0; max-width: 860px; animation: page-in calc(420ms * var(--dur)) var(--ease) both; }
 .settings-group { display: flex; flex-direction: column; border-radius: calc(var(--radius) * 1.3); background: var(--glass2); border: 1px solid var(--line); overflow: hidden; }
@@ -647,7 +646,7 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .row-gap { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; width: 100%; }
 .theme-tile { display: flex; flex-direction: column; gap: 10px; padding: 10px; border-radius: calc(var(--radius) * 1.1); border: 2px solid var(--line); background: transparent; cursor: pointer; font-weight: 650; transition: border-color var(--t-fast), transform var(--t-fast) var(--ease), background var(--t-fast), var(--press-tr); }
-.theme-tile:hover { transform: translateY(-2px); border-color: var(--line2); }
+.theme-tile:hover { border-color: var(--line2); background: var(--lg-grad), color-mix(in srgb, var(--glass2) 55%, rgb(255 255 255 / 0.2)); }
 .theme-tile.on { border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.08); }
 .theme-sw { position: relative; height: 64px; border-radius: calc(var(--radius) * 0.7); overflow: hidden; box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.3); }
 .theme-sw i { position: absolute; border-radius: 6px; }
@@ -655,7 +654,7 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .theme-sw i:nth-child(2) { left: 10px; bottom: 10px; width: 28px; height: 28px; border-radius: 50%; }
 .swatches { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .swatch { position: relative; width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--c, var(--surface3)); cursor: pointer; box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.35); transition: transform var(--t-med) var(--ease), box-shadow var(--t-fast), var(--press-tr); }
-.swatch:hover { transform: scale(1.14); }
+.swatch:hover { transform: scale(1.08); }
 .swatch.on { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--c); transform: scale(1.06); }
 .swatch.custom { display: grid; place-items: center; color: var(--muted); background: var(--surface2); overflow: hidden; }
 .swatch.custom.on { background: var(--cur, var(--accent)); color: var(--accent-ink); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--cur, var(--accent)); }
@@ -729,7 +728,7 @@ a.person:hover .avatar.noimg, a.person:hover .avatar.failed { box-shadow: 0 0 0 
 .update-note { position: absolute; top: calc(100% + 3px); right: 0; display: inline-flex; align-items: center; gap: 8px; padding: 6px 13px 6px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 700; line-height: 1.2; white-space: nowrap; color: var(--ok-text); background: color-mix(in srgb, var(--ok) 24%, rgb(8 14 12 / 0.66)); border: 1px solid color-mix(in srgb, var(--ok) 62%, transparent); backdrop-filter: blur(20px) saturate(1.5); box-shadow: 0 8px 22px -10px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.16); transition: background var(--t-fast), transform var(--t-fast) var(--ease); }
 .update-note[hidden] { display: none; }
 .update-note::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
-.update-note:hover { background: color-mix(in srgb, var(--ok) 34%, rgb(8 14 12 / 0.66)); transform: translateY(-1px); }
+.update-note:hover { background: color-mix(in srgb, var(--ok) 34%, rgb(8 14 12 / 0.66)); }
 .update-note:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
 .update-note[data-status='downloading']::before { animation: upd-pulse calc(1.4s * var(--dur, 1)) ease-in-out infinite; }
 @keyframes upd-pulse { 50% { opacity: 0.35; } }
@@ -782,7 +781,7 @@ html[data-anim='reduced'] .connect-logo.brand-mark { animation: none; } /* kein 
 .recent { width: 100%; display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
 .recent .sub { color: var(--muted); font-size: 13px; text-align: center; }
 .chip-btn { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--line); background: var(--glass2); cursor: pointer; text-align: left; transition: background var(--t-fast), transform var(--t-fast) var(--ease), border-color var(--t-fast), var(--press-tr); }
-.chip-btn:hover { background: rgb(255 255 255 / 0.12); border-color: var(--line2); transform: translateY(-1px); }
+.chip-btn:hover { background: rgb(255 255 255 / 0.12); border-color: var(--line2); }
 .chip-btn span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connect-card { width: 100%; padding: 18px; border-radius: 22px; background: var(--glass); border: 1px solid var(--line2); backdrop-filter: blur(34px) saturate(1.5); box-shadow: 0 40px 100px -30px rgb(0 0 0 / 0.8); animation: qc-in calc(250ms * var(--dur)) var(--ease) both; }
 @keyframes qc-in { from { opacity: 0; scale: 0.96; } }
@@ -890,7 +889,7 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .nav { backdrop-filter: blur(28px) saturate(1.9); }
 .seg-thumb, .nav-indicator { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #fff), var(--accent)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.12), 0 6px 16px -4px rgb(var(--accent-rgb) / 0.75); }
 .btn.glass, .opt, .arrow { background: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.05)), var(--glass2); border-color: var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), 0 8px 22px -12px rgb(0 0 0 / 0.5); }
-.btn.glass:hover, .opt:hover { background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.1)), var(--glass2); }
+.opt:hover { background: linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0.1)), var(--glass2); }
 .btn.primary { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 10px 26px -10px rgb(var(--accent-rgb) / 0.8); }
 .btn.select { background: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.05)), var(--glass2); }
 
@@ -915,7 +914,6 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 .tab.on { color: var(--accent-ink); }
 .tab { min-height: 38px; }
 .tool { border-radius: 50%; }
-.snav:hover { background: var(--lg-grad), var(--glass2); box-shadow: inset 0 1px 0 var(--lg-edge-top); }
 .snav.on { background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.34), rgb(var(--accent-rgb) / 0.16)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), inset 0 0 0 1px rgb(var(--accent-rgb) / 0.45); color: var(--text); }
 .snav.on .ico { color: var(--accent-fg, var(--accent)); }
 .theme-tile { background: var(--lg-grad), var(--glass2); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), var(--lg-lift); }
@@ -954,7 +952,7 @@ html.is-starting #play-curtain, html.playing #play-curtain { opacity: 1; pointer
 
 /* Marke oben links: Glas-Kapsel wie Navigation und Icon-Knoepfe (gleiche Hoehe wie die Navigation) */
 .brand { height: 44px; padding: 0 18px 0 7px; gap: 10px; border-radius: 999px; background: var(--lg-grad), var(--glass2); backdrop-filter: blur(26px) saturate(1.9); border: 1px solid var(--lg-edge); box-shadow: inset 0 1px 0 var(--lg-edge-top), inset 0 -1px 0 rgb(255 255 255 / 0.06), var(--lg-lift); color: var(--text); transition: transform var(--t-fast) var(--ease), background var(--t-fast), box-shadow var(--t-med), var(--press-tr); }
-.brand:hover { transform: translateY(-1px); background: var(--lg-grad), color-mix(in srgb, var(--glass2) 55%, rgb(255 255 255 / 0.2)); }
+.brand:hover { background: var(--lg-grad), color-mix(in srgb, var(--glass2) 55%, rgb(255 255 255 / 0.2)); }
 .brand .brand-mark.sm { width: 38px; height: 38px; margin-right: -2px; }
 .brand-mark > svg { width: 100%; height: 100%; } /* das Logo fuellt seine Flaeche (wie in der Startanimation gross und mit kraeftigem Umriss) */
 /* Schriftzug wie in der Startanimation (.sp-word): Grossbuchstaben, kraeftig, weit gesperrt, weiss mit leichtem Schein; der Abstand hinter dem letzten Buchstaben wird zurueckgenommen */
@@ -1280,6 +1278,13 @@ html[data-compact='on'] :is(.t10-aura, .t10-glow, .t10-halo) { opacity: 1; }
 /* Startseite: Reihe "Filme im Trend" (Seerr): nur mit Seerr und nur mit Titeln (seit 1.2.14 kein Hinweis zum Einrichten mehr, Entscheidung E8). */
 .setting-value { color: var(--muted); font-size: 13.5px; text-align: right; }
 .settings .setting-control .field { width: min(380px, 100%); min-width: min(300px, 100%); }
+/* Eine Hoehe in einer Zeile (seit 1.2.33): steht ein Feld neben kleinen Knoepfen ("Name in Discord" mit "Servername"), sind beide 36 px wie das Hex-Feld der
+   Akzentfarbe; vorher stand ein 48 px hohes Feld neben einem 34 px hohen Knopf. Alleinstehende Felder bleiben Kapseln so hoch wie der Hauptknopf (48). */
+.settings .setting-control:has(.btn.sm) :is(.field:not(textarea), .btn.sm) { height: 36px; }
+.settings .setting-control:has(.btn.sm) .field:not(textarea) { padding: 0 16px; font-size: 13.5px; }
+/* "Name in Discord": Feld und "Servername" nebeneinander (vorher zwang die Mindestbreite der Felder den Knopf in eine eigene Zeile) */
+.settings .setting-control .dc-name { flex-wrap: nowrap; }
+.settings .setting-control .dc-name .field { width: 210px; min-width: 0; }
 .setting[hidden] { display: none; }
 
 /* ==========================================================================
@@ -1346,7 +1351,7 @@ html[data-compact='on'] :is(.t10-aura, .t10-glow, .t10-halo) { opacity: 1; }
 /* Problem melden (Seerr): vier Arten als grosse Auswahlknoepfe, darunter der freiwillige Kommentar */
 .issue-types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .issue-type { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--lg-edge); background: var(--lg-grad), var(--glass2); color: var(--muted); font-weight: 650; cursor: pointer; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast) var(--ease), var(--press-tr); }
-.issue-type:hover { color: var(--text); transform: translateY(-1px); }
+.issue-type:hover { color: var(--text); }
 .issue-type.on { background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.34), rgb(var(--accent-rgb) / 0.16)); border-color: var(--text); color: var(--text); box-shadow: 0 0 0 1px var(--text), inset 0 1px 0 rgb(255 255 255 / 0.3); }
 .issue-comment { height: auto; min-height: 96px; padding: 10px 14px; resize: vertical; font: inherit; line-height: 1.45; }
 @media (max-width: 560px) { .issue-types { grid-template-columns: repeat(2, 1fr); } }
@@ -1652,7 +1657,6 @@ html[data-compact='on'] .seasons { margin-top: 28px; }
 html[data-compact='on'] .page-title { font-size: 28px; padding-bottom: 14px; }
 html[data-compact='on'] .settings-nav { flex-wrap: nowrap; align-self: stretch; overflow-x: auto; margin: 0 calc(var(--pad) * -1); padding: 2px var(--pad); }
 html[data-compact='on'] .snav { flex: none; padding: 9px 14px; }
-html[data-compact='on'] .snav:hover { transform: none; }
 html[data-compact='on'] .setting { padding: 14px 16px; }
 /* Schieberegler unter ihrem Text nutzen die ganze Breite der Zeile, der Wert steht am rechten Rand (vorher 220 px breit, der Wert mitten in der Zeile) */
 html[data-compact='on'] .setting:has(> .setting-control > .slider) > .setting-control { flex: 1 1 100%; }
@@ -1710,7 +1714,7 @@ html[data-compact='on'] .settings .page-title { padding-top: 0; }
 :root[data-anim='reduced'] :is(.sk, .hero-slide.active .hero-bg img, .connect-col.shake) { animation: none; }
 :root[data-anim='reduced'] :is(.page-enter, .settings-panel, .detail-bd-img, .connect-card, .qc-outcome, .trailer-ctl, .mdl) { animation-name: fade-in; }
 :root[data-anim='reduced'] :is(.menu, .menu.open, .menu.closing, .toast, .toast.in) { transform: none; filter: none; }
-:root[data-anim='reduced'] :is(.tool, .update-note, .card .thumb, .card:hover .thumb, .card:focus-visible .thumb) { transform: none; }
+:root[data-anim='reduced'] :is(.card .thumb, .card:hover .thumb, .card:focus-visible .thumb) { transform: none; }
 /* ==========================================================================
    TV-Ansicht (Android TV, Google TV; tv.js, seit 1.2.28): <html data-form="tv">. Bedient mit der Fernbedienung wie Apple TV: was den Fokus hat, hebt sich
    deutlich ab (Karten werden groesser und bekommen einen hellen Rand, Knoepfe werden weiss mit dunkler Schrift); die Kopfleiste gleitet weg, sobald der
