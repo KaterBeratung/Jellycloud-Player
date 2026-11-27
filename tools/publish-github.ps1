@@ -11,16 +11,10 @@
 # Zusaetzlich zum Installer mit Versionsnummer laedt das Skript eine Kopie mit FESTEM Namen hoch (Jellycloud-Player-Setup.exe): nur so gibt es einen Download-Link, der immer die neueste
 # Version liefert (https://github.com/<Repo>/releases/latest/download/Jellycloud-Player-Setup.exe). Die App selbst nutzt weiter den Namen mit Versionsnummer (latest.json).
 #   ... -StableOnly   nur diese Kopie zu einem schon veroeffentlichten Release dieser Version nachladen
-# Bau auf GitHub Actions mit Signatur (seit 1.2.34, .github/workflows/windows-release.yml):
-#   ... -DraftOnly      der Workflow legt das Release nur als ENTWURF an (Installer, Kopie, latest.json) und veroeffentlicht nichts
-#   ... -PublishDraft   veroeffentlicht den Entwurf dieser Version (nach Freigabe, vom eigenen Rechner aus): prueft vorher, dass er alle drei Dateien
-#                       traegt und der Installer signiert ist, danach die Gegenprobe ueber die oeffentliche Adresse; braucht keinen lokalen Installer
 param(
   [string]$Repo = 'KaterBeratung/Jellycloud-Player',
   [switch]$DryRun,
-  [switch]$StableOnly,
-  [switch]$DraftOnly,
-  [switch]$PublishDraft
+  [switch]$StableOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,7 +30,6 @@ $version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw -Enco
 $name = "Jellycloud-Player-Setup-$version.exe"
 $installer = Join-Path $root "dist\$name"
 $manifestFile = Join-Path $root 'dist\latest.json'
-if ($PublishDraft) { . (Join-Path $PSScriptRoot 'publish-draft.ps1'); exit (Publish-Draft -Gh $gh -Repo $Repo -Version $version -DryRun:$DryRun) }
 if (-not (Test-Path -LiteralPath $installer)) { Write-Error "Installer fehlt: $installer"; exit 2 }
 if (-not (Test-Path -LiteralPath $manifestFile)) { Write-Error 'dist\latest.json fehlt: zuerst tools\publish-update.ps1 ausfuehren.'; exit 2 }
 $m = [IO.File]::ReadAllText($manifestFile, $utf8).TrimStart([char]0xFEFF) | ConvertFrom-Json
@@ -89,11 +82,6 @@ if ($DryRun) { Write-Output 'Probelauf: nichts wurde hochgeladen.'; exit 0 }
 Copy-Item -LiteralPath $installer -Destination $stable -Force
 try { Invoke-Gh release create $tag $installer $stable $manifestFile --repo $Repo --title "Jellycloud Player $version" --notes-file $notesFile --draft | ForEach-Object { Write-Output $_ } } finally { Remove-Item -LiteralPath $stable -Force -ErrorAction SilentlyContinue }
 if ($ghCode -ne 0) { Write-Error 'Anlegen des Entwurfs fehlgeschlagen.'; exit 1 }
-if ($DraftOnly) {
-  Remove-Item -LiteralPath $notesFile -Force -ErrorAction SilentlyContinue
-  Write-Output "Entwurf angelegt (nicht veroeffentlicht): $tag. Veroeffentlichen nach Freigabe: tools\publish-github.ps1 -PublishDraft"
-  exit 0
-}
 Invoke-Gh release edit $tag --repo $Repo --draft=false --latest | ForEach-Object { Write-Output $_ }
 if ($ghCode -ne 0) { Write-Error 'Veroeffentlichen fehlgeschlagen (der Entwurf liegt noch im Repo).'; exit 1 }
 Remove-Item -LiteralPath $notesFile -Force -ErrorAction SilentlyContinue

@@ -2,8 +2,7 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\test-unit.ps1                       (alle test\*.test.js)
 #   ... -Files 'test/seerr.test.js,test/media-tags.test.js'                                     (einzelne)
 #   ... -Root <Ordner>                                                                           (ein anderer Stand, etwa eine Kopie)
-#   ... -Strict                                                                                  (Exit-Code der Tests weitergeben, fuer GitHub Actions)
-param([string]$Root = (Split-Path -Parent $PSScriptRoot), [string[]]$Files, [switch]$Strict)
+param([string]$Root = (Split-Path -Parent $PSScriptRoot), [string[]]$Files)
 $ErrorActionPreference = 'Continue'
 Set-Location -LiteralPath $Root
 $env:ELECTRON_RUN_AS_NODE = '1'
@@ -17,4 +16,3 @@ $fails = @()
 for ($i = 0; $i -lt $out.Count; $i++) { if ($out[$i] -match '^\s*not ok ') { $fails += $out[$i]; $j = $i + 1; while ($j -lt $out.Count -and $j -lt $i + 30 -and $out[$j] -notmatch '^\s*(not )?ok ') { $fails += $out[$j]; $j++ } } }
 if ($fails.Count) { '--- Fehlgeschlagen:'; $fails | Select-Object -First 200 }
 "Exit: $code"
-if ($Strict) { exit $code }
