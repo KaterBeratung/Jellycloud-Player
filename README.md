@@ -971,10 +971,31 @@ npm run dist
 ```
 
 Erzeugt `dist\Jellycloud-Player-Setup-<Version>.exe` (NSIS, pro Benutzer, Zielordner wählbar, Verknüpfungen).
-Liegt `vendor\mpv\mpv.exe` vor, wird mpv mit eingepackt (`resources\mpv`). Der Installer ist nicht signiert,
+Liegt `vendor\mpv\mpv.exe` vor, wird mpv mit eingepackt (`resources\mpv`). Ein lokal gebauter Installer ist nicht signiert,
 Windows SmartScreen zeigt daher beim ersten Start eine Warnung.
 
 Danach `tools\publish-update.ps1` ausführen: Es schreibt `dist\latest.json` für diesen Installer, damit die App das Update findet (siehe *Updates*).
+
+### Signierter Installer über GitHub Actions (SignPath, seit 1.2.34 vorbereitet)
+
+Signiert wird kostenlos über die [SignPath Foundation](https://signpath.org/) (Open Source, Lizenz MIT in `LICENSE`); in Windows steht dann
+„SignPath Foundation“ als Herausgeber. Bedingung ist, dass der Installer nachweisbar aus diesem Repo entsteht: deshalb baut ihn der Workflow
+`.github/workflows/windows-release.yml` (von Hand gestartet, Eingabe: Text für „Neu in dieser Version“), nie ein privater Rechner.
+
+1. `npm ci`, dann `tools\fetch-mpv.ps1`: lädt den festgelegten mpv-Build (shinchiro, Release 20261101) und prüft Archiv und jede Datei gegen feste
+   SHA-256 (dieselben Dateien wie in den bisherigen Installern); `tools\test-unit.ps1 -Strict`.
+2. Bau mit electron-builder, der unsignierte Installer geht als Artefakt an SignPath (`signpath/github-action-submit-signing-request@v1`); dort gibt
+   ein Approver die Signatur frei. Der signierte Installer wird zurückgeholt und auf eine gültige Signatur der SignPath Foundation geprüft.
+3. `tools\publish-update.ps1` schreibt `latest.json` für den **signierten** Installer (Größe und SHA-512 ändern sich durch die Signatur), dann legt
+   `tools\publish-github.ps1 -DraftOnly` das Release als **Entwurf** an.
+4. Veröffentlichen nach Freigabe vom eigenen Rechner: `tools\publish-github.ps1 -PublishDraft` (`tools\publish-draft.ps1`) prüft den Entwurf
+   (drei Dateien, `latest.json` passt zum Installer, Signatur gültig) und macht danach die Gegenprobe über die öffentliche Adresse.
+
+Ohne eingerichtetes SignPath bricht der Workflow nach dem Bau ab: ein unsignierter Installer wird von dort nie als Release angelegt. Einrichtung in
+GitHub (Settings › Secrets and variables › Actions): Secret `SIGNPATH_API_TOKEN`, Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`,
+`SIGNPATH_SIGNING_POLICY_SLUG`; in SignPath die Artefakt-Konfiguration aus `.signpath/artifact-configuration.xml` als Standard. Die Regeln für
+Signaturen (Rollen, Datenschutz) stehen in `CODE_SIGNING_POLICY.md`. Signiert wird nur der Installer selbst; das mitgelieferte mpv bleibt, wie es vom
+Projekt kommt. **Noch nicht gelaufen** (Stand 27.11.2026: Aufnahme bei SignPath beantragt); bis dahin baut und veröffentlicht weiter der eigene Rechner.
 
 ## Tests
 

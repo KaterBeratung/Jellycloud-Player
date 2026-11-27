@@ -18,7 +18,7 @@
   "build": {
     "appId": "dev.jellycloud.player",
     "productName": "Jellycloud Player",
-    "copyright": "MIT",
+    "copyright": "Copyright (c) 2026 KaterBeratung",
     "directories": {
       "output": "dist",
       "buildResources": "build"
